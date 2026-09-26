@@ -71,7 +71,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: lumen-core-tests-debug
-          path: out/build/ci-linux-arm64/tests/LumenCoreTests
+          path: out/build/ci-linux-arm64/stage/Release/LumenCoreTests
           if-no-files-found: error
 
       - uses: actions/setup-dotnet@v4
