@@ -37,6 +37,11 @@ private:
 	// MPP_DEC_SET_EXT_BUF_GROUP - see the .cpp's own comment on why this is mandatory, not
 	// optional, even for a single-frame codec with no reference chaining.
 	bool SetupBufferGroup(size_t bufSize);
+	// (Re)creates m_InputBufGroup, sized for at least jpegSize - the group backing INPUT packets
+	// (the compressed bytes handed to the decoder), separate from m_BufGroup (the decoder's own
+	// OUTPUT frame buffers) - see the .cpp's own comment on why the input packet also needs to be
+	// a real MppBuffer, not a plain heap pointer.
+	bool EnsureInputBufferGroup(size_t jpegSize);
 
 	void* m_Ctx = nullptr;   // MppCtx
 	void* m_Api = nullptr;   // MppApi*
@@ -45,6 +50,9 @@ private:
 
 	void* m_BufGroup = nullptr; // MppBufferGroup, owns the frame buffers MPP decodes into
 	size_t m_BufGroupSize = 0;
+
+	void* m_InputBufGroup = nullptr; // MppBufferGroup, owns the INPUT packet buffer
+	size_t m_InputBufGroupSize = 0;
 };
 
 #endif // LUMEN_WITH_MPP_JPEG

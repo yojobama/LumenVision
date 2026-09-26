@@ -6,6 +6,7 @@
 #include <rockchip/mpp_packet.h>
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/rk_vdec_cfg.h>
+#include <cstring>
 
 // TEMPORARY - tracing to pinpoint the exact crashing call on real hardware (Catch2's signal
 // handler catches the SIGSEGV as a test failure, but gives no line/stack info of its own).
@@ -52,14 +53,51 @@ namespace {
 	// is plenty; this only bounds how many the group is ALLOWED to grow to
 	// (mpp_buffer_group_limit_config), not a fixed pre-allocation.
 	constexpr RK_S32 kBufferCount = 4;
+
+	// shared by SetupBufferGroup (output frames) and EnsureInputBufferGroup (the input packet) -
+	// priority order per mpp_buffer.h's own comment ("MPP_BUFFER_TYPE_DMA_HEAP >
+	// MPP_BUFFER_TYPE_DRM > MPP_BUFFER_TYPE_ION") - fall back down the list if the preferred
+	// allocator isn't available on this kernel rather than failing outright.
+	MppBufferGroup CreateInternalGroup(const char* tag)
+	{
+		static const MppBufferType kTypesInPriorityOrder[] = {
+			MPP_BUFFER_TYPE_DMA_HEAP, MPP_BUFFER_TYPE_DRM, MPP_BUFFER_TYPE_ION
+		};
+		MppBufferGroup group = nullptr;
+		for (MppBufferType type : kTypesInPriorityOrder) {
+			if (mpp_buffer_group_get(&group, type, MPP_BUFFER_INTERNAL, tag, __func__) == MPP_OK && group) return group;
+			group = nullptr;
+		}
+		return nullptr;
+	}
 }
 
 MppJpegDecoder::~MppJpegDecoder()
 {
-	// context first, then the buffer group it was using - putting the group first would free
+	// context first, then the buffer groups it was using - putting a group first would free
 	// memory the decoder might still touch during its own teardown.
 	if (m_Ctx) mpp_destroy(static_cast<MppCtx>(m_Ctx));
 	if (m_BufGroup) mpp_buffer_group_put(static_cast<MppBufferGroup>(m_BufGroup));
+	if (m_InputBufGroup) mpp_buffer_group_put(static_cast<MppBufferGroup>(m_InputBufGroup));
+}
+
+bool MppJpegDecoder::EnsureInputBufferGroup(size_t jpegSize)
+{
+	MPPDBG("EnsureInputBufferGroup: enter");
+	if (m_InputBufGroup && m_InputBufGroupSize >= jpegSize) { MPPDBG("EnsureInputBufferGroup: already big enough"); return true; }
+	if (m_InputBufGroup) {
+		MPPDBG("EnsureInputBufferGroup: putting old group");
+		mpp_buffer_group_put(static_cast<MppBufferGroup>(m_InputBufGroup));
+		m_InputBufGroup = nullptr;
+		m_InputBufGroupSize = 0;
+	}
+	MPPDBG("EnsureInputBufferGroup: calling CreateInternalGroup");
+	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg_in");
+	if (!group) { MPPDBG("EnsureInputBufferGroup: no allocator type worked"); return false; }
+	MPPDBG("EnsureInputBufferGroup: exit ok");
+	m_InputBufGroup = group;
+	m_InputBufGroupSize = jpegSize;
+	return true;
 }
 
 bool MppJpegDecoder::SetupBufferGroup(size_t bufSize)
@@ -77,21 +115,8 @@ bool MppJpegDecoder::SetupBufferGroup(size_t bufSize)
 	MppApi* api = static_cast<MppApi*>(m_Api);
 	MppCtx ctx = static_cast<MppCtx>(m_Ctx);
 
-	// priority order per mpp_buffer.h's own comment ("MPP_BUFFER_TYPE_DMA_HEAP >
-	// MPP_BUFFER_TYPE_DRM > MPP_BUFFER_TYPE_ION") - fall back down the list if the preferred
-	// allocator isn't available on this kernel rather than failing outright.
-	static const MppBufferType kTypesInPriorityOrder[] = {
-		MPP_BUFFER_TYPE_DMA_HEAP, MPP_BUFFER_TYPE_DRM, MPP_BUFFER_TYPE_ION
-	};
-	MppBufferGroup group = nullptr;
-	for (MppBufferType type : kTypesInPriorityOrder) {
-		MPPDBG("SetupBufferGroup: trying mpp_buffer_group_get");
-		if (mpp_buffer_group_get(&group, type, MPP_BUFFER_INTERNAL, "lumen_mpp_jpeg", __func__) == MPP_OK && group) {
-			MPPDBG("SetupBufferGroup: mpp_buffer_group_get succeeded");
-			break;
-		}
-		group = nullptr;
-	}
+	MPPDBG("SetupBufferGroup: calling CreateInternalGroup");
+	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg");
 	if (!group) { MPPDBG("SetupBufferGroup: no allocator type worked"); return false; }
 
 	MPPDBG("SetupBufferGroup: calling mpp_buffer_group_limit_config");
@@ -181,12 +206,43 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	MppApi* api = static_cast<MppApi*>(m_Api);
 	MppCtx ctx = static_cast<MppCtx>(m_Ctx);
 
-	MPPDBG("Decode: enter, calling mpp_packet_init");
+	// CONFIRMED THE HARD WAY (isolated via a HITL test with no camera/Server involved, then a
+	// kernel-level fault report - kernel.print-fatal-signals=1 - correlated against
+	// /proc/self/maps): the crash is deep inside librockchip_mpp.so itself, on the very FIRST
+	// api->decode() call, before this class's own output buffer group even gets a chance to run.
+	// mpp_packet_init() below wraps a plain heap pointer (this project's own std::vector/mmap'd
+	// buffer) with no MppBuffer behind it at all - the JPEG-decode VPU needs to DMA directly from
+	// its input, which a plain heap pointer was never going to satisfy. The input packet needs a
+	// real MppBuffer (from its own dedicated buffer group, since its size - the JPEG's own byte
+	// count - is known upfront, unlike the output frame's, which the decoder only reveals via its
+	// first info-change), with the JPEG bytes copied in, exactly the same "real MppBuffer, not a
+	// bare pointer" principle SetupBufferGroup already applies on the output side.
+	MPPDBG("Decode: calling EnsureInputBufferGroup");
+	if (!EnsureInputBufferGroup(jpegSize)) { MPPDBG("Decode: EnsureInputBufferGroup failed"); return false; }
+	MPPDBG("Decode: EnsureInputBufferGroup ok, calling mpp_buffer_get for input");
+	MppBuffer inputBuffer = nullptr;
+	if (mpp_buffer_get(static_cast<MppBufferGroup>(m_InputBufGroup), &inputBuffer, jpegSize) != MPP_OK || !inputBuffer) {
+		MPPDBG("Decode: mpp_buffer_get for input failed");
+		return false;
+	}
+	MPPDBG("Decode: mpp_buffer_get ok, calling mpp_buffer_get_ptr for input");
+	void* inputPtr = mpp_buffer_get_ptr(inputBuffer);
+	if (!inputPtr) { MPPDBG("Decode: mpp_buffer_get_ptr for input failed"); mpp_buffer_put(inputBuffer); return false; }
+	MPPDBG("Decode: got input ptr, memcpy'ing JPEG bytes in");
+	memcpy(inputPtr, jpegData, jpegSize);
+
+	MPPDBG("Decode: calling mpp_packet_init_with_buffer");
 	MppPacket packet = nullptr;
-	// no copy - wraps the caller's own buffer (the same V4L2 mmap'd bytes Grab() already has),
-	// exactly like the software cv::imdecode path one level up.
-	if (mpp_packet_init(&packet, const_cast<uint8_t*>(jpegData), jpegSize) != MPP_OK) { MPPDBG("Decode: mpp_packet_init failed"); return false; }
-	MPPDBG("Decode: mpp_packet_init ok");
+	if (mpp_packet_init_with_buffer(&packet, inputBuffer) != MPP_OK) {
+		MPPDBG("Decode: mpp_packet_init_with_buffer failed");
+		mpp_buffer_put(inputBuffer);
+		return false;
+	}
+	// init_with_buffer defaults the packet's length to the WHOLE buffer's capacity (which may be
+	// larger than this exact frame once the group's own buffer is reused/regrown) - the decoder
+	// must only see this frame's real byte count.
+	mpp_packet_set_length(packet, jpegSize);
+	MPPDBG("Decode: mpp_packet_init_with_buffer ok");
 
 	bool ok = false;
 	for (int attempt = 0; attempt < kMaxDecodeAttempts && !ok; attempt++) {
@@ -276,6 +332,9 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 
 	MPPDBG("Decode: loop exited, calling mpp_packet_deinit");
 	mpp_packet_deinit(&packet);
+	// drops THIS function's own reference from mpp_buffer_get above - mpp_packet_init_with_buffer
+	// took its own separate reference for the packet, already released by mpp_packet_deinit.
+	mpp_buffer_put(inputBuffer);
 	MPPDBG("Decode: mpp_packet_deinit ok, returning");
 	return ok;
 }
