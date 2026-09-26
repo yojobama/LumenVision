@@ -11,6 +11,23 @@
 // handler catches the SIGSEGV as a test failure, but gives no line/stack info of its own).
 #include <cstdio>
 #define MPPDBG(msg) do { fprintf(stderr, "MPPDBG %s:%d %s\n", __FILE__, __LINE__, msg); fflush(stderr); } while (0)
+namespace {
+	// dumps this process's own /proc/self/maps to stderr - to correlate the fault PC dmesg
+	// reports (kernel.print-fatal-signals=1) against which shared library actually faulted.
+	void DumpMapsOnce() {
+		static bool done = false;
+		if (done) return;
+		done = true;
+		FILE* f = fopen("/proc/self/maps", "r");
+		if (!f) return;
+		fprintf(stderr, "MPPDBG --- /proc/self/maps ---\n");
+		char line[512];
+		while (fgets(line, sizeof(line), f)) fputs(line, stderr);
+		fprintf(stderr, "MPPDBG --- end maps ---\n");
+		fflush(stderr);
+		fclose(f);
+	}
+}
 
 namespace {
 	// A fresh MJPEG decode context requires an "info change" round trip on its first real
@@ -175,6 +192,7 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	for (int attempt = 0; attempt < kMaxDecodeAttempts && !ok; attempt++) {
 		MppFrame frame = nullptr;
 		MPPDBG("Decode: calling api->decode");
+		DumpMapsOnce();
 		if (api->decode(ctx, packet, &frame) != MPP_OK || !frame) { MPPDBG("Decode: api->decode failed or no frame"); break; }
 		MPPDBG("Decode: api->decode ok, frame non-null");
 
