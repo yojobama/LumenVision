@@ -1,0 +1,168 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.lumenvision",
+    "module": "photoncompat-java",
+    "version": "0.0.0-imagetest23",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "edu.wpi.first.wpimath",
+          "module": "wpimath-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.ntcore",
+          "module": "ntcore-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "photoncompat-java-0.0.0-imagetest23.jar",
+          "url": "photoncompat-java-0.0.0-imagetest23.jar",
+          "size": 19133,
+          "sha512": "ee947e6652900d9041ad5e343041fff45c01aa65aa0ae60b604df8432d00f62094434396a5f311d38248741eb36506498f957b91b451c143c0151cc18a6b57e3",
+          "sha256": "90ec0013fb2202d5759e8a7d75f6e2c265403ef6f78c0f021480c17d21d6a776",
+          "sha1": "753315c3de1eaf57054e975c8ac6bb6423f381cb",
+          "md5": "9ac53508c14e0d58cfbbaa74a14c9f1a"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "edu.wpi.first.wpiutil",
+          "module": "wpiutil-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.wpilibj",
+          "module": "wpilibj-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.wpiunits",
+          "module": "wpiunits-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "org.ejml",
+          "module": "ejml-simple",
+          "version": {
+            "requires": "0.44.0"
+          }
+        },
+        {
+          "group": "com.fasterxml.jackson.core",
+          "module": "jackson-annotations",
+          "version": {
+            "requires": "2.19.2"
+          }
+        },
+        {
+          "group": "com.fasterxml.jackson.core",
+          "module": "jackson-core",
+          "version": {
+            "requires": "2.19.2"
+          }
+        },
+        {
+          "group": "com.fasterxml.jackson.core",
+          "module": "jackson-databind",
+          "version": {
+            "requires": "2.19.2"
+          }
+        },
+        {
+          "group": "us.hebi.quickbuf",
+          "module": "quickbuf-runtime",
+          "version": {
+            "requires": "1.4"
+          }
+        },
+        {
+          "group": "edu.wpi.first.wpimath",
+          "module": "wpimath-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.ntcore",
+          "module": "ntcore-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "photoncompat-java-0.0.0-imagetest23.jar",
+          "url": "photoncompat-java-0.0.0-imagetest23.jar",
+          "size": 19133,
+          "sha512": "ee947e6652900d9041ad5e343041fff45c01aa65aa0ae60b604df8432d00f62094434396a5f311d38248741eb36506498f957b91b451c143c0151cc18a6b57e3",
+          "sha256": "90ec0013fb2202d5759e8a7d75f6e2c265403ef6f78c0f021480c17d21d6a776",
+          "sha1": "753315c3de1eaf57054e975c8ac6bb6423f381cb",
+          "md5": "9ac53508c14e0d58cfbbaa74a14c9f1a"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "photoncompat-java-0.0.0-imagetest23-sources.jar",
+          "url": "photoncompat-java-0.0.0-imagetest23-sources.jar",
+          "size": 20660,
+          "sha512": "afde87d1a7227a61f0418de079e33d33daf959fdbd8b60af5db0e6f1611f3c2fe2f4e5a380bcfbc265c2862aee545544ecda9006a793f6b6ca24aab24c9091d4",
+          "sha256": "706328b9af6e2b7d1c2553ef0516527bb3344e684f8357d18993b952c57acee4",
+          "sha1": "1c9cde1bae937ca47c0cc06b6eeda97802819a33",
+          "md5": "a3c1932eccf19875a198c3962b1598d2"
+        }
+      ]
+    }
+  ]
+}
