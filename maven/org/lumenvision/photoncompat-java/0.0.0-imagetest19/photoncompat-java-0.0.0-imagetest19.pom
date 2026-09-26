@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <!-- This module was also published with a richer model, Gradle metadata,  -->
+  <!-- which should be used instead. Do not delete the following line which  -->
+  <!-- is to indicate to Gradle or any Gradle module metadata file consumer  -->
+  <!-- that they should prefer consuming it instead. -->
+  <!-- do_not_remove: published-with-gradle-metadata -->
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.lumenvision</groupId>
+  <artifactId>photoncompat-java</artifactId>
+  <version>0.0.0-imagetest19</version>
+  <dependencies>
+    <dependency>
+      <groupId>edu.wpi.first.wpimath</groupId>
+      <artifactId>wpimath-java</artifactId>
+      <version>2026.2.1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>edu.wpi.first.ntcore</groupId>
+      <artifactId>ntcore-java</artifactId>
+      <version>2026.2.1</version>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>edu.wpi.first.wpiutil</groupId>
+      <artifactId>wpiutil-java</artifactId>
+      <version>2026.2.1</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>edu.wpi.first.wpilibj</groupId>
+      <artifactId>wpilibj-java</artifactId>
+      <version>2026.2.1</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>edu.wpi.first.wpiunits</groupId>
+      <artifactId>wpiunits-java</artifactId>
+      <version>2026.2.1</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.ejml</groupId>
+      <artifactId>ejml-simple</artifactId>
+      <version>0.44.0</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>2.19.2</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+      <version>2.19.2</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.19.2</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
+      <groupId>us.hebi.quickbuf</groupId>
+      <artifactId>quickbuf-runtime</artifactId>
+      <version>1.4</version>
+      <scope>runtime</scope>
+    </dependency>
+  </dependencies>
+</project>
