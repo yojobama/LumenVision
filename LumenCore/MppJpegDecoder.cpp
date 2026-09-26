@@ -5,6 +5,7 @@
 #include <rockchip/mpp_frame.h>
 #include <rockchip/mpp_packet.h>
 #include <rockchip/mpp_buffer.h>
+#include <rockchip/rk_vdec_cfg.h>
 
 // TEMPORARY - tracing to pinpoint the exact crashing call on real hardware (Catch2's signal
 // handler catches the SIGSEGV as a test failure, but gives no line/stack info of its own).
@@ -103,11 +104,51 @@ bool MppJpegDecoder::EnsureInitialized()
 
 	MppCtx ctx = nullptr;
 	MppApi* api = nullptr;
-	if (mpp_create(&ctx, &api) != MPP_OK) return false;
+	MPPDBG("EnsureInitialized: calling mpp_create");
+	if (mpp_create(&ctx, &api) != MPP_OK) { MPPDBG("EnsureInitialized: mpp_create failed"); return false; }
+	MPPDBG("EnsureInitialized: mpp_create ok, calling mpp_init");
 	if (mpp_init(ctx, MPP_CTX_DEC, MPP_VIDEO_CodingMJPEG) != MPP_OK) {
+		MPPDBG("EnsureInitialized: mpp_init failed");
 		mpp_destroy(ctx);
 		return false;
 	}
+	MPPDBG("EnsureInitialized: mpp_init ok");
+
+	// CONFIRMED THE HARD WAY (a real board segfault, isolated down to the very first api->decode
+	// call, before this class's own buffer-group setup even runs): a decode context needs its
+	// MppDecCfg fetched, configured and re-applied before ANY decode call, exactly like the real
+	// reference (rockchip-linux/mpp's own test/mpi_dec_test.c) always does - skipping this
+	// entirely (this class's own prior state) leaves the decoder in a state its own first
+	// decode() call cannot handle. "base:split_parse"=1 matches the demo's own default (lets
+	// MPP's internal frame splitter find frame boundaries) - a no-op for a single already-
+	// complete JPEG image, but this is the documented, tested init sequence, not a value chosen
+	// for its own meaning.
+	MppDecCfg cfg = nullptr;
+	MPPDBG("EnsureInitialized: calling mpp_dec_cfg_init");
+	if (mpp_dec_cfg_init(&cfg) != MPP_OK) {
+		MPPDBG("EnsureInitialized: mpp_dec_cfg_init failed");
+		mpp_destroy(ctx);
+		return false;
+	}
+	MPPDBG("EnsureInitialized: mpp_dec_cfg_init ok, calling control(GET_CFG)");
+	if (api->control(ctx, MPP_DEC_GET_CFG, cfg) != MPP_OK) {
+		MPPDBG("EnsureInitialized: control(GET_CFG) failed");
+		mpp_dec_cfg_deinit(cfg);
+		mpp_destroy(ctx);
+		return false;
+	}
+	MPPDBG("EnsureInitialized: control(GET_CFG) ok, calling cfg_set_u32(split_parse)");
+	mpp_dec_cfg_set_u32(cfg, "base:split_parse", 1);
+	MPPDBG("EnsureInitialized: cfg_set_u32 ok, calling control(SET_CFG)");
+	if (api->control(ctx, MPP_DEC_SET_CFG, cfg) != MPP_OK) {
+		MPPDBG("EnsureInitialized: control(SET_CFG) failed");
+		mpp_dec_cfg_deinit(cfg);
+		mpp_destroy(ctx);
+		return false;
+	}
+	MPPDBG("EnsureInitialized: control(SET_CFG) ok, deiniting cfg");
+	mpp_dec_cfg_deinit(cfg);
+	MPPDBG("EnsureInitialized: exit ok");
 
 	m_Ctx = ctx;
 	m_Api = api;
