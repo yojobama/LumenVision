@@ -877,7 +877,14 @@ fetch_rknn() {
 # natively on the board itself (this project's aarch64 target IS the build host - no cross
 # toolchain file needed, unlike build/linux/aarch64/arm.linux.cross.cmake in the repo, which is
 # for cross-compiling FROM x86).
-MPP_REF="${MPP_REF:-develop}"
+#
+# Pinned to the latest tagged release (1.1.0), not floating `develop` - `develop` crashed the
+# whole process the moment MppJpegDecoder called into it (segfault confirmed deep inside
+# mpp_dec_decode itself, on real hardware, unrelated to any caller-side buffer setup - see
+# LumenCore/MppJpegDecoder.cpp's own comment). Matches this project's existing convention of
+# pinning third-party dependencies to exact, known points (e.g. the vkapriltag submodule) rather
+# than a moving branch.
+MPP_REF="${MPP_REF:-1.1.0}"
 
 fetch_mpp() {
     [[ "$ARCH" == "aarch64" ]] || return 0
