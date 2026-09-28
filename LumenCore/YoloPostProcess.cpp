@@ -157,11 +157,8 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 				float bestScore = Sigmoid(bestLogit);
 				if (bestScore < confThreshold) continue;
 
-				// DFL: each of the 4 sides (left, top, right, bottom - ultralytics' own
-				// regression order) is a softmax distribution over regMax discrete bins:
-				// distance = sum(bin_index * softmax(logits)[bin_index]), i.e. the distribution's
-				// expected value, not an argmax - this is the whole point of DFL over a plain
-				// regression head (a continuous estimate from a discrete distribution).
+				// DFL: each of the 4 sides (left, top, right, bottom) is a softmax distribution over regMax bins;
+				// distance = sum(bin_index * softmax(logits)[bin_index]), the expected value rather than an argmax.
 				float distance[4];
 				for (int side = 0; side < 4; side++) {
 					const float* binLogits = scale.boxData + static_cast<size_t>(side) * regMax * cellCount;

@@ -1,13 +1,6 @@
 #!/usr/bin/env node
-// ROADMAP.md Phase 8/E6: regenerates src/api/generated.ts from the C# server's own
-// reflection-generated OpenAPI document (Server/OpenApi/OpenApiGenerator.cs, served at
-// /api/openapi.json - nothing consumed that document until this script existed). A manual/CI
-// step, not part of the hot dev loop: `npm run dev` never needs a live server just to start, and
-// this only runs when someone deliberately wants to pick up a REST surface change.
-//
-// A Node script, not a .sh/.ps1 - this project's dev machines and CI runners span Windows and
-// Linux (see the project's own CMakePresets.json), and Node is already a hard dependency of this
-// package on every one of them, unlike either shell.
+// Regenerates src/api/generated.ts from the server's /api/openapi.json
+// (Server/OpenApi/OpenApiGenerator.cs). Run manually via `npm run generate-api`.
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';

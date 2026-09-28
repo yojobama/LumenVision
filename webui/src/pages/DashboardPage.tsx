@@ -82,8 +82,7 @@ export const DashboardPage: React.FC<{
   onGoToSources: () => void;
   onToggleSink: (id: number, enabled: boolean) => void;
 }> = ({ systemStats, deviceStats, streamingSinks, sources, sinks, onStopAllStreams, onStopStream, onStreamError, onTogglePreview, onGoToSinks, onGoToSources, onToggleSink }) => {
-  // WebRTC/NetworkTables sinks are plumbing auto-created by the Live Preview / Publish to NT4
-  // toggles - not something the user directly created, so they're left out of this summary too.
+  // WebRTC/NetworkTables sinks are auto-created by the preview/publish toggles, so they are omitted
   const visibleSinks = sinks.filter(s => s.type !== 'webrtc' && s.type !== 'networktables');
   return (
   <div className="space-y-6">

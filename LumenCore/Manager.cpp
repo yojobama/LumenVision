@@ -43,13 +43,8 @@
 #include <map>
 #endif
 #ifdef _WIN32
-// Not #include <windows.h>/<mfapi.h> directly here: this file (via Manager.h) has `using
-// namespace std;` in scope, and the Windows SDK's COM/RPC headers (rpcndr.h, objidl.h, ...)
-// reference an unqualified `byte` of their own - with std::byte ALSO in unqualified lookup
-// because of that using-directive, every one of those references becomes a real ambiguous-symbol
-// compile error (confirmed the hard way - dozens of C2872s across rpcndr.h/objidl.h/wtypes.h the
-// moment mfapi.h was included straight into this file). WindowsCameraEnumerator.cpp is a
-// dedicated, `using namespace std`-free translation unit for exactly this reason.
+// Not #include <windows.h>/<mfapi.h> here: Manager.h's `using namespace std;` makes the Windows SDK's unqualified `byte` ambiguous with
+// std::byte. WindowsCameraEnumerator.cpp is a `using namespace std`-free translation unit for this.
 #include "WindowsCameraEnumerator.h"
 #endif
 #include <cstring>
@@ -124,15 +119,9 @@ vector<CameraHardwareInfo> Manager::EnumerateAvailableCameras()
     m_Logger->EnterLog("EnumerateAvailableCameras called");
     vector<CameraHardwareInfo> cameras;
 
-    // Stable identity: /dev/videoN numbering is first-come-first-served at boot and reorders
-    // whenever cameras enumerate in a different order, and two identical cameras (the usual FRC
-    // setup: a pair of Arducam OV9281s) share name AND serial number, so neither the node nor
-    // /dev/v4l/by-id can tell them apart. udev's /dev/v4l/by-path links encode the physical
-    // port (USB port path / CSI bus) instead - stable across reboots, unique per socket. Reported
-    // as the camera's path whenever one exists, so everything keyed by path (saved sources,
-    // calibrations) follows the physical camera; open() resolves the symlink transparently.
-    // Moving a camera to a different USB port therefore makes it a different camera - the price
-    // of being able to tell identical cameras apart at all.
+    // Stable identity: /dev/videoN numbering reorders between boots and identical cameras share name and serial, so report udev's
+    // /dev/v4l/by-path link (physical USB port / CSI bus) as the path when one exists; open() resolves the symlink.
+    // Moving a camera to another port makes it a different camera.
     std::map<std::string, std::string> stablePathByNode;
     if (DIR* p_ByPath = opendir("/dev/v4l/by-path")) {
         while (struct dirent* p_Link = readdir(p_ByPath)) {
@@ -158,7 +147,6 @@ vector<CameraHardwareInfo> Manager::EnumerateAvailableCameras()
 
     struct dirent* p_Entry;
     while ((p_Entry = readdir(p_Dir)) != nullptr) {
-        // Check if name starts with "video"
         if (strncmp(p_Entry->d_name, "video", 5) != 0) continue;
 
         std::string devicePath = std::string(p_VideoDir) + p_Entry->d_name;
@@ -174,11 +162,8 @@ vector<CameraHardwareInfo> Manager::EnumerateAvailableCameras()
             continue;
         }
 
-        // A real capability check, replacing the old "even device numbers only" heuristic (a
-        // UVC capture-vs-metadata-node artefact, not a general rule - see ROADMAP.md Phase 3's
-        // note that it can legitimately hide devices like the RK3588's own rkisp/rkcif nodes).
-        // V4L2_CAP_DEVICE_CAPS, when set, means cap.capabilities is the UNION across every node a
-        // multi-function device exposes - the per-node truth is in cap.device_caps instead.
+        // A real capability check. When V4L2_CAP_DEVICE_CAPS is set, cap.capabilities is the UNION across every node of a
+        // multi-function device; the per-node truth is in cap.device_caps.
         __u32 effectiveCaps = (cap.capabilities & V4L2_CAP_DEVICE_CAPS) ? cap.device_caps : cap.capabilities;
         if (!(effectiveCaps & V4L2_CAP_VIDEO_CAPTURE) || !(effectiveCaps & V4L2_CAP_STREAMING)) {
             close(fd);
@@ -222,27 +207,16 @@ vector<CameraHardwareInfo> Manager::EnumerateAvailableCameras()
     return cameras;
 }
 #else
-// Media Foundation's own device-source enumerator (MFEnumDeviceSources) - the same underlying
-// API the Windows Camera app and Device Manager query, confirmed the hard way: a camera that
-// showed up healthy in both ("Lenovo Performance RGB Camera"/"Lenovo Performance IR Camera") was
-// invisible here while this was still the old empty stub, purely because nothing ever asked
-// Media Foundation for the device list - a separate problem from whether cv::VideoCapture can
-// actually OPEN a given device once it's listed (MSMF/DSHOW/CAP_ANY all failing on a Windows
-// Hello-restricted camera is a real, distinct limitation - see OpenCvCameraBackend.cpp's own
-// comment - not something this enumerator can fix).
+// Media Foundation's device-source enumerator (MFEnumDeviceSources), the same API the Windows Camera app queries.
+// Whether cv::VideoCapture can then OPEN a listed device is a separate matter (see OpenCvCameraBackend.cpp).
 vector<CameraHardwareInfo> Manager::EnumerateAvailableCameras()
 {
     m_Logger->EnterLog("EnumerateAvailableCameras called");
     vector<CameraHardwareInfo> cameras;
 
     for (const WindowsCameraDevice& device : EnumerateWindowsCameras(m_Logger)) {
-        // OpenCvCameraBackend::Open's numeric-index branch (cv::VideoCapture(index, backend)) is
-        // what actually opens a device on Windows - MFEnumDeviceSources' array position IS that
-        // index, since MSMF ultimately enumerates the same underlying device list
-        // EnumerateWindowsCameras just walked, so hand back the position rather than the
-        // device's symbolic-link path (a real unique identifier, but not something
-        // OpenCvCameraBackend knows how to open - see its own comment on why a non-numeric path
-        // falls back to a generic, unreliable cv::VideoCapture(string) open).
+        // MFEnumDeviceSources' array position IS the index OpenCvCameraBackend::Open's numeric-index branch (cv::VideoCapture(index, backend))
+        // opens, so return the position rather than the symbolic-link path, which OpenCvCameraBackend cannot open reliably.
         cameras.push_back(CameraHardwareInfo{ .name = device.name, .path = std::to_string(device.index) });
     }
 
@@ -274,8 +248,7 @@ bool Manager::BindStereoSources(int sinkId, int leftSourceId, int rightSourceId)
 
     bool bound = sinkIt->second->BindSource(leftIt->second) && sinkIt->second->BindSource(rightIt->second);
     if (bound) {
-        // recorded explicitly by source ID rather than relying on ISink::BindSource's own
-        // bind-order bookkeeping, which has no left/right notion at all - see IStereoRoleReceiver.h
+        // recorded explicitly by source ID, as ISink::BindSource's bind order has no left/right notion (see IStereoRoleReceiver.h)
         p_RoleReceiver->SetStereoRoles(leftIt->second->GetID(), rightIt->second->GetID());
     }
     m_Logger->EnterLog("BindStereoSources result: " + std::to_string(bound));
@@ -669,12 +642,12 @@ int Manager::CreateImageFileSource(string path, int id)
     return id;
 }
 
-int Manager::CreateApriltagDetector(CameraCalibrationResult calibrationResult, double tagSize /* in METERS you filthy Americans! */)
+int Manager::CreateApriltagDetector(CameraCalibrationResult calibrationResult, double tagSize /* metres */)
 {
     m_Logger->EnterLog("CreateApriltagDetector called");
     int id = GenerateUUID();
 
-	auto p_Sink = std::make_shared<ApriltagDetector>(m_Logger, std::to_string(id), calibrationResult, tagSize); // TODO: add calibration result and tagSize variables to the constructor
+	auto p_Sink = std::make_shared<ApriltagDetector>(m_Logger, std::to_string(id), calibrationResult, tagSize);
 
     m_Sinks.emplace(id, p_Sink);
 
@@ -682,11 +655,11 @@ int Manager::CreateApriltagDetector(CameraCalibrationResult calibrationResult, d
     return id;
 }
 
-int Manager::CreateApriltagDetector(int id, CameraCalibrationResult calibrationResult, double tagSize /* in METERS you filthy Americans! */)
+int Manager::CreateApriltagDetector(int id, CameraCalibrationResult calibrationResult, double tagSize /* metres */)
 {
     m_Logger->EnterLog("CreateApriltagDetector called");
 
-    auto p_Detector = std::make_shared<ApriltagDetector>(m_Logger, std::to_string(id), calibrationResult, tagSize); // TODO: add calibration result and tagSize variables to the constructor
+    auto p_Detector = std::make_shared<ApriltagDetector>(m_Logger, std::to_string(id), calibrationResult, tagSize);
 
     // ApriltagDetector is both an ISink (consumes camera frames) and an ISource (produces detections),
     // so it must be registered in both maps to be reachable from either side
@@ -945,13 +918,13 @@ bool Manager::SaveCameraCalibrationBoardDetection(int calibratorId)
 	return p_Calibrator->SaveBoardDetection();
 }
 
-int Manager::CreateApriltagDetectorFromCalibrator(int calibratorId, double tagSize /* in METERS you filthy Americans! */)
+int Manager::CreateApriltagDetectorFromCalibrator(int calibratorId, double tagSize /* metres */)
 {
 	int id = GenerateUUID();
 	return CreateApriltagDetectorFromCalibrator(id, calibratorId, tagSize);
 }
 
-int Manager::CreateApriltagDetectorFromCalibrator(int id, int calibratorId, double tagSize /* in METERS you filthy Americans! */)
+int Manager::CreateApriltagDetectorFromCalibrator(int id, int calibratorId, double tagSize /* metres */)
 {
 	m_Logger->EnterLog("CreateApriltagDetectorFromCalibrator called with calibratorId=" + std::to_string(calibratorId));
 
@@ -963,7 +936,7 @@ int Manager::CreateApriltagDetectorFromCalibrator(int id, int calibratorId, doub
 }
 
 namespace {
-    // legacy default, matching CameraCalibrator's own default board
+    // default board, matching CameraCalibrator's default
     const StereoCalibrationBoardConfig DEFAULT_STEREO_BOARD_CONFIG;
 
     StereoCalibrator* FindStereoCalibrator(map<int, std::shared_ptr<ISink>>& sinks, int calibratorId)
@@ -1256,15 +1229,9 @@ std::string Manager::GetObjectDetectionSinkBackendName(int sinkId)
     return p_Sink->GetBackendName();
 }
 
-// Bodies only - see Manager.h's comment on why these methods are DECLARED unconditionally.
-// #ifdef'd per logical group rather than per function: every symbol below is defined in both
-// branches (so linking/SWIG-wrapping never sees a missing entry point), the LUMEN_WITH_NT4
-// branch is the real implementation, and the #else branch is what a caller actually gets when
-// this build doesn't have NT4 compiled in - Create throws a clear, catchable error (swig.i's
-// global %exception block turns it into a System.ApplicationException, i.e. an ordinary HTTP
-// 500 with a real message); the query methods degrade to the same "nothing here" answer they'd
-// already give for a sink id that simply doesn't exist, since a disabled build can never have
-// created one in the first place.
+// Bodies only (see Manager.h for why these are declared unconditionally). Every symbol is defined in both #ifdef branches so linking and
+// SWIG wrapping always find it: Create throws a catchable error (swig.i's %exception turns it into an ApplicationException) when NT4 is
+// compiled out, and query methods return the same "nothing here" answer as for a missing sink id.
 #ifdef LUMEN_WITH_NT4
 int Manager::CreateNetworkTablesSinkForTeam(int teamNumber, string rootTable, string clientIdentity)
 {
@@ -1391,8 +1358,7 @@ int Manager::PollNetworkTablesSinkRecordingRequest(int) { return -1; }
 void Manager::SetNetworkTablesSinkRecordingStatus(int, bool) {}
 #endif
 
-// Same "declared unconditionally, #ifdef'd body per logical group" pattern as the NT4 block
-// above - see its comment.
+// Declared unconditionally with an #ifdef'd body, as in the NT4 block above.
 #ifdef LUMEN_WITH_WEBRTC
 int Manager::CreateWebRTCSink(int bitrateKbps, int fps, string encoderName)
 {
@@ -1460,10 +1426,8 @@ string Manager::GetWebRTCSinkStatus(int sinkId)
 
 string Manager::GetPreferredWebRTCEncoder()
 {
-    // a real runtime probe, not a platform guess - upstream FFmpeg's own --enable-rkmpp is
-    // decode-only (confirmed the hard way, see cmake/LumenFFmpeg.cmake), so even on
-    // Linux/aarch64 this build's ffmpeg might be plain upstream rather than the
-    // nyanmisaka/ffmpeg-rockchip fork that actually implements the h264_rkmpp encoder.
+    // a runtime probe: upstream FFmpeg's --enable-rkmpp is decode-only, so the h264_rkmpp encoder exists only in the
+    // nyanmisaka/ffmpeg-rockchip fork.
     if (avcodec_find_encoder_by_name("h264_rkmpp")) return "h264_rkmpp";
     return "libx264";
 }
@@ -1493,8 +1457,7 @@ string Manager::GetWebRTCSinkStatus(int) { return "{}"; }
 string Manager::GetPreferredWebRTCEncoder() { return "libx264"; }
 #endif
 
-// Always available - see MjpegSink.h's own comment for why this needs no LUMEN_WITH_* guard the
-// way the NT4/WebRTC blocks above do.
+// Always available (pure OpenCV); no LUMEN_WITH_* guard (see MjpegSink.h).
 int Manager::CreateMjpegSink(int jpegQuality)
 {
     int id = GenerateUUID();
@@ -1519,8 +1482,7 @@ string Manager::GetMjpegFrameBase64(int sinkId)
     return mjpegSink ? mjpegSink->GetLatestJpegBase64() : "";
 }
 
-// Same "declared unconditionally, #ifdef'd body per logical group" pattern as the NT4/WebRTC
-// blocks above - see their comment.
+// Declared unconditionally with an #ifdef'd body, as in the NT4/WebRTC blocks above.
 #ifdef LUMEN_WITH_RECORD
 int Manager::CreateRecordSink(string dstFolder, string encoderName, int bitrateKbps, int fps, int segmentSeconds, int64_t maxFolderSizeBytes, int maxFileCount)
 {
@@ -1618,7 +1580,6 @@ bool Manager::StartSourceById(int sourceId)
 
 bool Manager::IsSourceActive(int sourceId)
 {
-	// TODO: implement this function
 	auto source = m_Sources.find(sourceId);
     if (source == m_Sources.end()) {
         return false;
@@ -1788,7 +1749,6 @@ int Manager::GenerateUUID()
 
 int Manager::GetMemoryUsageBytes()
 {
-	// TODO: implement a function to get memory usage
     return m_SystemMonitor->GetRAMUsage();
 }
 
@@ -1797,17 +1757,14 @@ int Manager::GetMemoryUsageBytes()
 */
 int Manager::GetCPUUsage()
 {
-	// TODO: implement a function to get CPU usage
     return m_SystemMonitor->GetCPUUsage();
 }
 
 /*
 	returns the CPU temperature in degrees Celsius 
-    if you are an american, deal with it :)
 */
 int Manager::GetCpuTemperature()
 {
-	// TODO: implement a function to get CPU temperature
     return m_SystemMonitor->GetCPUTemperature();
 }
 
@@ -1834,12 +1791,8 @@ int64_t Manager::GetLatencyUs(int id)
     return static_cast<int64_t>(result.producedTimeUs) - static_cast<int64_t>(result.captureTimeUs);
 }
 
-// Every LUMEN_WITH_* backend this specific .so/.dll was actually built with - the runtime
-// counterpart to the SWIG surface always existing regardless (see Manager.h's comment on
-// GetEnabledFeatures and the NT4/WebRTC #ifdef blocks above). Kept as one function with a
-// literal list rather than generated from cmake/LumenFeatures.cmake, since the two are
-// necessarily out of sync anyway: this reports what THIS translation unit was compiled with,
-// which is the only thing that's actually true at run time.
+// Every LUMEN_WITH_* backend this .so/.dll was built with, from a literal list because it must reflect what THIS translation unit
+// was compiled with (the runtime counterpart to the always-present SWIG surface).
 vector<string> Manager::GetEnabledFeatures()
 {
     vector<string> features;

@@ -32,7 +32,7 @@ namespace Server.Controllers.sources
             return Task.FromResult(sources.ToArray());
         }
 
-        // PATCH: Rename am ImageFile source;
+        // PATCH: Rename an ImageFile source;
         [HttpPatch("source/rename")]
         public Task Rename([FromQuery] int SourceID, [FromQuery] string newName)
         {
@@ -48,11 +48,7 @@ namespace Server.Controllers.sources
             return Task.CompletedTask;
         }
 
-        // POST: save this source's most recently published frame to disk (ROADMAP.md Phase 7).
-        // fileName only, not a full path - resolved under a fixed snapshots/ directory (created
-        // on first use) rather than a caller-supplied path, so this can't be used to write
-        // somewhere unintended on the coprocessor's filesystem. Returns false if the source has
-        // never published a frame yet.
+        // POST: save the source's latest frame under snapshots/ (fileName only, no path). Returns false if no frame yet.
         [HttpPost("source/snapshot")]
         public Task<bool> SaveSnapshot([FromQuery] int SourceID, [FromQuery] string fileName)
         {

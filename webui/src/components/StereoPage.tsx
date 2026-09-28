@@ -34,11 +34,8 @@ const CameraSelect: React.FC<{
   </label>
 );
 
-// ROADMAP.md Phase 8d: capture/run/result now lives in the full-screen wizard at
-// /calibrate/stereo/:sinkId (StereoCalibrationWizardPage) - "bind cameras -> capture loop -> run
-// -> result" as distinct wizard steps, with a live coverage heatmap during capture, rather than
-// one dense always-visible card. This card's job shrinks to just creating and binding the sink,
-// then handing off to the wizard.
+// Creates and binds the stereo sink, then hands off to the calibration wizard
+// (/calibrate/stereo/:sinkId).
 const StereoCalibrationCard: React.FC<{
   sources: Source[]; sinks: Sink[]; onToast: Props['onToast']; onRefresh: () => void;
 }> = ({ sources, sinks, onToast, onRefresh }) => {
@@ -270,9 +267,7 @@ const DepthFusionCard: React.FC<{
     if (!detectorId || !depthSinkId) { onToast('Select both a detector and a stereo depth sink', 'error'); return; }
     setBusy(true);
     try {
-      // the detector must run on the depth sink's own rectified-left output, not a raw camera -
-      // see DepthFusionNode.h. Rebinding it here is what makes its bbox pixel coordinates
-      // actually index into the depth grid.
+      // the detector must run on the depth sink's rectified-left output so its bbox pixels index the depth grid
       await onBindDetectorToDepthFrame(detectorId as number, depthSinkId as number);
       const id = await api.createDepthFusionSink(name);
       await api.bindSinkToSource(id, detectorId as number);
@@ -334,8 +329,7 @@ const DepthFusionCard: React.FC<{
 
 export const StereoPage: React.FC<Props> = ({ sources, sinks, onToast, onRefresh }) => {
   const bindDetectorToDepthFrame = async (detectorId: number, depthSinkId: number) => {
-    // the depth sink is dual-role (both ISink and ISource - see Manager.cpp), so its own id is
-    // a valid bind target exactly like binding a WebRTCSink to an AprilTag detector's output
+    // the depth sink is dual-role (ISink and ISource), so its id is a valid bind target
     await api.bindSinkToSource(detectorId, depthSinkId);
   };
 

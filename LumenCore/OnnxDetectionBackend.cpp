@@ -24,12 +24,8 @@ bool OnnxDetectionBackend::Load(const DetectionBackendConfig& config)
 	options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
 	try {
-		// Ort::Session's model-path parameter is ORTCHAR_T, which ONNX Runtime defines as
-		// wchar_t on Windows (its own file APIs are wide-string based) and char everywhere
-		// else - confirmed the hard way (error C2665: no overload takes a const char*)
-		// building this natively on Windows for the first time. config.modelPath stays
-		// std::string (UTF-8) at the LumenCore API boundary on every platform; only widen it
-		// at this ONNX Runtime call site itself.
+		// ORTCHAR_T is wchar_t on Windows and char elsewhere; modelPath stays a UTF-8 std::string and is
+		// widened only at this call.
 #ifdef _WIN32
 		std::wstring wideModelPath = std::filesystem::path(config.modelPath).wstring();
 		m_Session = std::make_unique<Ort::Session>(m_Env, wideModelPath.c_str(), options);
@@ -41,8 +37,7 @@ bool OnnxDetectionBackend::Load(const DetectionBackendConfig& config)
 	}
 
 	if (m_Session->GetInputCount() != 1 || m_Session->GetOutputCount() != 1) {
-		// a YOLOv8/v11 detection export has exactly one image input and one detection output;
-		// anything else (e.g. a segmentation export with a second mask output) isn't this decoder
+		// a YOLOv8/v11 detection export has exactly one image input and one detection output
 		return false;
 	}
 
@@ -70,7 +65,7 @@ std::vector<ObjectDetection> OnnxDetectionBackend::Infer(const cv::Mat& bgrFrame
 	YoloPostProcess::LetterboxInfo letterboxInfo;
 	cv::Mat letterboxed = YoloPostProcess::Letterbox(bgrFrame, m_Config.inputWidth, m_Config.inputHeight, letterboxInfo);
 
-	// HWC BGR uint8 -> CHW RGB float32, normalized to [0,1] - the standard ultralytics export
+	// HWC BGR uint8 -> CHW RGB float32, normalised to [0,1] - the standard ultralytics export
 	// preprocessing
 	cv::Mat rgb;
 	cv::cvtColor(letterboxed, rgb, cv::COLOR_BGR2RGB);

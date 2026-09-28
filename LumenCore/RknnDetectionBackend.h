@@ -6,16 +6,9 @@
 #include <string>
 #include <vector>
 
-// Runs a YOLOv8/v11 export on the RK3588's own NPU via the RKNN runtime (librknnrt.so) -
-// ROADMAP.md Phase 6's headline win: roughly 100ms/frame on the A76 CPU cluster (ONNX Runtime)
-// down to 10-20ms on one NPU core, verified against PhotonVision's own shipped
-// yolov8nCOCO.rknn/fuelV1-yolo11n.rknn models on the bench Orange Pi.
+// Runs a YOLOv8/v11 export on the RK3588's NPU via the RKNN runtime (librknnrt.so).
 //
-// Deliberately reuses YoloPostProcess::DecodeAndNms (the exact same decoder OnnxDetectionBackend
-// uses) rather than a separate RKNN-specific decode path - both backends produce the same
-// anchor-free [4+numClasses, numAnchors] head layout in the end, and rknn_output's own
-// want_float=1 flag does the int8/fp16 dequantization for us, so there is no format difference
-// left for this code to handle by the time DecodeAndNms sees it.
+// Reuses YoloPostProcess::DecodeAndNms; rknn_output's want_float=1 does the int8/fp16 dequantisation.
 class RknnDetectionBackend : public IDetectionBackend {
 public:
 	RknnDetectionBackend();
@@ -26,11 +19,8 @@ public:
 	std::string Name() const override { return "RKNN (NPU)"; }
 
 private:
-	// one FPN scale of an un-fused, multi-output DFL export (the airockchip/rknn_model_zoo
-	// recipe PhotonVision's own shipped models use - confirmed against the real
-	// yolov8nCOCO.rknn/fuelV1-yolo11n.rknn on the bench Orange Pi: 9 outputs, grouped in triples
-	// of (box[4*regMax,H,W], class[numClasses,H,W], scoreSum[1,H,W] - unused, a fast NPU-side
-	// pre-filter this CPU-side decode doesn't need)). See YoloPostProcess::DecodeDflMultiScaleAndNms.
+	// one FPN scale of an un-fused multi-output DFL export (rknn_model_zoo recipe): outputs come in triples of
+	// box[4*regMax,H,W], class[numClasses,H,W], scoreSum[1,H,W] (unused); see YoloPostProcess::DecodeDflMultiScaleAndNms
 	struct ScaleMeta {
 		uint32_t boxOutputIndex, clsOutputIndex;
 		int gridH, gridW, stride, regMax;
@@ -48,8 +38,7 @@ private:
 	int m_NumOutputs = 0;
 	int m_NumClasses = 0;
 
-	// n_output==1 case (a fused single-head export, matching ONNX's own layout) - kept as a
-	// fallback for any RKNN model NOT exported via the rknn_model_zoo multi-output recipe.
+	// n_output==1 case (a fused single-head export, as in ONNX): fallback for models not exported via the multi-output recipe
 	rknn_tensor_attr m_FusedOutputAttr{};
 
 	std::vector<ScaleMeta> m_Scales;

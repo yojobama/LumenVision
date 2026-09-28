@@ -4,10 +4,7 @@ import { ApiService } from '../services/ApiService';
 
 const api = new ApiService();
 
-// ROADMAP.md Phase 8/E6: quick save/activate for the WHOLE node graph - distinct from the
-// per-source pipeline-profile switcher already on each camera node (Inspector.tsx). A plain
-// inline control, not a modal: this project's other modals (AddSourceModal/AddSinkModal) exist
-// for real multi-field forms, and a graph profile only ever needs one name.
+// Save/activate controls for the whole node graph (distinct from per-source pipeline profiles).
 export const GraphProfileBar: React.FC<{ onToast: (m: string, t: 'success' | 'error' | 'info') => void }> = ({ onToast }) => {
   const [profiles, setProfiles] = React.useState<string[]>([]);
   const [selected, setSelected] = React.useState('');
@@ -45,10 +42,7 @@ export const GraphProfileBar: React.FC<{ onToast: (m: string, t: 'success' | 'er
 
   const activate = async () => {
     if (!selected) return;
-    // this is genuinely destructive (tears down every currently-live source/sink and rebuilds
-    // from the saved snapshot - GraphProfile.cs's own comment) and rare enough that a plain
-    // browser confirm is the right amount of ceremony, unlike this project's other modal-based
-    // flows which exist for real multi-field input, not a single yes/no gate.
+    // destructive: tears down every live source/sink and rebuilds from the snapshot, so confirm first
     if (!window.confirm(`Replace the current graph with saved profile "${selected}"? Anything not saved first will be lost.`)) return;
     setBusy(true);
     try {

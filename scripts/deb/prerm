@@ -1,8 +1,6 @@
 #!/bin/sh
-# lumenvision-backend .deb prerm - stop the service before its files disappear from under it.
-# Deliberately does NOT remove the `lumen` system user or its group memberships on remove/purge -
-# standard Debian packaging convention leaves system users in place rather than risk orphaning
-# file ownership elsewhere on the machine.
+# lumenvision-backend .deb prerm - stops the service before its files are removed.
+# The `lumen` user and its groups are kept, per Debian convention.
 set -e
 
 case "$1" in

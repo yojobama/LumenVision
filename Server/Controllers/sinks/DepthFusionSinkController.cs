@@ -5,10 +5,8 @@ using Server.Web;
 
 namespace Server.Controllers.sinks
 {
-    // Fuses a detector's bounding boxes with a StereoDepthSink's depth grid - see
-    // STEREO_IMPLEMENTATION_PLAN.md ss10.4. Bind the detector with the ordinary
-    // PATCH /api/sink/bind (it must itself be bound to the StereoDepthSink's own rectified-left
-    // frame output, not a raw camera); attach the depth source separately via /attachDepthSource.
+    // Fuses a detector's bounding boxes with a StereoDepthSink's depth grid. The detector is bound via PATCH /api/sink/bind
+    // (to the StereoDepthSink's rectified-left output); the depth source is attached via /attachDepthSource.
     internal class DepthFusionSinkController : ControllerBase
     {
         // POST: create a DepthFusionSink
@@ -19,8 +17,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinkId);
         }
 
-        // PATCH: attach the StereoDepthSink this node reads its depth grid from directly - not
-        // the same as binding a source (see DepthFusionNode.h).
+        // PATCH: attach the StereoDepthSink whose depth grid this node reads (not an ordinary source bind)
         [HttpPatch("depthFusionSink/{id}/attachDepthSource")]
         public Task AttachDepthSource(int id, [FromQuery] int stereoDepthSinkId)
         {

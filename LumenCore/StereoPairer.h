@@ -5,11 +5,8 @@
 #include <utility>
 #include <cstdint>
 
-// Shared left/right frame-pairing state, factored out of StereoCalibrator and StereoDepthNode -
-// both duplicated this exact "most recent frame not yet paired, per eye, gated on capture-time
-// skew" logic byte for byte (see STEREO_IMPLEMENTATION_PLAN.md P1). ISink::ProcessingThreadLoop
-// only hands Process() the sources whose frame count changed since the last pass, so two
-// free-running cameras routinely deliver one eye at a time.
+// Shared left/right frame-pairing state: the latest unpaired frame per eye, gated on capture-time skew.
+// ISink::ProcessingThreadLoop only hands Process() sources whose frame count changed, so one eye often arrives at a time.
 class StereoPairer
 {
 public:

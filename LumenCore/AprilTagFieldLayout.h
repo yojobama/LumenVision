@@ -10,24 +10,16 @@ struct AprilTagFieldPose {
 	cv::Matx33d rotation;
 };
 
-// Loads WPILib's own AprilTagFieldLayout JSON format directly (the same file a team's robot
-// code already loads via AprilTagFieldLayout.loadFromResource(...)/fromResource(...)), rather
-// than inventing a project-specific schema a team would have to hand-maintain a second copy of.
-// Format (the fields this class actually reads - a real field JSON has more metadata than this,
-// all ignored):
+// Loads WPILib's AprilTagFieldLayout JSON format directly. Only these fields are read; other
+// metadata is ignored:
 //   { "tags": [ { "ID": 1, "pose": { "translation": {"x":.., "y":.., "z":..},
 //                                    "rotation": {"quaternion": {"W":..,"X":..,"Y":..,"Z":..}} }
 //               }, ... ] }
 //
-// Used by ApriltagDetector's multi-tag PnP path (ROADMAP.md Phase 7): each visible tag with a
-// known field pose contributes its 4 corners (in field-frame 3D, via AprilTagFieldPose) to one
-// combined solvePnP call, recovering a single field-relative camera pose - more robust than
-// trusting any one tag's own (noisier, especially at range/oblique angle) single-tag estimate.
+// Used by ApriltagDetector's multi-tag PnP to solve one field-relative camera pose.
 class AprilTagFieldLayout {
 public:
-	// Returns false (and leaves this layout empty) on any parse failure - a missing/malformed
-	// field layout file should disable multi-tag PnP gracefully, not throw and take the whole
-	// detector down with it.
+	// Returns false (leaving the layout empty) on any parse failure; never throws.
 	bool LoadFromFile(const std::string& jsonPath);
 
 	bool TryGetTagPose(int id, AprilTagFieldPose& outPose) const;

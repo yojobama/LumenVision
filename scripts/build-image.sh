@@ -1,44 +1,22 @@
 #!/usr/bin/env bash
-# Builds a customized, flashable Orange Pi 5-family OS image: downloads Armbian's own published
-# Debian 13 "trixie" vendor-kernel image for the given board, installs the proprietary libmali
-# (Mali G610, driver release "g24p0") Vulkan/GLES userspace driver and the already-built
-# lumenvision-backend .deb into it via systemd-nspawn, sets the hostname, and re-compresses the
-# result.
+# Builds a flashable Orange Pi 5-family OS image: downloads Armbian's Debian 13 "trixie"
+# vendor-kernel image for the board, builds and installs the libmali (Mali G610, "g24p0") Vulkan
+# driver and the lumenvision-backend .deb into it via systemd-nspawn, sets the hostname and
+# recompresses the result.
 #
-# Why customize Armbian's own image instead of building Armbian from source: Armbian already
-# publishes exactly this board-support/driver work (kernel, u-boot, DTBs) per board, continuously
-# - reimplementing that here would just mean redoing what Armbian's own maintainers already do.
-# This script only adds what Armbian's image doesn't have: this project's own software, and the
-# one proprietary driver package no apt repository currently mirrors as a binary (see the libmali
-# section below).
-#
-# Why systemd-nspawn, not a plain chroot: scripts/deb/postinst calls `systemctl daemon-reload`
-# (unguarded, under `set -e`) plus `systemctl enable`/`restart` - none of which work without a
-# running systemd/D-Bus, which a bare chroot doesn't have. `systemd-nspawn -b` boots a real (if
-# lightweight) systemd inside the container, so postinst runs completely unmodified - the exact
-# same script that already works on real hardware.
-#
-# Why libmali is built from source here rather than downloaded: JeffyCN/mirrors (the
-# actively-maintained fork of rockchip-linux/libmali) ships no GitHub Releases - its `libmali`
-# branch is a Debian/meson SOURCE tree only (confirmed directly against the GitHub API, not
-# assumed). Building it via dpkg-buildpackage matches this project's own established pattern
-# (install-deps.sh already builds MPP/ffmpeg-rockchip/apriltag/vkapriltag from source rather than
-# trusting a third-party binary mirror). The proprietary blob is required, not Panthor/Mesa (the
-# open-source alternative some newer Armbian RK3588 builds default to) - measured directly at
-# ~14x slower than libmali for this project's own vkapriltag Vulkan compute workload.
+# systemd-nspawn -b is used (not chroot) because scripts/deb/postinst needs a running systemd.
+# libmali is built from the JeffyCN/mirrors source tree (no binary releases exist); the
+# proprietary driver is used instead of Panthor/Mesa, which is ~14x slower for vkapriltag.
 #
 # Usage: VERSION=1.2.3 scripts/build-image.sh <board-slug>
 #   board-slug - one of: orangepi5 orangepi5-plus orangepi5b orangepi5pro orangepi5-max
 #                orangepi5-ultra
-#   VERSION    - same package version build-deb.sh was given - required.
-#   DEB_FILE   - path to the already-built lumenvision-backend_*_arm64.deb - optional, defaults
-#                to the single .deb found in the repo root (what build-deb.sh just produced, the
-#                same convention .github/workflows/release.yml's build-images job relies on).
+#   VERSION    - package version given to build-deb.sh; required
+#   DEB_FILE   - path to the lumenvision-backend_*_arm64.deb; defaults to the single .deb in the repo root
 # Produces: lumenvision-<slug>_<VERSION>.img.xz in the repo root.
 #
-# Must run as root (loop devices, mount, systemd-nspawn) on a genuine aarch64 Linux machine (an
-# `ubuntu-24.04-arm` CI runner, or real ARM hardware) - both the base image and the libmali build
-# are aarch64, and systemd-nspawn needs a matching host to execute them natively.
+# Must run as root (loop devices, mount, systemd-nspawn) on an aarch64 Linux machine, since the
+# base image and libmali build are aarch64.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -126,11 +104,7 @@ apt-get install -y --no-install-recommends \
 
 git clone --depth 1 --branch libmali https://github.com/JeffyCN/mirrors.git "$LIBMALI_SRC"
 
-# Trim debian/targets and debian/control down to just the one G610 "g24" plain-gbm (headless, no
-# X11/Wayland compositor needed on a server board) variant - the untrimmed source tree builds
-# ~25 unrelated GPU-family/platform combinations (bifrost/midgard/utgard, other Valhall GPUs,
-# X11/Wayland variants) via debian/rules' own `for target in $(TARGETS)` loop, none of which this
-# project will ever install.
+# Keep only the G610 "g24" plain-gbm target; the full tree builds ~25 unrelated GPU variants
 grep -F "${LIBMALI_PKG}.so" "$LIBMALI_SRC/debian/targets" > "$LIBMALI_SRC/debian/targets.filtered"
 mv "$LIBMALI_SRC/debian/targets.filtered" "$LIBMALI_SRC/debian/targets"
 awk -v RS="" -v pkg="Package: ${LIBMALI_PKG}" '
@@ -154,17 +128,8 @@ echo "==> Built $LIBMALI_DEB"
 echo "==> [3/6] Extracting base image and mapping partitions"
 unxz -k "$BASE_IMG_XZ"
 
-# Armbian's published image ships with its root partition sized tight (just enough for the base
-# OS) - it only grows to fill the real SD card/eMMC via a first-boot resize service, which never
-# runs here since this script only ever mounts the raw .img through a loop device, it never
-# actually boots the image on real hardware. Confirmed the hard way: installing libmali +
-# lumenvision-backend (which bundles OpenCV/ONNX Runtime/ffmpeg-rockchip/etc. - "every
-# from-source runtime dependency", per its own .deb Description) into the un-grown image failed
-# outright with "No space left on device" partway through unpacking. Growing by a fixed, generous
-# 3GB up front is simpler and safer than precisely sizing to the .deb's own Installed-Size - the
-# extra headroom costs almost nothing in the final .img.xz (xz compresses empty ext4 blocks to
-# near nothing) and the image gets shrunk to fit the real card/eMMC again on first real boot
-# anyway (Armbian's own resize service works in the other direction too).
+# Armbian's base image has a tight root partition (its resize runs on first boot, not here), so
+# grow it by a fixed 3GB to fit libmali and the backend .deb
 echo "==> Growing image +3GB to fit the customization (Armbian ships its base image sized tight)"
 truncate -s +3G "$BASE_IMG"
 LOOP_DEV="$(losetup --find --show -P "$BASE_IMG")"
@@ -173,8 +138,7 @@ growpart "$LOOP_DEV" 1
 e2fsck -f -y "${LOOP_DEV}p1" || true
 resize2fs "${LOOP_DEV}p1"
 
-# Armbian images: partition 1 is the single ext4 root (u-boot lives in raw sectors before
-# partition 1, not a separate partition, so there's nothing else here to mount).
+# Partition 1 is the single ext4 root; u-boot sits in raw sectors before it
 mount "${LOOP_DEV}p1" "$MOUNT_DIR"
 
 echo "==> [4/6] Staging the .deb files into the container"
@@ -217,17 +181,13 @@ EOF
 
 mkdir -p /etc/systemd/system/lumenvision.service.d
 cat > /etc/systemd/system/lumenvision.service.d/10-vulkan-icd.conf <<EOF
-# Written by scripts/build-image.sh at image-build time - pins the board's Vulkan ICD to the
-# proprietary libmali driver installed above, not whatever the base Armbian image would
-# otherwise default to (Panthor/Mesa, measured ~14x slower for vkapriltag's compute workload).
+# Written by scripts/build-image.sh - pins the Vulkan ICD to the libmali driver
 [Service]
 Environment=VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/libmali.json
 EOF
 
 echo "----> Creating the lumen login user (password: vision, sudo) for on-board debugging"
-# Image-only: the .deb itself only ever creates lumen as a no-login system user (see
-# scripts/deb/postinst). Creating it here first, as a real login user, means the postinst's
-# 'id lumen' check finds it and reuses it - so the service runs as this same user on images.
+# Image-only login user; created before the .deb so its postinst reuses it as the service user
 apt-get install -y sudo
 useradd --create-home --user-group --shell /bin/bash lumen
 echo 'lumen:vision' | chpasswd

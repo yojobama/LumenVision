@@ -7,7 +7,6 @@
 #include <memory>
 #include <fstream>
 
-// Log levels
 enum class LogLevel {
     Info,
     Warning,
@@ -51,8 +50,7 @@ private:
     std::string m_FilePath;
     std::recursive_mutex m_ResultLock;
     std::vector<Log*> m_Logs;
-    // opened once (append mode) instead of every FlushLogs() call - see Logger.cpp's own comment
-    // on why that used to be a real per-log-call disk-I/O cost.
+    // opened once (append mode) rather than on every FlushLogs() call
     std::ofstream m_LogFile;
 };
 

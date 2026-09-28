@@ -25,11 +25,8 @@ cv::Mat FramePool::Acquire(int rows, int cols, int type, std::shared_ptr<void>& 
 		buffer = std::make_shared<std::vector<uint8_t>>(bytesNeeded);
 	}
 
-	// Aliasing-style: `owner`'s own control block is independent of `buffer`'s, but its deleter
-	// captures `buffer` by value (a second shared_ptr to the SAME vector), keeping the vector
-	// alive for as long as `owner` (and every copy of it - e.g. one per Frame copy across sink
-	// threads) is alive. When the last copy of `owner` is destroyed, the deleter runs exactly
-	// once, pushing `buffer` back onto this pool's free list rather than letting it be destroyed.
+	// Aliasing-style: `owner`'s deleter captures `buffer`, keeping it alive until the last copy of `owner`
+	// is destroyed, then pushes it back onto the free list.
 	uint8_t* rawData = buffer->data();
 	FramePool* self = this;
 	owner = std::shared_ptr<void>(rawData, [self, buffer, key](void*) mutable {

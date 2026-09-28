@@ -11,26 +11,19 @@ import java.util.ArrayList;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-// Exercises LumenPoseEstimator.compose directly (package-private, same package) rather than
-// going through the public constructor+update(): that path needs a real LumenCamera, which needs
-// a real, native-backed NetworkTableInstance to even construct - LumenCamera's own live NT4 read
-// path already has thorough coverage on the C++ side (test_networktables_nt4_e2e.cpp, the actual
-// producer of this exact schema), and this plain java-library module (unlike the real robot/
-// GradleRIO project) has no wiring to load ntcore's native JNI library in a bare test run. What's
-// actually at risk of a bug here - the pose composition math, and the "no multi-tag result this
-// frame -> empty" contract - needs neither a camera nor real NT4 at all.
+// Tests LumenPoseEstimator.compose directly (package-private) because the public path needs a
+// native-backed NetworkTableInstance, which this module's tests cannot load
 class LumenPoseEstimatorTest {
 
     @Test
     void compose_appliesFieldToCameraAndCameraToRobotOffset() {
         double[] identityRowMajor = {1, 0, 0, 0, 1, 0, 0, 0, 1};
-        // camera sits at field (5, 0, 0) with no rotation, having solved a 3-tag multitag PnP
+        // camera at field (5, 0, 0) with no rotation, from a 3-tag multi-tag solve
         LumenMultiTagResult multiTag = new LumenMultiTagResult(5.0, 0.0, 0.0, identityRowMajor, 3, 0.4);
         LumenPipelineResult result =
                 new LumenPipelineResult(new ArrayList<>(), 12.0, Optional.of(multiTag));
 
-        // camera mounted 1m forward of the robot's own origin, no rotation - so the robot origin
-        // sits 1m BEHIND the camera's own field position.
+        // camera mounted 1m forward of the robot origin, so the robot sits 1m behind the camera
         Transform3d cameraToRobot = new Transform3d(new Translation3d(1, 0, 0), new Rotation3d()).inverse();
 
         Optional<LumenEstimatedRobotPose> estimated = LumenPoseEstimator.compose(result, cameraToRobot);

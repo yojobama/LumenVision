@@ -5,11 +5,7 @@ using System.Threading.Tasks;
 
 namespace Server.Web
 {
-    // Throwable HTTP status - the ASP.NET Core stand-in for EmbedIO's HttpException, kept so the
-    // controllers' existing "throw from deep inside a Task<T> action" style still works without
-    // rewriting every action to return IActionResult (which would also change what
-    // OpenApiGenerator can infer about response types). ApiExceptionMiddleware turns it into the
-    // matching status code.
+    // Throwable HTTP status; ApiExceptionMiddleware turns it into the matching status code.
     public sealed class ApiException : Exception
     {
         public int StatusCode { get; }
@@ -23,10 +19,8 @@ namespace Server.Web
         public static ApiException BadRequest(string? message = null) => new(StatusCodes.Status400BadRequest, message);
     }
 
-    // Maps ApiException to its status code and any other unhandled exception to 500, logging it -
-    // the same status semantics EmbedIO's own exception handling gave every endpoint (400/404 from
-    // HttpException, 500 for anything else). Bodies are short plain text rather than EmbedIO's HTML
-    // error page; every client (webui ApiService, Java LumenCoprocessorControl) only checks status.
+    // Maps ApiException to its status code and any other unhandled exception to 500 (logged),
+    // with short plain-text bodies.
     public sealed class ApiExceptionMiddleware
     {
         private readonly RequestDelegate _next;

@@ -1,7 +1,5 @@
 #!/bin/sh
-# lumenvision-backend .deb postinst - mirrors the user/permissions/service steps scripts/deploy.ps1
-# previously did by hand over SSH, so `dpkg -i`/`apt install ./*.deb` alone is enough to end up
-# with a running coprocessor.
+# lumenvision-backend .deb postinst - creates the lumen user, fixes permissions and starts the service
 set -e
 
 case "$1" in
@@ -9,14 +7,11 @@ case "$1" in
         if ! id lumen >/dev/null 2>&1; then
             useradd --system --no-create-home --shell /usr/sbin/nologin lumen
         fi
-        # video/render: /dev/dri (Vulkan/rkmpp) and /dev/mpp_service (rkmpp encode) access - see
-        # scripts/lumenvision.service's own comment.
+        # video/render: /dev/dri (Vulkan/rkmpp) and /dev/mpp_service access
         usermod -aG video,render lumen
         chown -R lumen:lumen /opt/lumenvision
 
-        # picks up the udev rule this package just installed - device nodes ship root-only
-        # (crw-------) without it, so RGA/MPP hardware init fails with an opaque error rather
-        # than a permissions one.
+        # Reapply the packaged udev rule; device nodes are otherwise root-only and RGA/MPP init fails
         udevadm control --reload-rules || true
         udevadm trigger --subsystem-match=dma_heap 2>/dev/null || true
         udevadm trigger --sysname-match=mpp_service 2>/dev/null || true
@@ -24,8 +19,7 @@ case "$1" in
 
         systemctl daemon-reload
         systemctl enable lumenvision.service
-        # restart, not just start - an upgrade over an already-running install must pick up the
-        # new binary rather than keep serving the old one until a manual restart.
+        # restart so an upgrade picks up the new binary
         systemctl restart lumenvision.service || true
         ;;
 esac

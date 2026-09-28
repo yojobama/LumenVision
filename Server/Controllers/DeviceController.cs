@@ -29,10 +29,7 @@ namespace Server.Controllers
             return Task.FromResult((int)LinuxResourceMonitor.Instance.GetLatestResourceInfo().RootDiskUsage.UsedPercent);
         }
 
-        // ROADMAP.md Phase 8e (match view): Manager::GetCpuTemperature() has existed natively
-        // since the SystemMonitor work but was never exposed over REST - a straight passthrough,
-        // not a cached value like the other three (LinuxResourceMonitor's own background sampler
-        // doesn't track temperature), so this makes one native call per request.
+        // GET: CPU temperature; one native call per request (not cached like the other device stats).
         [HttpGet("device/temperature")]
         public Task<int> GetDeviceTemperature()
         {

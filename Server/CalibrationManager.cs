@@ -9,20 +9,11 @@ namespace Server
         public long CalibratedAtUnixMs { get; set; }
     }
 
-    // ROADMAP.md Phase 8/E5: a calibration is only valid at the exact resolution it was computed
-    // at (see StoredCalibration's own comment on the codebase's existing lookup key), but nothing
-    // previously surfaced when a camera's CURRENT mode had drifted away from that - a
-    // SetCameraMode call silently left any bound ApriltagDetector's pose estimation running on
-    // now-mismatched (or, worse, stale-but-still-attached) intrinsics with no visible warning.
+    // Reports whether a camera has a calibration and whether it matches the camera's current resolution.
     public record struct CalibrationStatus(bool HasCalibration, bool MatchesCurrentResolution, int? CalibratedWidth, int? CalibratedHeight);
 
-    // Persists calibration results keyed by camera device path + resolution (a result is only
-    // valid for the exact resolution it was computed at), so a calibration survives a server
-    // restart and doesn't need re-doing every time a camera source is recreated.
-    //
-    // NOTE: auto-applying a stored result when a matching camera source is created (so a fresh
-    // ApriltagDetector node picks up real distortion coefficients without a manual calibrator
-    // round-trip) is not wired up yet - this only covers save/list/lookup. Follow-up work.
+    // Persists calibration results keyed by camera device path + resolution (a result is only valid
+    // at the resolution it was computed at), so they survive a server restart.
     public class CalibrationManager
     {
         public static CalibrationManager Instance { get; } = new CalibrationManager();
@@ -51,10 +42,8 @@ namespace Server
             File.WriteAllText(path, JsonSerializer.Serialize(calibrations, new JsonSerializerOptions { WriteIndented = true }));
         }
 
-        // resolves the camera path a calibrator sink is bound to (if any) and persists the
-        // result under it; a calibrator with no bound camera source (or bound to a non-camera
-        // source, e.g. a video file used for bench testing) is not persisted - there is nothing
-        // to key it by that would still mean anything after a restart
+        // resolves the camera path the calibrator sink is bound to and persists the result under it;
+        // not persisted when there is no bound camera source (e.g. a video file)
         public void SaveResult(int calibratorSinkId, CameraCalibrationResult result)
         {
             var sink = SinkManager.Instance.GetSinkById(calibratorSinkId);
@@ -81,11 +70,8 @@ namespace Server
 
         public List<StoredCalibration> GetAll() => calibrations;
 
-        // Not GetLatest(cameraPath, width, height) - this deliberately ignores the current
-        // resolution when looking a calibration up, then compares it against the camera's actual
-        // current mode itself, so it can tell "never calibrated" apart from "calibrated, but not
-        // at this resolution" rather than treating both as one "no match" case the way an
-        // exact-key lookup would.
+        // Ignores the current resolution when looking up, then compares against the camera's actual mode,
+        // to tell "never calibrated" from "calibrated at a different resolution".
         public CalibrationStatus GetCalibrationStatus(int sourceId)
         {
             Source? source = SourceManager.Instance.GetSourceById(sourceId);

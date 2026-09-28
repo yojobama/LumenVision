@@ -8,12 +8,9 @@ import edu.wpi.first.math.numbers.N3;
 import org.ejml.simple.SimpleMatrix;
 
 /**
- * The coprocessor's own multi-tag PnP result (ROADMAP.md Phase 7): one field-relative camera
- * pose jointly solved from every simultaneously-visible tag with a known field pose, rather than
- * any single tag's own (noisier, especially at range/oblique angle) estimate. Mirrors photonlib's
- * MultiTargetPNPResult in spirit, though not its exact shape - this project's coprocessor already
- * inverts the solve into a direct field-relative camera {@link Pose3d} (photonlib publishes the
- * raw camera-to-field transform and leaves the inversion to callers).
+ * The coprocessor's multi-tag PnP result: one field-relative camera pose solved jointly from all
+ * visible tags with known field poses. Analogous to photonlib's MultiTargetPNPResult, but the
+ * coprocessor has already inverted it into a camera {@link Pose3d}.
  */
 public class LumenMultiTagResult {
     private final Pose3d fieldToCamera;
@@ -21,11 +18,8 @@ public class LumenMultiTagResult {
     private final double reprojectionErrorPixels;
 
     /**
-     * @param rotationRowMajor the 9 elements of the camera's own field-relative rotation matrix,
-     *     row-major - same convention as {@link LumenTrackedTarget}'s own rotation matrix, for
-     *     the same reason (NetworkTablesSink.cpp's tags/r0..r8 topics): a robot program builds
-     *     the one Transform3d/Pose3d conversion itself, with no lossy Euler/quaternion
-     *     intermediate this end could get a convention wrong on.
+     * @param rotationRowMajor the 9 elements of the camera's field-relative rotation matrix, row-major
+     *     (the raw matrix published as tags/r0..r8, as in {@link LumenTrackedTarget})
      */
     LumenMultiTagResult(double x, double y, double z, double[] rotationRowMajor, int tagCount, double reprojectionErrorPixels) {
         Matrix<N3, N3> rotationMatrix = new Matrix<>(new SimpleMatrix(3, 3, true, rotationRowMajor));
@@ -35,27 +29,20 @@ public class LumenMultiTagResult {
     }
 
     /**
-     * The camera's own pose in FIELD coordinates - not camera-to-tag, unlike
-     * {@link LumenTrackedTarget#getBestCameraToTarget()}. Compose with the camera's own mount
-     * offset via WPILib's own {@code Pose3d.transformBy(Transform3d cameraToRobot)} to get the
-     * robot's field pose - no {@code LumenUtils} helper needed for that one-line composition.
+     * The camera's pose in field coordinates (not camera-to-tag). Compose with the camera mount
+     * offset via {@code Pose3d.transformBy(Transform3d cameraToRobot)} to get the robot pose.
      */
     public Pose3d getFieldToCamera() {
         return fieldToCamera;
     }
 
-    /** How many tags contributed to this solve - always >= 2 (a single tag never produces a
-     * multi-tag result; see LumenCamera.getMultiTagResult()'s own note on when this class exists
-     * at all vs. an empty Optional). */
+    /** Number of tags in the solve (always >= 2). */
     public int getTagCount() {
         return tagCount;
     }
 
-    /** RMS reprojection error in pixels across every contributing tag's corners - a real
-     * ambiguity/quality signal (mirroring photonlib's own MultiTargetPNPResult.estimatedPose.
-     * ambiguity in spirit): a value climbing well above ~1px on a well-calibrated camera usually
-     * means at least one tag's detected corners are noisy (motion blur, a tag near the image
-     * edge/corner, partial occlusion) rather than that the solve itself is untrustworthy outright. */
+    /** RMS reprojection error in pixels across the contributing tags' corners; a value well above ~1px
+     * on a calibrated camera suggests noisy corners (blur, edge tags, occlusion). */
     public double getReprojectionErrorPixels() {
         return reprojectionErrorPixels;
     }

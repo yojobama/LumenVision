@@ -5,7 +5,6 @@ SingleSourcePipelineTest::SingleSourcePipelineTest() : UnitTestBase() {}
 SingleSourcePipelineTest::~SingleSourcePipelineTest() {}
 
 bool SingleSourcePipelineTest::innerTest() {
-    // Construction test
     assert(true);
     return true;
 }

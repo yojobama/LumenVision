@@ -1,9 +1,6 @@
 #include "ObjectDetection.h"
 
-/// <summary>
-///  return a json string representation of the object detection
-/// </summary>
-/// <returns></returns>
+/// <summary>Returns the object detection as a JSON string.</summary>
 string ObjectDetection::ToString()
 {
 	return "{\"class_id\": " + std::to_string(m_ClassId) +

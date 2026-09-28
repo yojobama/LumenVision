@@ -16,11 +16,8 @@ public class LumenTrackedTarget {
     private final Transform3d bestCameraToTarget;
 
     /**
-     * @param rotationRowMajor the 9 elements of the tag's 3x3 rotation matrix, row-major - the
-     *     coprocessor's own NT4 schema (NetworkTablesSink.cpp's tags/r0..r8 topics), published as
-     *     the raw matrix rather than a derived Euler/quaternion representation specifically so
-     *     this constructor - not the coprocessor - owns the one conversion into WPILib's own
-     *     geometry types.
+     * @param rotationRowMajor the 9 elements of the tag's 3x3 rotation matrix, row-major (published
+     *     as tags/r0..r8); this constructor performs the conversion into WPILib geometry types
      */
     LumenTrackedTarget(int fiducialId, double x, double y, double z, double[] rotationRowMajor) {
         this.fiducialId = fiducialId;
@@ -37,9 +34,8 @@ public class LumenTrackedTarget {
     }
 
     /**
-     * The camera-to-tag transform in the camera's own coordinate frame (X forward, Y left, Z up
-     * - the same convention {@code apriltag_pose.h}'s {@code estimate_tag_pose} and WPILib's
-     * {@link Rotation3d} both already use, so no axis remapping happens here).
+     * The camera-to-tag transform in the camera frame (X forward, Y left, Z up, matching
+     * apriltag_pose.h and WPILib's {@link Rotation3d}).
      */
     public Transform3d getBestCameraToTarget() {
         return bestCameraToTarget;

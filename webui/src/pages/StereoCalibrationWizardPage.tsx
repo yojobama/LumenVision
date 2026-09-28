@@ -8,9 +8,7 @@ import { EPIPOLAR_RMS_GATE } from '../types';
 
 const api = new ApiService();
 
-// ROADMAP.md Phase 8d: the stereo calibration wizard - bind -> capture -> run -> result,
-// replacing StereoPage's old inline capture/run UI. epipolarRms (not stereoRms) is the real
-// gate - see STEREO_IMPLEMENTATION_PLAN.md ss10.2.
+// Stereo calibration wizard (bind, capture, run, result). epipolarRms is the real quality gate.
 export const StereoCalibrationWizardPage: React.FC<{
   sources: Source[];
   onToast: (m: string, t: 'success' | 'error' | 'info') => void;
@@ -19,11 +17,8 @@ export const StereoCalibrationWizardPage: React.FC<{
   const navigate = useNavigate();
   const id = Number(sinkId);
 
-  // ROADMAP.md Phase 8/E6: "one camera or two?" - a real side-by-side/top-bottom stereo camera
-  // (one V4L2 device producing both eyes in a single frame) is just as common a rig as two
-  // separate cameras, and previously needed the RoiSource split done by hand via a raw REST call
-  // before this wizard was even usable with one. 'choose' is the new first step; 'two'/'one' pick
-  // which of the rest of the wizard's flow applies.
+  // one camera or two: a side-by-side/top-bottom stereo camera is split into two RoiSource nodes;
+  // 'choose' is the first step and 'two'/'one' select the flow
   const [mode, setMode] = useState<'choose' | 'two' | 'one'>('choose');
   const [singleCameraId, setSingleCameraId] = useState<number | ''>('');
   const [splitting, setSplitting] = useState(false);
@@ -59,9 +54,8 @@ export const StereoCalibrationWizardPage: React.FC<{
     return () => clearInterval(interval);
   }, [refresh]);
 
-  // Splits the chosen camera's current frame in half (left/right eyes) via two RoiSource nodes
-  // (ROADMAP.md Phase 3d, proven this session) and binds them directly - skips the manual "1.
-  // Bind cameras" step entirely, since there's nothing left to choose once the split is done.
+  // Splits the chosen camera's frame into left/right eyes via two RoiSource nodes and binds them,
+  // skipping the manual bind step.
   const splitAndBind = async () => {
     if (!singleCameraId) return;
     setSplitting(true);

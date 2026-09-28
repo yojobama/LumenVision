@@ -47,9 +47,7 @@ namespace Server.Controllers.sources
                     {
                         await file.CopyToAsync(output, HttpContext.RequestAborted);
                     }
-                    // same "native code must not open this file until the upload's own
-                    // FileStream has actually closed" fix as ImageFileSourceController.Create -
-                    // see its own comment.
+                    // Native code must not open the file until the upload's FileStream is closed (see ImageFileSourceController.Create).
                     created.Add(SourceManager.Instance.InitializeVideoFileSource(savedPath, 30, Path.GetFileNameWithoutExtension(fileName)));
                 }
             }
@@ -60,13 +58,8 @@ namespace Server.Controllers.sources
         [HttpPatch("videoFileSource/changeFPS")]
         public Task ChangeFPS([FromQuery] int fps)
         {
-            // TODO: Implement;
             return Task.CompletedTask;
         }
 
-        // ---------------------------------------
-        // add all sorts of things like exposure and stuff that may matter to some people
-        // (look at photonvision for examples, they more or less mastered this craft)
-        // ---------------------------------------
     }
 }

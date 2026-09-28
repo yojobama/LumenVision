@@ -24,12 +24,12 @@ them alone with a banner pointing here.
 | Server.csproj native-library properties | `FRCVLibPlatform` / `FRCVLibConfiguration` / `FRCVLibBuildDir` | `LumenCorePlatform` / `LumenCoreConfiguration` / `LumenCoreBuildDir` |
 | NT4 root table default | `FRCV` | `lumenvision` |
 | NT4 client identity default | `FRCV` (shared with the root table — a real bug: two coprocessors on one robot would silently register the same NT4 client identity) | `lumenvision` (now an independent literal, not copied from the root table) |
-| Browser `localStorage` settings key | `frcvSettings` | `lumenSettings` (one-time migration on load: `rootTable` is rewritten only if it's still exactly the old default, so a customised value survives) |
+| Browser `localStorage` settings key | `frcvSettings` | `lumenSettings` (no migration; old settings are not carried over) |
 | systemd unit | `frcv.service` | `lumenvision.service` |
 | systemd user/group | `frcv` | `lumen` |
 | Install directory | `/opt/frcv` | `/opt/lumenvision` |
 | mDNS | `frcv.local` (never actually implemented) | not a hostname change — the bench Pi keeps the PhotonVision image's `photonvision.local` identity; an avahi alias is planned instead |
-| Dependency cache env var | `FRCV_BUILD_ROOT` | `LUMEN_BUILD_ROOT` (falls back to the deprecated old name with a warning; `~/.frcv-build` is migrated to `~/.lumen-build` with a back-symlink left at the old path, since the cache is mostly non-relocatable CMake build trees) |
+| Dependency cache env var | `FRCV_BUILD_ROOT` | `LUMEN_BUILD_ROOT` (default cache `~/.lumen-build`; the old variable and `~/.frcv-build` are no longer read) |
 | Log file | `FRCVLog.txt` | `LumenVision.log` |
 | RTP track label (WebRTC) | `frcv-video` | `lumen-video` |
 | ONNX Runtime logging tag | `FRCV` | `LumenVision` |

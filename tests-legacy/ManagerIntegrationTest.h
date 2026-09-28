@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/Manager.h"
+#include "../LumenCore/Manager.h"
 
 class ManagerIntegrationTest : public UnitTestBase 
 {
@@ -10,7 +10,6 @@ public:
 private:
     bool innerTest() override;
     
-    // Helper methods for testing specific scenarios
     bool testCameraSourceWorkflow(Manager& manager);
     bool testVideoFileWorkflow(Manager& manager);
     bool testImageFileWorkflow(Manager& manager);

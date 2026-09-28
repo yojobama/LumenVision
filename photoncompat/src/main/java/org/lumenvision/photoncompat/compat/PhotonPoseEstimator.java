@@ -7,12 +7,8 @@ import org.lumenvision.photoncompat.LumenPoseEstimator;
 import java.util.Optional;
 
 /**
- * Thin {@link LumenPoseEstimator} wrapper - see {@link PhotonCamera}'s own class comment for why
- * this package exists. {@code update()} returns {@link LumenEstimatedRobotPose} directly (not
- * another compat-package wrapper): unlike {@code PhotonCamera}/{@code PhotonPipelineResult}/
- * {@code PhotonTrackedTarget}, real PhotonVision's own {@code EstimatedRobotPose} has no
- * {@code PoseStrategy} equivalent here worth hiding behind a second thin type - see
- * {@link LumenEstimatedRobotPose}'s own class comment.
+ * Thin {@link LumenPoseEstimator} wrapper for drop-in migration. {@code update()} returns {@link
+ * LumenEstimatedRobotPose} directly, since there is no {@code PoseStrategy} to hide.
  */
 public class PhotonPoseEstimator {
     private final LumenPoseEstimator lumenEstimator;

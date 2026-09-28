@@ -29,8 +29,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinkId);
         }
 
-        // POST: Save the checkerboard/ChArUco corners detected in the sink's latest frame, to be
-        // used in the calibration phase once enough snapshots have been collected
+        // POST: save the corners detected in the sink's latest frame for later calibration
         [HttpPost("cameraCalibrationSink/{id}/saveDetection")]
         public Task<bool> SaveDetection(int id)
         {
@@ -59,10 +58,8 @@ namespace Server.Controllers.sinks
             return Task.CompletedTask;
         }
 
-        // POST: explicitly run cv::calibrateCamera over every saved snapshot; the UI decides
-        // when this happens rather than it running implicitly on every result fetch. Also
-        // persists the result (keyed by the bound camera's device path + resolution) if the
-        // sink is bound to a camera source.
+        // POST: run cv::calibrateCamera over all saved snapshots; persists the result keyed by the bound
+        // camera's device path and resolution (if bound to a camera source).
         [HttpPost("cameraCalibrationSink/{id}/run")]
         public Task<CameraCalibrationResultDto> RunCalibration(int id)
         {
@@ -84,8 +81,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(CalibrationManager.Instance.GetAll().Select(StoredCalibrationDto.From).ToList());
         }
 
-        // GET: every saved snapshot's detected corner points, for the calibration wizard's live
-        // coverage heatmap (ROADMAP.md Phase 8d).
+        // GET: every saved snapshot's detected corner points (for the calibration coverage heatmap)
         [HttpGet("cameraCalibrationSink/{id}/coverage")]
         public Task<CalibrationCoverageDto> GetCoverage(int id)
         {

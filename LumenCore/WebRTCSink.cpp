@@ -9,13 +9,8 @@ namespace {
 	constexpr uint32_t kSsrcValue = 42;
 	constexpr uint8_t H264_PAYLOAD_TYPE = 96;
 
-	// FRC field networks only pass ports 5800-5810 for team use; libdatachannel's default is any
-	// OS-assigned ephemeral UDP port (1024-65535), which a real field would simply drop - live
-	// preview would work on the bench and silently fail at competition. 5800 is the web server
-	// (HTTP/WebSocket/MJPEG) and 5810 is the roboRIO's NT4 server, so media gets the slice in
-	// between. With the ICE UDP mux (libjuice), the first peer connection binds ONE socket to the
-	// first free port in this range and every later connection reuses it, so any number of
-	// concurrent previews still fit - the rest of the range is headroom if 5801 is taken.
+	// FRC field networks only pass ports 5800-5810 for team use; media uses 5801-5809 (5800 is the web server, 5810 the
+	// roboRIO NT4 server). The ICE UDP mux (libjuice) binds one socket to the first free port and reuses it for every later connection.
 	constexpr uint16_t kIcePortRangeBegin = 5801;
 	constexpr uint16_t kIcePortRangeEnd = 5809;
 }
@@ -37,17 +32,8 @@ WebRTCSink::~WebRTCSink()
 	if (m_PeerConnection) m_PeerConnection->close();
 }
 
-// Builds a fresh PeerConnection/Track/SrReporter triple - caller must already hold
-// m_ConnectionMutex. Split out of the constructor so CreateOffer() can call it again for every
-// new negotiation: a browser tab (re)opening Live Preview creates a brand new RTCPeerConnection
-// with its own ICE ufrag/pwd and DTLS fingerprint, and answering it against the OLD, already-
-// "stable" native PeerConnection left over from a previous session is rejected outright by
-// libdatachannel - confirmed live, on a real Orange Pi with a real camera: stopping and
-// restarting Live Preview (or just navigating away from /graph and back) failed every time with
-// "WebRTCSink::SetAnswer failed: Unexpected remote answer description in signaling state stable"
-// followed by "AddIceCandidate dropped a candidate: Got a remote candidate without ICE
-// transport" - the sink's own peer connection was never actually reset between sessions, only
-// ever created once in the constructor and reused (and re-answered against) forever after.
+// Builds a fresh PeerConnection/Track/SrReporter triple; caller must hold m_ConnectionMutex. CreateOffer() calls it for
+// every new negotiation, since a new browser RTCPeerConnection cannot be answered against a stale "stable" peer connection.
 void WebRTCSink::InitializePeerConnection()
 {
 	if (m_PeerConnection) m_PeerConnection->close();
@@ -118,14 +104,8 @@ void WebRTCSink::SetAnswer(const std::string& sdp)
 	try {
 		pc->setRemoteDescription(Description(sdp, Description::Type::Answer));
 	} catch (const std::exception& e) {
-		// Deliberately swallowed, not rethrown: whether a C++ exception thrown here gets
-		// marshaled into a well-behaved C# exception at the SWIG/P-Invoke boundary depends on
-		// swig.i actually wrapping this call with an %exception typemap, and a neighboring
-		// method on this exact class (AddIceCandidate) was confirmed to have no such wrapper -
-		// an uncaught exception there crossed the boundary and terminated the whole server
-        // process. Not worth gambling on this one being wired correctly: a bad/stale answer just
-		// means this connection attempt fails, which the browser side already notices via
-		// connectionstatechange/timeout without needing a thrown exception here.
+		// Swallowed, not rethrown: an exception crossing the SWIG/P-Invoke boundary without an %exception typemap can
+		// terminate the server, and a bad answer just fails this attempt (the browser notices via connectionstatechange/timeout).
 		if (m_Logger) m_Logger->EnterLog(::LogLevel::Error, std::string("WebRTCSink::SetAnswer failed: ") + e.what());
 	}
 }
@@ -140,12 +120,8 @@ void WebRTCSink::AddIceCandidate(const std::string& candidate, const std::string
 	try {
 		pc->addRemoteCandidate(Candidate(candidate, mid));
 	} catch (const std::exception& e) {
-		// Same reasoning as SetAnswer above - libdatachannel throws std::logic_error if a
-		// candidate arrives before the remote description is set (a real race: browsers start
-		// firing onicecandidate as soon as setLocalDescription is called, which can beat this
-		// sink's /webrtcSink/answer request to the server). A dropped candidate is harmless -
-		// ICE negotiation tolerates missing candidates - so this is swallowed rather than
-		// rethrown, unlike SetAnswer where the caller genuinely needs to know the answer failed.
+		// libdatachannel throws std::logic_error if a candidate arrives before the remote description is set (a real race);
+		// a dropped candidate is harmless, so it is swallowed.
 		if (m_Logger) m_Logger->EnterLog(::LogLevel::Warning, std::string("WebRTCSink::AddIceCandidate dropped a candidate: ") + e.what());
 	}
 }
@@ -194,11 +170,8 @@ bool WebRTCSink::EnsureEncoderInitialized(int width, int height)
 	m_CodecContext->height = height;
 	m_CodecContext->time_base = AVRational{ 1, m_Config.fps };
 	m_CodecContext->framerate = AVRational{ m_Config.fps, 1 };
-	// NV12 when RGA is compiled in - it's the format RgaColorConverter actually produces (and
-	// the RK3588 VPU's own native/preferred format for h264_rkmpp regardless), avoiding a
-	// pointless extra conversion on top of what RGA already did. YUV420P everywhere else
-	// (unchanged from before this optimization) - sws_scale's existing fallback path is left
-	// completely untouched on any build that doesn't have RGA hardware to offload to.
+	// NV12 when RGA is compiled in (what RgaColorConverter produces, and the format the RK3588 VPU prefers for
+	// h264_rkmpp); YUV420P otherwise.
 #ifdef LUMEN_WITH_RGA
 	const AVPixelFormat convertedPixFmt = AV_PIX_FMT_NV12;
 #else
@@ -217,9 +190,7 @@ bool WebRTCSink::EnsureEncoderInitialized(int width, int height)
 		return false;
 	}
 
-	// always set up, even when RGA is compiled in - the sws_scale path is the runtime fallback
-	// whenever RgaColorConverter::ConvertBgrToNv12 fails (busy/absent hardware, unsupported
-	// size), not just a build-time alternative - see EncodeAndSend.
+	// always set up: sws_scale is the runtime fallback whenever RgaColorConverter::ConvertBgrToNv12 fails (see EncodeAndSend)
 	m_SwsContext = sws_getContext(width, height, AV_PIX_FMT_BGR24, width, height, convertedPixFmt,
 		SWS_BILINEAR, nullptr, nullptr, nullptr);
 
@@ -253,10 +224,8 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& bgrFrame)
 	if (!track || !track->isOpen()) return;
 	if (!EnsureEncoderInitialized(bgrFrame.cols, bgrFrame.rows)) return;
 
-	// RGA first (hardware, near-zero CPU cost); sws_scale (software) is the fallback whenever
-	// it's not compiled in, or the hardware call itself fails at runtime (busy/absent RGA,
-	// unsupported size) - not just a build-time either/or, matching how ApriltagDetector falls
-	// back from Vulkan to CPU on its own hardware-path failure rather than dropping the frame.
+	// RGA first (hardware); sws_scale is the fallback when RGA is not compiled in or the hardware call fails at
+	// runtime (busy/absent RGA, unsupported size)
 	bool converted = false;
 #ifdef LUMEN_WITH_RGA
 	converted = m_RgaConverter.ConvertBgrToNv12(bgrFrame, m_YuvFrame);

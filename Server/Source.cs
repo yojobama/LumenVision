@@ -11,13 +11,8 @@ namespace Server
         Camera,
         ImageFile,
         VideoFile,
-        // A dual-role sink (ApriltagSink, ObjectDetectionSink, CameraCalibrationSink) acting as
-        // the frame/json-producing side of itself - natively these are already registered in
-        // Manager's own m_Sources map (see Manager.cpp), but SourceManager's C# source list only
-        // ever tracked "real" sources (camera/video/image), so a WebRTCSink or NetworkTablesSink
-        // could never be bound to e.g. an AprilTag detector's own output - confirmed the hard way,
-        // this is why WebRTC preview against the AprilTag detector didn't work. See
-        // SinkManager.BindSourceToSink.
+        // A dual-role sink (ApriltagSink, ObjectDetectionSink, CameraCalibrationSink) acting as its own frame/json-producing source;
+        // natively in Manager's m_Sources but not tracked by SourceManager. See SinkManager.BindSourceToSink.
         SinkOutput
     }
 
@@ -31,11 +26,8 @@ namespace Server
         public int? Fps { get; set; } // Optional frames per second for camera sources
         public string? FilePath { get; set; } // Optional file path for image or video sources
 
-        // ROADMAP.md Phase 7: pipeline profiles - see PipelineProfile.cs for the full design.
-        // ActiveDetectionSinkId is the stable sink id every profile activation reuses (created
-        // fresh the first time a profile is ever activated for this source, then torn down and
-        // recreated in place on every subsequent switch) so downstream bindings never have to
-        // change. ActiveProfileIndex is -1 when no profile has been activated yet.
+        // Pipeline profiles (see PipelineProfile.cs). ActiveDetectionSinkId is the stable detection sink id reused across profile activations;
+        // ActiveProfileIndex is -1 until a profile is activated.
         public List<PipelineProfile> Profiles { get; set; } = new List<PipelineProfile>();
         public int ActiveProfileIndex { get; set; } = -1;
         public int? ActiveDetectionSinkId { get; set; }

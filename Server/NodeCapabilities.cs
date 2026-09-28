@@ -3,21 +3,13 @@ using System.Linq;
 
 namespace Server
 {
-    // ROADMAP.md Phase 8a: a machine-readable description of what each node type is and how it
-    // may be wired up, so the webui's graph editor can render parameter forms and reject invalid
-    // connections structurally instead of hardcoding one-off knowledge about each node type (and
-    // finding out a connection was invalid only from a server 500, which is the exact class of
-    // bug the stereo docs currently only warn about in prose). A static manifest rather than
-    // anything reflection-derived - node wiring rules (source counts, role labels, the
-    // DepthFusionSink depth-attach side channel) live in C++/C# logic across several files
-    // (SinkManager.BindSourceToSink/BindStereoSourcesToSink/AttachDepthFusionSource,
-    // ISink::maxSources, IStereoRoleReceiver) with no single reflectable source of truth, so this
-    // is hand-authored and kept in sync deliberately, the same way SinkType's own enum already is.
+    // Static, hand-authored manifest of node types and wiring rules for the webui's graph editor; the rules live across
+    // SinkManager, ISink::maxSources and IStereoRoleReceiver with no reflectable source, so it is kept in sync manually.
     public record struct NodeTypeCapability(
         string TypeName,
         string Category,              // "source" | "sink"
         string DisplayName,
-        string Icon,                  // lucide-react icon name, matching the set already used across webui/src
+        string Icon,                  // lucide-react icon name
         int MaxSources,               // 0 for a real (camera/file) source - it has nothing bound to it
         string[]? SourceRoles,        // null = a single unlabeled bind; ["left","right"] for stereo nodes
         bool IsDualRoleSink,          // can itself be bound as another sink's source (its own detection/
@@ -29,19 +21,14 @@ namespace Server
 
     public static class NodeCapabilities
     {
-        // each entry's IsDualRoleSink mirrors SinkManager.DualRoleSinkTypes by hand (kept as a
-        // literal duplicate rather than a shared reference so this file stays a pure,
-        // dependency-free description - SinkManager pulls in the whole Manager/native call
-        // surface; this doesn't need to). Keep the two lists in sync if either changes.
+        // IsDualRoleSink mirrors SinkManager.DualRoleSinkTypes by hand (kept dependency-free); keep both in sync.
 
         public static readonly IReadOnlyList<NodeTypeCapability> Sources = new List<NodeTypeCapability>
         {
             new("Camera", "source", "Camera", "camera", 0, null, false, false, true),
             new("ImageFile", "source", "Image File", "image", 0, null, false, false, true),
             new("VideoFile", "source", "Video File", "video", 0, null, false, false, true),
-            // SinkOutput is synthetic (a dual-role sink acting as its own source, see
-            // SourceType's own comment in Source.cs) - not something a user creates directly, so
-            // it's omitted from this list rather than described with a misleading "0 sources".
+            // SinkOutput is synthetic (a dual-role sink acting as its own source) and never created directly, so it is omitted
         };
 
         public static readonly IReadOnlyList<NodeTypeCapability> Sinks = new List<NodeTypeCapability>

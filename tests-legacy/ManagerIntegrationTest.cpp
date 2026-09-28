@@ -38,9 +38,8 @@ bool ManagerIntegrationTest::innerTest() {
 bool ManagerIntegrationTest::testCameraSourceWorkflow(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing camera source workflow");
     
-    // This simulates the workflow from SourceController.cs and SourceManager.cs
     
-    // 1. Enumerate available cameras (like in DeviceController.cs)
+    // 1. Enumerate available cameras
     auto cameras = manager.EnumerateAvailableCameras();
     logger->EnterLog("Found " + std::to_string(cameras.size()) + " camera devices");
     
@@ -73,7 +72,7 @@ bool ManagerIntegrationTest::testCameraSourceWorkflow(Manager& manager) {
         return true; // Continue with other tests
     }
     
-    // 5. Start the source and sink (like in SinkManager.cs EnableSinkById)
+    // 5. Start the source and sink
     bool sourceStarted = manager.StartSourceById(cameraSourceId);
     bool sinkStarted = manager.StartSinkById(apriltagSinkId);
     
@@ -90,7 +89,7 @@ bool ManagerIntegrationTest::testCameraSourceWorkflow(Manager& manager) {
     logger->EnterLog("Sink status: " + sinkStatus);
     logger->EnterLog("Sink result: " + sinkResult);
     
-    // 8. Stop everything (cleanup like in DisableAllSources)
+    // 8. Stop everything
     manager.StopSourceById(cameraSourceId);
     manager.StopSinkById(apriltagSinkId);
     
@@ -104,7 +103,6 @@ bool ManagerIntegrationTest::testCameraSourceWorkflow(Manager& manager) {
 bool ManagerIntegrationTest::testVideoFileWorkflow(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing video file workflow");
     
-    // This simulates the workflow from SourceController.cs CreateVideoFileSourceAsync
     
     // 1. Create a video file source (simulating file upload scenario)
     int videoSourceId = manager.CreateVideoFileSource("test_video.mp4", 30);
@@ -152,7 +150,6 @@ bool ManagerIntegrationTest::testVideoFileWorkflow(Manager& manager) {
 bool ManagerIntegrationTest::testImageFileWorkflow(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing image file workflow");
     
-    // This simulates the workflow from SourceController.cs CreateImageFileSourceAsync
     
     // 1. Create image file source
     int imageSourceId = manager.CreateImageFileSource("test_image.jpg");
@@ -177,7 +174,7 @@ bool ManagerIntegrationTest::testImageFileWorkflow(Manager& manager) {
     std::string result = manager.GetSinkResult(apriltagSinkId);
     logger->EnterLog("Image processing result: " + result);
     
-    // 6. Test changing source for the same sink (like in SinkManager.cs)
+    // 6. Test changing source for the same sink
     manager.UnbindSourceFromSink(apriltagSinkId);
     
     // Create another image source
@@ -198,7 +195,6 @@ bool ManagerIntegrationTest::testImageFileWorkflow(Manager& manager) {
 bool ManagerIntegrationTest::testMultipleSinksWorkflow(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing multiple sinks workflow");
     
-    // This simulates the pattern seen in SinkController.cs where multiple sinks process data
     
     std::vector<int> sinkIds;
     
@@ -237,7 +233,7 @@ bool ManagerIntegrationTest::testMultipleSinksWorkflow(Manager& manager) {
         logger->EnterLog("Sink " + std::to_string(sinkId) + " - Started: " + std::to_string(started) + ", Stopped: " + std::to_string(stopped));
     }
     
-    // 5. Test bulk operations (like in SinkManager.cs EnableAllSinks)
+    // 5. Test bulk operations
     manager.StartAllSinks();
     logger->EnterLog("Started all sinks");
     
@@ -260,7 +256,6 @@ bool ManagerIntegrationTest::testMultipleSinksWorkflow(Manager& manager) {
 bool ManagerIntegrationTest::testSystemMonitoringWorkflow(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing system monitoring workflow");
     
-    // This simulates system monitoring functionality that would be used by monitoring APIs
     
     // 1. Initial system state reading
     int initialMemory = manager.GetMemoryUsageBytes();
@@ -334,7 +329,6 @@ bool ManagerIntegrationTest::testSystemMonitoringWorkflow(Manager& manager) {
 bool ManagerIntegrationTest::testPreviewWorkflow(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing preview workflow");
     
-    // This simulates the WebRTC streaming workflow from SinkController.cs
     
     // 1. Create a sink that will provide preview data
     int previewSinkId = manager.CreateApriltagSink();
@@ -403,7 +397,6 @@ bool ManagerIntegrationTest::testPreviewWorkflow(Manager& manager) {
 bool ManagerIntegrationTest::testCameraCalibrationWorkflow(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing camera calibration workflow");
     
-    // This simulates a camera calibration workflow
     
     // 1. Create a camera calibration sink
     int calibWidth = 640;
@@ -471,7 +464,6 @@ bool ManagerIntegrationTest::testCameraCalibrationWorkflow(Manager& manager) {
 bool ManagerIntegrationTest::testErrorHandling(Manager& manager) {
     logger->EnterLog("ManagerIntegrationTest: Testing error handling");
     
-    // This tests various error conditions and edge cases
     
     // 1. Test operations with invalid IDs
     bool invalidSourceStart = manager.StartSourceById(-1);

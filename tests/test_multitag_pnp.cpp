@@ -5,19 +5,10 @@
 #include <fstream>
 #include <cmath>
 
-// ROADMAP.md Phase 7: multi-tag PnP. SolveMultiTagPnP is tested directly against synthetic
-// correspondences rather than through real AprilTag detection - rendering real tag bitmaps
-// through the full detector pipeline would exercise a lot of already-covered detection code for
-// no extra coverage of the part actually at risk of a bug: the PnP solve and the field-to-camera
-// inversion math. The local-corner convention this test uses to build object points was itself
-// separately verified (empirically, against the real apriltag library's own estimate_tag_pose,
-// on both an on-axis and a rotated/off-axis synthetic case) before being committed to
-// ApriltagDetector.cpp - see that file's own comment.
+// SolveMultiTagPnP against synthetic correspondences.
 
 namespace {
-	// Same local corner convention as ApriltagDetector.cpp's own multi-tag accumulation: matches
-	// det->p[0..3]'s real ordering (confirmed by reading apriltag.c directly), local +Z as the
-	// tag's outward normal.
+	// Local corner order matches det->p[0..3]; local +Z is the tag normal.
 	std::vector<cv::Point3d> LocalCorners(double tagSize) {
 		double h = tagSize / 2.0;
 		return { {-h, h, 0}, {h, h, 0}, {h, -h, 0}, {-h, -h, 0} };
@@ -64,8 +55,7 @@ TEST_CASE("AprilTagFieldLayout loads WPILib-format JSON and converts quaternions
 
 	AprilTagFieldPose pose2;
 	REQUIRE(layout.TryGetTagPose(2, pose2));
-	// a 90deg rotation about Z: (x,y) -> (-y,x). Check it against that known effect on the
-	// local X axis (1,0,0), which a 90deg-about-Z rotation must send to (0,1,0).
+	// 90deg about Z maps local X (1,0,0) to (0,1,0).
 	cv::Vec3d rotatedX = pose2.rotation * cv::Vec3d(1, 0, 0);
 	REQUIRE(std::abs(rotatedX[0] - 0.0) < 1e-6);
 	REQUIRE(std::abs(rotatedX[1] - 1.0) < 1e-6);
@@ -82,8 +72,7 @@ TEST_CASE("SolveMultiTagPnP recovers a known camera pose from two tags at differ
 	cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
 	cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
 
-	// two tags, at different positions AND different orientations - a real multi-tag scene, not
-	// a degenerate single-plane case
+	// Two tags at different positions and orientations.
 	AprilTagFieldPose tag1;
 	tag1.translation = { 3.0, 1.0, 0.5 };
 	tag1.rotation = cv::Matx33d::eye();
@@ -125,11 +114,7 @@ TEST_CASE("SolveMultiTagPnP recovers a known camera pose from two tags at differ
 
 	REQUIRE_FALSE(result.is_null());
 	REQUIRE(result["tagCount"].get<int>() == 2);
-	// noiseless synthetic data, so this should be tiny - not asserted near machine epsilon since
-	// solvePnP's iterative solver genuinely converges to a slightly different sub-pixel residual
-	// across platforms (confirmed the hard way: ~0.036px on the real Pi's aarch64 OpenCV build
-	// vs ~0 on x64/WSL) - 0.5px is still tight enough to catch a real bug (a wrong sign/
-	// convention error would be off by dozens to hundreds of pixels, not a fraction of one)
+	// Noiseless data; 0.5px allows for solver differences across platforms.
 	REQUIRE(result["reprojErrPixels"].get<double>() < 0.5);
 
 	REQUIRE(std::abs(result["x"].get<double>() - cameraPositionInField[0]) < 1e-4);

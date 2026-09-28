@@ -6,24 +6,18 @@ using Server.Web;
 
 namespace Server.Controllers
 {
-    // ROADMAP.md Phase 8a: exposes what this build can actually do, so the webui can grey out
-    // unavailable options and validate the graph structurally instead of discovering both only
-    // from a failed request. GetEnabledFeatures() (ROADMAP.md Phase 2d) has existed natively
-    // since the CMake migration but had zero REST exposure until now.
+    // Reports build features and node-type wiring rules so the webui can disable and validate options.
     internal class CapabilitiesController : ControllerBase
     {
-        // GET: which LUMEN_WITH_* features this build was actually compiled with (e.g. "ONNX",
-        // "NT4", "WEBRTC", "VULKAN_APRILTAG", "CODEC_STEREO", "RKNN") - a method whose body is
-        // #ifdef'd out throws a clear runtime error today; this is what lets the UI avoid
-        // offering it in the first place.
+        // GET: LUMEN_WITH_* features this build was compiled with (e.g. "ONNX", "NT4", "WEBRTC",
+        // "VULKAN_APRILTAG", "CODEC_STEREO", "RKNN").
         [HttpGet("capabilities/features")]
         public Task<string[]> GetEnabledFeatures()
         {
             return Task.FromResult(ManagerWrapper.Instance.GetEnabledFeatures().ToArray());
         }
 
-        // GET: every source/sink node type this webui can create, with its wiring rules
-        // (source count, role labels, dual-role/depth-attach behaviour) - see NodeCapabilities.cs.
+        // GET: every creatable source/sink node type with its wiring rules (see NodeCapabilities.cs).
         [HttpGet("capabilities/nodeTypes")]
         public Task<NodeTypesResponse> GetNodeTypes()
         {

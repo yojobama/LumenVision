@@ -15,12 +15,8 @@
 class ISink
 {
 public:
-    // requireColor: whether this sink's own Process() ever calls Frame::AsBgr() on what it's
-    // bound to - default true (matches every existing subclass's actual behaviour) so no
-    // existing constructor call site needs to change. Only meaningful when requireFrame is also
-    // true; a sink that needs no frame at all obviously doesn't need it in colour either. See
-    // ISource::HasActiveColorFrameConsumer's own comment for what this enables - ApriltagDetector
-    // is the one subclass that opts out (it only ever calls AsGray() on a camera's raw frame).
+    // requireColor: whether Process() calls Frame::AsBgr() on its input; default true. Only meaningful when requireFrame is
+    // also true. See ISource::HasActiveColorFrameConsumer; ApriltagDetector opts out (it only calls AsGray()).
     ISink(std::shared_ptr<Logger> p_Logger, int maxSources, bool requireJson, bool requireFrame, std::string id, bool requireColor = true);
     virtual ~ISink();
 
@@ -34,13 +30,8 @@ public:
 protected:
 
     virtual void Process(const std::vector<SourceResult>& sources) = 0;
-    // called once Toggle(false) has fully stopped this sink's own processing thread (already
-    // joined by the time this runs, so overriding this to do teardown work never races Process()
-    // on another thread) - default no-op. RecordSink overrides this to finalize whatever segment
-    // was still open when recording stopped (write the container trailer, close the sidecar),
-    // so a user stopping a recording gets back a genuinely playable file right away instead of
-    // one that only becomes valid once the sink is later deleted or a future segment rotation
-    // happens to close it.
+    // called once Toggle(false) has stopped and joined this sink's processing thread (so it never races Process()); default no-op.
+    // RecordSink overrides it to finalise the open segment so the file is playable immediately.
     virtual void OnStopped() {}
 private:
     std::shared_ptr<Logger> m_Logger;
@@ -70,10 +61,7 @@ private:
     bool m_RequireColor;
     int m_MaxSources;
 
-    // uint64_t, matching ISource::GetCurrentFrameCount()'s return type exactly - this used to be
-    // a plain int compared against a uint64_t, which silently truncated (rather than failing to
-    // compile) once a source passed roughly 2^31 frames, and could then compare unequal to the
-    // real count forever afterward.
+    // uint64_t to match ISource::GetCurrentFrameCount()'s return type (an int would truncate past ~2^31 frames)
     std::vector<std::pair<std::shared_ptr<ISource>, uint64_t>> m_Sources;
 };
 

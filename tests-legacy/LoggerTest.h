@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/Logger.h"
+#include "../LumenCore/Logger.h"
 
 class LoggerTest : public UnitTestBase {
 public:

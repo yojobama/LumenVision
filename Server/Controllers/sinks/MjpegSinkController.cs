@@ -5,21 +5,11 @@ using Server.Web;
 
 namespace Server.Controllers.sinks
 {
-    // ROADMAP.md Phase 8/E7: creation only - the actual stream itself is served by
-    // MjpegStreamModule.cs (a raw multipart/x-mixed-replace HTTP response, not a normal REST
-    // action, the same "custom EmbedIO module, not a controller" reasoning StateChannel.cs
-    // already follows for /ws/state).
+    // Creation only; the stream itself is served by MjpegStreamModule.cs.
     internal class MjpegSinkController : ControllerBase
     {
-        // POST: create an MjpegSink. Bind it afterwards (PATCH /sink/bind) to the node whose
-        // frames should be streamed, same as WebRTCSink.
-        //
-        // jpegQuality is nullable, resolved to its real default (80) in the body via ?? - NOT a
-        // plain `int jpegQuality = 80` C# default parameter. See RecordSinkController.Create's
-        // own comment for why: EmbedIO's [QueryField] binding does not apply a value-type
-        // parameter's C# default when the query string omits that key, it silently binds
-        // default(int) (0) instead - a caller omitting jpegQuality here would have silently gotten
-        // cv::IMWRITE_JPEG_QUALITY=0 (the worst possible quality setting, not merely "low").
+        // POST: create an MjpegSink; bind it afterwards (PATCH /sink/bind) to the node whose frames are streamed.
+        // jpegQuality is nullable and defaults to 80 in the body, so an omitted query key never becomes quality 0.
         [HttpPost("mjpegSink/create")]
         public Task<int> Create([FromQuery] string name, [FromQuery] int? jpegQuality = null)
         {

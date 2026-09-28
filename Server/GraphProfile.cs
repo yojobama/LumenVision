@@ -1,17 +1,7 @@
 namespace Server
 {
-    // ROADMAP.md Phase 8/E6: save/restore the ENTIRE node graph under a name - distinct from the
-    // existing per-source AprilTag detection profile (PipelineProfile.cs/
-    // PipelineProfileController.cs, already shipped: one camera source's own tag-size/
-    // calibration/backend settings). This is "swap the whole coprocessor's job" - every source,
-    // every sink, every binding - the shape a team would actually want for "match config" vs.
-    // "pit/bench config" rather than reconfiguring node by node.
-    //
-    // Deliberately thin: DB.cs already has fully proven logic for both directions (Save() always
-    // re-serializes Manager's live state fresh, and Load()/LoadInternal() already knows how to
-    // reconstruct an entire graph from a JSON file - it's exactly what runs at every server
-    // startup). Reusing that instead of a second, parallel graph (de)serialization path here is
-    // what makes this safe: it can never drift from what a normal restart already does.
+    // Saves/restores the whole node graph (every source, sink and binding) under a name by reusing DB.Save()/DB.Load().
+    // Distinct from the per-source PipelineProfile.
     public class GraphProfile
     {
         public static GraphProfile Instance { get; } = new GraphProfile();
@@ -23,9 +13,7 @@ namespace Server
 
         private static string PathFor(string name) => Path.Combine(ProfilesDir, SanitizeName(name) + ".json");
 
-        // profile names become file names directly - reject anything that isn't a plain path
-        // segment rather than trying to escape it, so "../../etc/passwd" (or a Windows drive
-        // path) can't reach outside ProfilesDir.
+        // profile names become file names: reject anything that isn't a plain path segment so it can't escape ProfilesDir
         private static string SanitizeName(string name)
         {
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Graph profile name must not be empty");
@@ -45,9 +33,7 @@ namespace Server
                 .ToList();
         }
 
-        // Save() first so the snapshot reflects whatever's live RIGHT NOW, not whatever data.json
-        // happened to hold from the last unrelated save - DB.Save() re-reads Manager's actual
-        // current state every time, it never trusts its own in-memory copy for this.
+        // Save() first so the snapshot reflects the live state (DB.Save re-reads Manager's current state).
         public void SaveCurrentAs(string name)
         {
             Directory.CreateDirectory(ProfilesDir);
@@ -55,13 +41,7 @@ namespace Server
             File.Copy(DataJsonPath, PathFor(name), overwrite: true);
         }
 
-        // Tears down every currently-live source/sink, then reconstructs the graph from the
-        // saved snapshot via DB.Load() - the exact same path a server restart takes, just
-        // pointed at graph-profiles/<name>.json instead of whatever was already in data.json.
-        // Sinks before sources: a sink still bound to a source it's about to lose isn't itself
-        // wrong (DeleteSource already unbinds any sink pointing at a deleted source), but
-        // deleting in dependency order avoids relying on that unbind path doing the right thing
-        // under a bulk teardown it wasn't originally written for.
+        // Deletes every live sink, then every source, then rebuilds the graph from the snapshot via DB.Load() (the startup path).
         public void Activate(string name)
         {
             string path = PathFor(name);

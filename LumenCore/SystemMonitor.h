@@ -67,12 +67,10 @@ public:
 private:
     int m_TimeoutMilliseconds;
 
-	// thread management
 	bool m_ThreadWantedAlive;
     std::jthread m_MonitorThread;
 	void m_MonitorThreadLoop();
 
-	// methods for reading system data
     CPU_STATS m_ReadCPUData();
 	int m_GetVal(const std::string& target, const std::string& content);
 	float m_GetCPUUsage(const CPU_STATS& first, const CPU_STATS& second);
@@ -81,13 +79,11 @@ private:
 	int m_GetThermalZoneTemperature(int index);
 	MEMORY_STATS m_ReadMemoryData();
     
-	// variables to store system data
     float m_cpuUsage;
     float m_diskUsage;
 	int m_ramUsage;
     int m_cpu_Temperature;
 
-	// mutex for thread safety
 	std::mutex m_CPUTemperatureMutex;
 	std::mutex m_CPUUsageMutex;
 	std::mutex m_DiskMutex;

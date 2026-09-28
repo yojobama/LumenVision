@@ -1,28 +1,11 @@
 #[[
   Single source of truth for LumenCore's optional-backend feature flags.
 
-  Replaces four things that previously had to be kept in sync by hand (and regularly weren't -
-  see docs/history/IMPLEMENTATION_PLAN.md's phase 8 notes and STEREO_IMPLEMENTATION_PLAN.md ss10.2
-  for two real incidents this caused): LumenCore.vcxproj's LumenCommonDefines/LumenPlatformDefines
-  MSBuild properties, the vcxproj's own swig PreBuildEvent -D list, Server.csproj's separate
-  RunSwig target -D list, and install-deps.sh's feature-dependent build steps.
-
-  Two lists come out of this file, and they are DELIBERATELY NOT THE SAME LIST:
-
-  - LUMEN_ENABLED_DEFINES: only the flags that are actually ON for this configure. Feeds the C++
-    compiler (target_compile_definitions) - this is what decides what code exists in the built
-    .so/.dll.
-
-  - LUMEN_SWIG_DEFINES: always the FULL flag list, regardless of what's enabled. Feeds swig's own
-    -D list.
-
-  If SWIG's -D list tracked the enabled set, two presets with different feature sets (e.g. a
-  Windows preset with LUMEN_WITH_WEBRTC off, alongside a Linux preset with it on) would generate
-  DIFFERENT C# APIs from the same swig.i into the same Server/Interop/ directory - silently, since
-  nothing fails, a method just isn't there. Keeping the SWIG-visible surface constant across every
-  preset and handling actual unavailability at runtime instead (see Manager::GetEnabledFeatures()
-  and the "declaration always exists, body throws if disabled" pattern in Manager.cpp) is the only
-  version of this that's safe. See ROADMAP.md Phase A2 for the fuller rationale.
+  Two lists come out of this file:
+  - LUMEN_ENABLED_DEFINES: only the flags that are ON; passed to the C++ compiler.
+  - LUMEN_SWIG_DEFINES: always the full flag list; passed to swig so the generated C# API is
+    identical across presets. Disabled features are handled at runtime (declarations always
+    exist, bodies throw; see Manager::GetEnabledFeatures()).
 ]]
 
 set(_LUMEN_FEATURE_NAMES
@@ -45,9 +28,7 @@ set(_LUMEN_FEATURE_CODEC_STEREO_DESC    "codec-stereo hardware-motion-vector dep
 set(_LUMEN_FEATURE_RKNN_DESC            "Rockchip NPU object detection backend (aarch64 only)")
 set(_LUMEN_FEATURE_RGA_DESC              "Rockchip RGA hardware BGR->NV12 conversion for WebRTCSink (aarch64 only)")
 
-# Defaults match what LumenCore.vcxproj's FeatureFlags PropertyGroup used to hardcode: everything
-# on except RKNN and RGA, both Rockchip-silicon-only (see their aarch64-only guards below) - a
-# generic x64/Windows configure has no such hardware to target regardless of what a caller passes.
+# RKNN and RGA default OFF because they are Rockchip-only
 set(_LUMEN_FEATURE_ONNX_DEFAULT            ON)
 set(_LUMEN_FEATURE_NT4_DEFAULT             ON)
 set(_LUMEN_FEATURE_WEBRTC_DEFAULT          ON)
@@ -70,9 +51,7 @@ foreach(_name ${_LUMEN_FEATURE_NAMES})
     endif()
 endforeach()
 
-# RKNN (RknnDetectionBackend) and RGA (RgaColorConverter) are both Rockchip-silicon-only -
-# refuse either anywhere but a genuine aarch64 configure, rather than let it silently do nothing
-# on Windows/x64 (ROADMAP.md Phase 2f).
+# RKNN and RGA exist only on aarch64
 if(LUMEN_WITH_RKNN AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
     message(FATAL_ERROR
         "LUMEN_WITH_RKNN=ON but CMAKE_SYSTEM_PROCESSOR is '${CMAKE_SYSTEM_PROCESSOR}' - "

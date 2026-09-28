@@ -9,32 +9,11 @@ using Microsoft.AspNetCore.Mvc.Routing;
 
 namespace Server.OpenApi
 {
-    // ROADMAP.md Phase 8a: a small, self-updating OpenAPI 3.0 generator built specifically for
-    // this server's own controller attributes - not a hand-written document (the whole point is
-    // to stop ApiService.ts/types/index.ts from drifting out of sync with the real routes, which a
-    // second hand-maintained document would just repeat one layer up). The doc is derived by
-    // reflecting over the exact same attributes that make the routes work, so it can't silently
-    // fall out of sync with them the way a separate mirror can.
-    //
-    // Kept (rather than switching to Microsoft.AspNetCore.OpenApi) across the EmbedIO -> ASP.NET
-    // Core migration on purpose: its output - operationIds ({Controller}_{Method}), PascalCase
-    // schema property names, numeric enums, paths without the /api prefix - is exactly what
-    // webui/src/api/generated.ts was generated from, so keeping it means the migration changes
-    // nothing on the client side. Only the attribute types it reads changed ([Route(HttpVerbs.X)]
-    // -> [HttpX], [QueryField] -> [FromQuery], [JsonData] -> [FromBody]).
-    //
-    // Deliberately scoped to what this server's routes actually use: attribute route-template
-    // params, [FromQuery] primitives, at most one [FromBody] parameter per method, and
-    // Task/Task<T> return types (including the two SendStringAsync-based text/plain endpoints on
-    // WebRTCSinkController, special-cased explicitly rather than guessed from reflection). This
-    // is not a general-purpose generator - it doesn't need to be one.
+    // Reflection-based OpenAPI 3.0 generator over the controllers' attributes: operationIds {Controller}_{Method}, PascalCase properties, numeric enums.
+    // Handles route-template params, [FromQuery] primitives, one [FromBody] parameter and Task/Task<T> returns; paths exclude /api.
     public static class OpenApiGenerator
     {
-        // Endpoints that bypass EmbedIO's default JSON serialization and write a raw text body
-        // via HttpContext.SendStringAsync - see WebRTCSinkController.CreateOffer/SetAnswer's own
-        // comments for why (SDP has literal \r\n, which breaks JSON-string-escaping in practice).
-        // Reflection can't see this (the method returns plain Task, same as any other
-        // fire-and-forget endpoint), so it's named explicitly.
+        // Endpoints that write a raw text body via SendStringAsync (see WebRTCSinkController); reflection only sees Task, so they are listed.
         private static readonly HashSet<string> PlainTextResponseMethods = new()
         {
             "WebRTCSinkController.CreateOffer",
@@ -159,8 +138,7 @@ namespace Server.OpenApi
             if (t == typeof(System.Threading.Tasks.Task)) return typeof(void);
             if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(System.Threading.Tasks.Task<>))
                 t = t.GetGenericArguments()[0];
-            // an IActionResult action (e.g. RecordSinkController.Download's PhysicalFile) writes
-            // its own non-JSON body - document it the same as the old raw-stream Task endpoint
+            // an IActionResult action (e.g. RecordSinkController.Download's PhysicalFile) writes a non-JSON body
             if (typeof(IActionResult).IsAssignableFrom(t)) return typeof(void);
             return t;
         }
@@ -168,9 +146,7 @@ namespace Server.OpenApi
         private static bool IsNullable(Type t) =>
             !t.IsValueType || Nullable.GetUnderlyingType(t) != null;
 
-        // JSON Schema for a C# type. Enums serialize as their underlying int (no
-        // JsonStringEnumConverter is registered anywhere in this server - confirmed by grepping
-        // for one - so this must match that, not assume string enum names).
+        // JSON Schema for a C# type. Enums serialise as their underlying int (no JsonStringEnumConverter is registered).
         private static JsonNode SchemaFor(Type type, JsonObject schemas, Dictionary<Type, string> schemaNames)
         {
             type = Nullable.GetUnderlyingType(type) ?? type;

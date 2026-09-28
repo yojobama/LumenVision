@@ -5,15 +5,10 @@ using Server.Web;
 
 namespace Server.Controllers.sinks
 {
-    // See STEREO_IMPLEMENTATION_PLAN.md ss10.3/ss10.5.
     internal class StereoDepthSinkController : ControllerBase
     {
-        // POST: create a StereoDepthNode. `calibration` is normally the result of a
-        // StereoCalibrationSink's /run (or /result), passed straight through - see
-        // StereoCalibrationSinkController. Bind its left/right sources afterwards via /bind.
-        // Body read and deserialized by hand with System.Text.Json rather than [JsonData] - see
-        // CameraSourceController.Create's comment on why (Swan can't construct a record struct's
-        // primary constructor and silently leaves every field at its default).
+        // POST: create a StereoDepthNode from a calibration result (StereoCalibrationSink /run or /result); bind sources via /bind.
+        // The body is deserialised by hand with System.Text.Json.
         [HttpPost("stereoDepthSink/create")]
         public async Task<int> Create([FromQuery] string name, [FromQuery] StereoDepthBackendKind backend,
             [FromQuery] double minDepthMeters, [FromQuery] double maxDepthMeters,
@@ -40,9 +35,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(SinkManager.Instance.GetStereoDepthBackendName(id));
         }
 
-        // GET: summary stats from the most recently processed pair - the full per-block grid is
-        // in /sink/getResult's JSON (capped in size, see StereoDepthNode's own "Outputs" note),
-        // not here.
+        // GET: summary stats of the latest pair; the per-block grid is in /sink/getResult
         [HttpGet("stereoDepthSink/{id}/stats")]
         public Task<StereoDepthStatsDto> GetStats(int id)
         {

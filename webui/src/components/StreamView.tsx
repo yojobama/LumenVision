@@ -8,41 +8,20 @@ import type { WebRTCStreamProps } from '../types';
 const api = new ApiService();
 
 interface StreamViewProps extends WebRTCStreamProps {
-  // the node whose output the live sink should bind to - required to spin up the MJPEG fallback
-  // sink lazily (bound to the SAME source the failed WebRTC sink was reading from). Every call
-  // site already has this on hand (it's what it bound the WebRTC sink to in the first place); a
-  // null here just means "no fallback possible", not an error - the WebRTC failure is still
-  // surfaced via onError as before.
+  // node whose output the fallback MJPEG sink binds to; null means no fallback is possible
   sourceId: number | null;
 }
 
 type FallbackState = { kind: 'creating' } | { kind: 'ready'; sinkId: number } | { kind: 'failed' };
 
-// WebRTC is the standard transport for every live preview here - lower latency, no per-frame
-// HTTP/JPEG framing overhead, and it's what every call site already used before this component
-// existed. MJPEG is not a parallel always-on alternative (that would mean encoding every preview
-// twice for no reason): it exists purely as a same-preview fallback for the one failure mode
-// WebRTC can't route around - ICE/STUN/SDP negotiation breaking outright, the documented reason
-// this sink exists at all (docs/history/IMPLEMENTATION_PLAN.md Phase 6 item 5) - typically a
-// locked-down or unfamiliar competition network. Spun up reactively, on failure, and logged when
-// it happens so a fallback in the field is diagnosable after the fact, not silent.
+// Live previews use WebRTC; MJPEG is created only as a fallback when WebRTC negotiation fails.
 export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkId, ...rest }) => {
   const [fallback, setFallback] = useState<FallbackState | null>(null);
-  // WebRTCStream's pc.onconnectionstatechange can call onError more than once in quick
-  // succession (e.g. 'disconnected' immediately followed by 'failed') - confirmed the hard way:
-  // checking React state alone let two near-simultaneous calls both read the same stale
-  // `fallback === null` before either one's setFallback({kind:'creating'}) had actually
-  // committed a re-render, so both proceeded to create their own MjpegSink, leaking one. A ref
-  // is checked and set synchronously, before any await, so the second call sees it immediately
-  // regardless of React's render timing.
+  // A ref (set synchronously before any await) guards against duplicate WebRTC error callbacks
+  // each creating their own MjpegSink.
   const fallbackStarted = useRef(false);
-  // the MjpegSink id created below, if any - tracked outside React state so the cleanup effect
-  // always sees the latest value without depending on it (which would re-run the effect on
-  // every fallback state change). AddMjpegSink's own "not restorable across a restart... fine
-  // for an ephemeral live-view sink" comment is only true if something actually deletes it when
-  // the preview goes away - nothing did (confirmed the hard way: every WebRTC failure across
-  // every node ever previewed left one more MjpegSink running server-side forever, silently
-  // eating memory over a match day). Deleted whenever this preview target changes or unmounts.
+  // id of the fallback MjpegSink; held in a ref so cleanup sees the latest value. Deleted when the
+  // preview target changes or unmounts.
   const fallbackSinkIdRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -57,9 +36,7 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
 
   const handleWebRtcError = useCallback(async (error: string) => {
     if (sourceId == null || fallbackStarted.current) {
-      // no source to bind a fallback sink to, or a fallback attempt is already in flight/done
-      // (this is either a duplicate WebRTC failure notification, or the MJPEG sink's own failure
-      // bubbling back up) - just surface it.
+      // no source to bind, or a fallback is already in flight/done - just surface the error
       onError(error);
       return;
     }
@@ -76,8 +53,7 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
     } catch (fallbackError) {
       console.error('StreamView: MJPEG fallback failed to start', fallbackError);
       if (mjpegId != null) {
-        // partially set up (created, maybe bound) before a later step failed - don't leave it
-        // behind for the cleanup effect above to maybe never run (e.g. sinkId never changes again)
+        // partially set up: delete it now rather than rely on the cleanup effect
         fallbackSinkIdRef.current = null;
         api.deleteSink(mjpegId).catch(() => {});
       }

@@ -4,11 +4,7 @@
 #include <chrono>
 #include <thread>
 
-// ROADMAP.md Phase 7: driver mode should still stream video but skip actual detection/NT4
-// publish work entirely. Constructed directly (matching RoiSource's own test pattern) rather
-// than through Manager, since the point here is ApriltagDetector's own Process() branch, not
-// Manager's dynamic_pointer_cast dispatch (SinkController's REST layer is the thing that
-// exercises that part, not unit-testable without a running server).
+// Driver mode streams video but skips detection and NT4 publishing.
 
 namespace {
 class SyntheticFrameSource : public ISource {
@@ -31,9 +27,7 @@ TEST_CASE("ApriltagDetector's driver mode skips detection but still republishes 
 	auto logger = std::make_shared<Logger>("LumenCoreTests-driver-mode.log");
 	auto upstream = std::make_shared<SyntheticFrameSource>(logger, "driver-mode-upstream");
 
-	// default-constructed CameraCalibrationResult (fx=fy=0) is deliberately "no real
-	// calibration" - ApriltagDetector's own m_HasCalibration guard already handles that
-	// gracefully (skips pose estimation), and driver mode returns even before that check runs.
+	// Default-constructed calibration (fx=fy=0) means no pose estimation.
 	ApriltagDetector detector(logger, "driver-mode-detector", CameraCalibrationResult(), 0.1651);
 
 	REQUIRE(detector.BindSource(upstream));
@@ -50,8 +44,7 @@ TEST_CASE("ApriltagDetector's driver mode skips detection but still republishes 
 	REQUIRE(result.frame.has_value());
 	REQUIRE_FALSE(result.frame->empty());
 	REQUIRE(result.json.has_value());
-	// {"tags": [...], "multiTag": ...} - ApriltagDetector's real published envelope (ROADMAP.md
-	// Phase 7's multi-tag PnP), not a bare array - both empty/null while driver mode is on.
+	// Published envelope is {"tags": [...], "multiTag": ...}; both empty/null in driver mode.
 	REQUIRE(result.json->is_object());
 	REQUIRE(result.json->contains("tags"));
 	REQUIRE((*result.json)["tags"].is_array());

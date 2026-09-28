@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/Manager.h"
+#include "../LumenCore/Manager.h"
 #include <chrono>
 
 class ManagerPerformanceTest : public UnitTestBase 
@@ -11,7 +11,6 @@ public:
 private:
     bool innerTest() override;
     
-    // Performance test helper methods
     bool testSinkCreationPerformance(Manager& manager);
     bool testSourceCreationPerformance(Manager& manager);
     bool testBindingPerformance(Manager& manager);
@@ -19,7 +18,6 @@ private:
     bool testSystemMonitoringPerformance(Manager& manager);
     bool testConcurrentOperations(Manager& manager);
     
-    // Utility methods
     template<typename Func>
     double measureExecutionTime(Func func, int iterations = 1);
     

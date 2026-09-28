@@ -18,26 +18,11 @@ namespace Server.Controllers.sinks
             return Task.FromResult(SinkManager.Instance.IsSinkRunning(SinkID));
         }
 
-        // Encoding.UTF8 writes a BOM preamble, which breaks strict JSON parsers (confirmed the
-        // hard way fixing OpenApiController's own /openapi.json endpoint) - reused here for the
-        // same reason.
+        // UTF-8 without BOM: strict JSON parsers reject a BOM preamble.
         private static readonly Encoding Utf8NoBom = new UTF8Encoding(false);
 
-        // Written as a raw string body rather than returned as Task<string> - EmbedIO's default
-        // serializer (Swan.Formatters.Json, not System.Text.Json - see OpenApiController's own
-        // comment on this) re-wraps a returned string in an OUTER JSON string layer, but does so
-        // WITHOUT escaping the embedded quotes the inner JSON already has, producing literally
-        // invalid JSON on the wire for any result containing a nested object or string (which is
-        // effectively every real result - confirmed the hard way: this endpoint went completely
-        // unexercised by the webui until ROADMAP.md Phase 8c actually started calling it, so the
-        // bug had been latent since this route was first written). GetResult/GetAllResults
-        // already return a fully-formed JSON document as a string (Manager::GetSinkResult /
-        // GetAllSinkResults both call nlohmann::json::dump()) - there is no "string value" to
-        // encode here, the string already IS the response body.
-        //
-        // GET: the latest result JSON produced by a sink that is also a source (ApriltagSink,
-        // CameraCalibrationSink, ObjectDetectionSink) - "{}" for a terminal sink (NetworkTables,
-        // WebRTC, Recording) or one that hasn't produced anything yet
+        // Written as a raw string body since GetResult/GetAllResults already return complete JSON documents.
+        // GET: the latest result JSON of a sink that is also a source; "{}" for a terminal sink or if nothing has been produced yet
         [HttpGet("sink/getResult")]
         public async Task GetResult([FromQuery] int SinkID)
         {
@@ -59,7 +44,7 @@ namespace Server.Controllers.sinks
         {
             if (!Enabled) SinkManager.Instance.DisableSinkById(SinkID);
             else SinkManager.Instance.EnableSinkById(SinkID);
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
             return Task.CompletedTask;
         }
 
@@ -68,7 +53,7 @@ namespace Server.Controllers.sinks
         public Task Rename([FromQuery] int SinkID, [FromQuery] string NewName)
         {
             SinkManager.Instance.SetSinkName(SinkID, NewName);
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
             return Task.CompletedTask;
         }
 
@@ -77,17 +62,17 @@ namespace Server.Controllers.sinks
         public Task Bind([FromQuery] int SinkID, [FromQuery] int SourceID)
         {
             SinkManager.Instance.BindSourceToSink(SinkID, SourceID);
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
             return Task.CompletedTask;
         }
 
-        // does not have to recieve a sourceId, only for multi source sinks (which do not exist in this version)
+        // sourceId is only required for multi-source sinks
         // PATCH: Unbind a sink from a source;
         [HttpPatch("sink/unbind")]
         public Task Unbind([FromQuery] int SinkID, [FromQuery] int? SourceID = null)
         {
             SinkManager.Instance.UnbindSourceFromSink(SinkID, SourceID);
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
             return Task.CompletedTask;
         }
 
@@ -119,10 +104,8 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinks);
         }
 
-        // PATCH: toggle driver mode on a detection sink (ApriltagDetector/ObjectDetectionSink) -
-        // ROADMAP.md Phase 7. Still streams video, just skips the actual detection/NT4 publish
-        // work - throws (404-equivalent via EmbedIO's own exception handling) if SinkID doesn't
-        // support it, matching /sink/bind's own error-propagation style below.
+        // PATCH: toggle driver mode on a detection sink (video still streams, detection/NT4 publishing is skipped).
+        // Throws if the sink doesn't support it.
         [HttpPatch("sink/driverMode")]
         public Task SetDriverMode([FromQuery] int SinkID, [FromQuery] bool Enabled)
         {

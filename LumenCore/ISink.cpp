@@ -13,8 +13,6 @@ ISink::ISink(std::shared_ptr<Logger> p_Logger, int maxSources, bool requireJson,
 ISink::~ISink()
 {
     *m_AliveFlag = false;
-    // previously a no-op beyond the alive flag: the processing thread outlived this object
-    // with nothing to stop it (see ISource::~ISource, the same bug).
     if (m_Thread.joinable()) {
         m_ShouldTerminate = true;
         {
@@ -28,8 +26,7 @@ ISink::~ISink()
 
 void ISink::Toggle(bool toggle)
 {
-    // idempotent, for the same reason as ISource::Toggle: calling Toggle(true) while already
-    // running previously spawned a second processing thread without stopping the first
+    // idempotent: a repeated Toggle(true) must not spawn a second processing thread
     if (toggle == m_ToggleState) return;
 
     if (toggle) {
@@ -68,9 +65,7 @@ void ISink::NotifyDataAvailable()
 
 void ISink::ProcessingThreadLoop()
 {
-    // detection/encoding is CPU-heavy and latency-sensitive - keep it off the slow efficiency
-    // cores when this is a big.LITTLE SoC (see CpuAffinity's own comment on why this isn't
-    // hardcoded to a specific core index)
+    // heavy and latency-sensitive: keep off the efficiency cores on big.LITTLE (see CpuAffinity)
     CpuAffinity::PinCurrentThreadToPerformanceCores();
 
     // safety-net poll interval: if a bound source stalls or a notification is missed,
@@ -122,8 +117,7 @@ bool ISink::BindSource(std::shared_ptr<ISource> p_Source) {
                 NotifyDataAvailable();
             }
         });
-        // see ISource::HasActiveFrameConsumer's own comment - this is what lets a bound
-        // detector know whether it's worth annotating a frame for this sink specifically.
+        // see ISource::HasActiveFrameConsumer: lets a bound detector know whether to annotate for this sink.
         // GetToggleStatus() is only called once the alive flag confirms `this` still exists.
         p_Source->RegisterFrameConsumer(m_ID, m_RequireFrame, m_RequireColor, [this, aliveFlag] {
             auto alive = aliveFlag.lock();

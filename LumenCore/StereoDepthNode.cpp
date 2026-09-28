@@ -11,9 +11,8 @@
 #include <stdexcept>
 
 namespace {
-	// codec-stereo's own default (matches lavc_sw's H.264 16x16 macroblock); rkmpp_hwenc's
-	// native granularity is forced by hardware to 32x16 regardless of what's requested here -
-	// see STEREO_IMPLEMENTATION_PLAN.md ss10.3's "Align dimensions".
+	// codec-stereo's default (the H.264 16x16 macroblock of lavc_sw); rkmpp_hwenc is forced by hardware to 32x16
+	// regardless of what is requested
 	void BlockSizeFor(StereoDepthBackendKind kind, int& blockW, int& blockH)
 	{
 		if (kind == STEREO_BACKEND_CODEC_RKMPP_HWENC) { blockW = 32; blockH = 16; }
@@ -39,10 +38,8 @@ StereoDepthNode::StereoDepthNode(std::shared_ptr<Logger> logger, std::string id,
 	int blockW, blockH;
 	BlockSizeFor(backend, blockW, blockH);
 
-	// disparity window derivation - see STEREO_IMPLEMENTATION_PLAN.md ss10.3's worked example.
-	// Only meaningful once a real calibration is attached; a node created before RunCalibration()
-	// has run (fx/baseline both 0) gets a degenerate window and simply won't produce valid
-	// blocks until a real StereoCalibrationResult is supplied.
+	// disparity window derivation; only meaningful once a calibration is attached (fx/baseline of 0 give a
+	// degenerate window with no valid blocks)
 	double fx = calibration.rectifiedFx, baseline = calibration.baselineMeters;
 	double dNear = (fx > 0 && baseline > 0) ? fx * baseline / minDepthMeters : 0.0;
 	double dFar = (fx > 0 && baseline > 0) ? fx * baseline / maxDepthMeters : 0.0;
@@ -149,15 +146,13 @@ void StereoDepthNode::EnsureRectifyMaps(const cv::Size& sourceSize)
 	cv::Mat R1 = vec9ToMat(m_Calibration.R1), R2 = vec9ToMat(m_Calibration.R2);
 	cv::Mat P1 = vec12ToMat(m_Calibration.P1), P2 = vec12ToMat(m_Calibration.P2);
 
-	// CV_16SC2 fixed-point maps: the fast path per ss10.3 - float maps cost meaningfully more
-	// for no accuracy that matters to a block-granular disparity backend.
+	// CV_16SC2 fixed-point maps are faster than float maps and accurate enough for block-granular disparity
 	cv::initUndistortRectifyMap(K1, D1, R1, P1, sourceSize, CV_16SC2, m_MapLx, m_MapLy);
 	cv::initUndistortRectifyMap(K2, D2, R2, P2, sourceSize, CV_16SC2, m_MapRx, m_MapRy);
 	m_RectifiedSourceSize = sourceSize;
 
-	// crop to the intersection of both eyes' valid ROIs, then round down to the backend's
-	// native block size - never pad with black (a synthetic border is a huge, perfectly
-	// matchable feature that pulls motion vectors toward it). See ss10.3.
+	// crop to the intersection of both eyes' valid ROIs, rounded down to the backend's block size; never pad with
+	// black (a synthetic border attracts motion vectors)
 	cv::Rect roiL(m_Calibration.roiLeftX, m_Calibration.roiLeftY, m_Calibration.roiLeftW, m_Calibration.roiLeftH);
 	cv::Rect roiR(m_Calibration.roiRightX, m_Calibration.roiRightY, m_Calibration.roiRightW, m_Calibration.roiRightH);
 	cv::Rect roi = (roiL.width > 0 && roiR.width > 0) ? (roiL & roiR) : cv::Rect(0, 0, sourceSize.width, sourceSize.height);
@@ -176,11 +171,8 @@ void StereoDepthNode::RunSignSelfCheckIfNeeded(const cv::Mat& rectLeftGray)
 #ifdef LUMEN_WITH_CODEC_STEREO
 	if (m_SignCheckDone || m_BackendKind == STEREO_BACKEND_SGBM) { m_SignCheckDone = true; return; }
 
-	// synthesize a known 16px shift (left point at x visible in "right" at x+16, matching this
-	// project's own sign convention - see cs.h's cs_mv_field comment) and check the backend
-	// resolves it as a positive disparity of the expected magnitude - the codec-stereo Middlebury
-	// harness itself got this backwards on its first attempt. Never knowable a priori per the
-	// library's own docs, so this is checked on real hardware/optics, not assumed.
+	// synthesise a known 16px shift (left point at x appears in "right" at x+16) and check the backend resolves it as
+	// a positive disparity of that magnitude; the sign is verified on real optics, not assumed
 	cv::Mat shifted(rectLeftGray.size(), CV_8UC1);
 	cs_shift_gray8(rectLeftGray.data, (int)rectLeftGray.step, shifted.data, (int)shifted.step,
 		rectLeftGray.cols, rectLeftGray.rows, 16);
@@ -229,10 +221,8 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		return;
 	}
 
-	// gray first, THEN remap - remapping one channel instead of three is a straight 3x saving on
-	// the most expensive fixed cost in this path, and codec-stereo/SGBM only need luma anyway.
-	// AsGray() is free when the source Frame is already GRAY8/NV12-tagged instead of paying for
-	// a cvtColor here every time.
+	// gray first, then remap: remaps one channel instead of three; AsGray() is free when the Frame is already
+	// GRAY8/NV12-tagged
 	const cv::Mat& grayLeft = left.frame->AsGray();
 	const cv::Mat& grayRight = right.frame->AsGray();
 	cv::Mat rectLeft, rectRight;
@@ -290,7 +280,7 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		m_HasDepthGrid = true;
 	}
 
-	// output frame - see StereoFrameOutput.h / ss10.3 "Outputs"
+	// output frame - see StereoFrameOutput.h
 	cv::Mat outFrame;
 	if (m_FrameOutput == STEREO_FRAME_RECTIFIED_LEFT) {
 		cv::Mat colorRectLeft;
@@ -303,7 +293,7 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		depthGrid.convertTo(normalized, CV_8U, range > 0 ? 255.0 / range : 1.0, range > 0 ? -255.0 * m_MinDepthMeters / range : 0.0);
 		cv::Mat colormap;
 		cv::applyColorMap(normalized, colormap, cv::COLORMAP_TURBO);
-		// invalid cells (depth==0) rendered black rather than a misleadingly "near" color
+		// invalid cells (depth==0) rendered black rather than a misleading "near" colour
 		for (int by = 0; by < rows; by++)
 			for (int bx = 0; bx < cols; bx++)
 				if (depth[(size_t)by * cols + bx] <= 0.0f) colormap.at<cv::Vec3b>(by, bx) = cv::Vec3b(0, 0, 0);

@@ -18,24 +18,18 @@ export interface Sink {
   isStreaming?: boolean;
   lastUpdate?: Date;
   sourceId?: number;
-  // stereo sinks only (StereoCalibrationSink/StereoDepthSink) - sourceId is the LEFT camera,
-  // this is the RIGHT one. See Sink.Source2 (Server/Sink.cs).
+  // stereo sinks only: sourceId is the LEFT camera, this is the RIGHT one
   source2Id?: number;
   isEnabled?: boolean; // Track whether sink is enabled/disabled
 }
 
-// mirrors Server/Dtos.cs's CameraHardwareInfoDto - PascalCase, see the note on
-// CameraCalibrationResult below. Was declared lowercase here until caught live: the "Camera
-// Device" dropdown in AddSourceModal rendered every option as the literal text "()" (camera.name/
-// camera.path both undefined), and submitting silently POSTed an empty {} body to
-// /cameraSource/create - found while testing camera creation against a real USB camera on the
-// Orange Pi.
+// mirrors Server/Dtos.cs's CameraHardwareInfoDto (PascalCase)
 export interface CameraHardwareInfo {
   Name: string;
   Path: string;
 }
 
-// mirrors Server/Dtos.cs's CameraModeDto - PascalCase, see CameraCalibrationResult's note below.
+// mirrors Server/Dtos.cs's CameraModeDto (PascalCase)
 // PixelFormat is FrameFormat's ordinal (LumenCore/FrameFormat.h): 0 BGR24, 1 RGB24, 2 GRAY8,
 // 3 NV12, 4 YUYV, 5 MJPEG, 6 Y10, 7 Y16, 8 Y10P, 9 Y10BPACK (raw mono sensor formats).
 export interface CameraMode {
@@ -46,9 +40,8 @@ export interface CameraMode {
   IsNative: boolean;
 }
 
-// mirrors Server/Dtos.cs's CameraControlRangeDto/CameraControlsDto - a control's real range on
-// this particular camera (units differ: 100us steps on a UVC webcam, sensor lines on an Arducam
-// MIPI module). Supported=false means the camera has no such control.
+// mirrors CameraControlRangeDto/CameraControlsDto: a control's range on this camera (units differ
+// per device). Supported=false means no such control.
 export interface CameraControlRange {
   Supported: boolean;
   Minimum: number;
@@ -63,9 +56,8 @@ export interface CameraControls {
   Gain: CameraControlRange;
 }
 
-// mirrors Server/Dtos.cs's CalibrationStatusDto (ROADMAP.md Phase 8/E5) - whether a camera
-// source has a saved calibration at all, and whether it still matches the camera's CURRENT
-// capture mode (a SetMode call can silently leave it stale).
+// mirrors CalibrationStatusDto: whether a camera has a saved calibration and whether it matches
+// the current capture mode
 export interface CalibrationStatus {
   HasCalibration: boolean;
   MatchesCurrentResolution: boolean;
@@ -81,16 +73,11 @@ export interface Model {
   inputSize: number;
   confThreshold: number;
   nmsThreshold: number;
-  // which backend this model runs on - derived from the uploaded file's own extension at
-  // upload time (ModelManager.AddModel), not a separate preference: 0 = RKNN (NPU), 1 = ONNX
-  // Runtime (matches LumenCore/Manager.h's ObjectDetectionProvider declaration order).
+  // backend, derived from the uploaded file's extension: 0 = RKNN (NPU), 1 = ONNX Runtime
   provider: number;
 }
 
-// Extra fields AddSinkModal collects for sink types that need more than just a name -
-// handleAddSink dispatches on `type` to decide which of these actually apply. WebRTC and
-// NetworkTables are no longer creatable this way (see AddSinkOptions vs. the per-node preview/
-// publish toggles in useAppData.ts) - tagSize/backend cover AprilTag instead.
+// Extra fields AddSinkModal collects; handleAddSink dispatches on `type` to choose which apply.
 export interface AddSinkOptions {
   tagSize?: number;
   backend?: number; // 0 = CPU, 1 = Vulkan
@@ -106,10 +93,7 @@ export interface AddSinkOptions {
   };
 }
 
-// Shared connection defaults for the per-node "Publish to NetworkTables" toggle - configured
-// once in Settings rather than re-entered every time, since a real robot only has one NT4
-// server to talk to. Each toggle still creates its own dedicated NetworkTablesSink (ISink only
-// binds one source at a time), just reusing these connection details.
+// Shared connection defaults for the per-node "Publish to NetworkTables" toggle, configured in Settings.
 export interface NT4Defaults {
   mode: 'team' | 'server';
   teamNumber?: number;
@@ -144,9 +128,7 @@ export interface WebRTCStreamProps {
   onStop: () => void;
   onError: (error: string) => void;
   className?: string;
-  // ROADMAP.md Phase 8/E6: hides the header bar (name/status/fullscreen/stop controls) and
-  // fills its container instead of a fixed h-64 - for a small preview tile (GraphPage's
-  // BottomStrip) rather than the full player DashboardPage's "Live Streams" section uses.
+  // hides the header bar and fills its container, for small preview tiles
   compact?: boolean;
 }
 
@@ -170,34 +152,25 @@ export interface ToastProps {
   onClose: () => void;
 }
 
-// New types for device monitoring - sourced from /ws/state's WsDeviceStats (useAppData.ts),
-// not a separate REST poll. ramUsage is megabytes, not bytes - WsDeviceStats.RamUsageMb already
-// reports it that way (unlike the old getDeviceRAMUsage() REST call, which returned raw bytes).
+// Device monitoring types, sourced from /ws/state's WsDeviceStats; ramUsage is in megabytes.
 export interface DeviceStats {
   cpuUsage: number;
   ramUsage: number;
   diskUsage: number;
 }
 
-// --- Stereo depth (phase 10) - see STEREO_IMPLEMENTATION_PLAN.md ---
+// --- Stereo depth ---
 
-// ROADMAP.md Phase 8a/8d: mirrors Server/Dtos.cs's CameraCalibrationResultDto/
-// StereoCalibrationResultDto field-for-field, PascalCase and all - confirmed empirically (see
-// the note by PipelineProfile above). These two interfaces were previously lowercase-first,
-// matching the RAW SWIG-serialized shape the endpoints returned before the Phase 8a DTO
-// cleanup - a real regression this introduced and StereoPage.tsx was silently broken by
-// (result.epipolarRms read as undefined) until caught and fixed here.
+// mirrors CameraCalibrationResultDto/StereoCalibrationResultDto field-for-field (PascalCase)
 export interface CameraCalibrationResult {
   Fx: number; Fy: number; Cx: number; Cy: number; Rms: number;
   DistCoeffs: number[]; ImageWidth: number; ImageHeight: number;
 }
 
-// R/T/E/F/R1/R2/P1/P2/Q are flat row-major arrays (see StereoCalibrationResult.h's own comments
-// for each matrix's shape) - only EpipolarRms, BaselineMeters, RectifiedFx/Cx/Cy and the two
-// CameraCalibrationResults are actually read by this WebUI; the rest is carried through opaquely
-// to StereoDepthSink's create call.
-// the real gate for real use, not stereoRms - see STEREO_IMPLEMENTATION_PLAN.md ss10.2. Shared
-// between StereoPage.tsx and the Phase 8d calibration wizards, which both need the same number.
+// R/T/E/F/R1/R2/P1/P2/Q are flat row-major arrays; only EpipolarRms, BaselineMeters,
+// RectifiedFx/Cx/Cy and the two CameraCalibrationResults are read by the WebUI, the rest is passed
+// through to StereoDepthSink's create call.
+// Epipolar RMS pass/fail gate (pixels), shared by StereoPage and the calibration wizards.
 export const EPIPOLAR_RMS_GATE = 0.5;
 
 export interface StereoCalibrationResult {
@@ -206,7 +179,7 @@ export interface StereoCalibrationResult {
   R: number[]; T: number[]; E: number[]; F: number[];
   R1: number[]; R2: number[]; P1: number[]; P2: number[]; Q: number[];
   StereoRms: number;
-  EpipolarRms: number; // the real gate for real use - see STEREO_IMPLEMENTATION_PLAN.md ss10.2. < 0.5px
+  EpipolarRms: number; // the pass/fail gate, < 0.5px
   BaselineMeters: number;
   RectifiedFx: number; RectifiedCx: number; RectifiedCy: number;
   ImageWidth: number; ImageHeight: number;
@@ -215,7 +188,7 @@ export interface StereoCalibrationResult {
 }
 
 // matches StereoDepthBackendKind.h - a plain C++ enum, so the values below are its declaration
-// order (0-indexed), exactly what SWIG/System.Text.Json serialize an enum as.
+// order (0-indexed), exactly what SWIG/System.Text.Json serialise an enum as.
 export const StereoDepthBackendKind = {
   CODEC_AUTO: 0,
   CODEC_LAVC: 1,
@@ -245,27 +218,23 @@ export const STEREO_FRAME_OUTPUT_LABELS: Record<number, string> = {
   2: 'Depth overlay',
 };
 
-// mirrors Server/Dtos.cs's CalibrationCoverageDto - ROADMAP.md Phase 8d's live coverage
-// heatmap. Each entry in Snapshots is one saved snapshot/pair's detected corners flattened as
-// [x0,y0,x1,y1,...] (see that DTO's own comment on why - no vector<vector<double>> SWIG binding).
+// mirrors CalibrationCoverageDto: each Snapshots entry is one snapshot's detected corners,
+// flattened as [x0,y0,x1,y1,...]
 export interface CalibrationCoverage {
   FrameWidth: number;
   FrameHeight: number;
   Snapshots: number[][];
 }
 
-// mirrors Server/Dtos.cs's StereoDepthStatsDto - PascalCase, see the note above.
+// mirrors Server/Dtos.cs's StereoDepthStatsDto (PascalCase)
 export interface StereoDepthStats {
   ValidFraction: number;
   MedianDepthMeters: number;
 }
 
-// --- ROADMAP.md Phase 7/8: pipeline profiles + the /ws/state channel + node capabilities ---
-// These mirror the real C# response shapes field-for-field, PascalCase and all - confirmed
-// empirically (Server/Dtos.cs and friends are serialized by EmbedIO's own Swan formatter, which
-// (unlike System.Text.Json defaults elsewhere) was checked directly against a live server and
-// does NOT camelCase or otherwise rename properties) rather than assumed, the same way the
-// stereo types above document doing.
+// --- pipeline profiles, the /ws/state channel and node capabilities ---
+// These mirror the C# response shapes field-for-field in PascalCase (EmbedIO's serialiser does not
+// camelCase).
 
 // mirrors Server/PipelineProfile.cs
 export const PipelineProfileKind = { ApriltagSink: 0, ObjectDetectionSink: 1 } as const;
@@ -300,15 +269,8 @@ export interface NodeTypesResponse {
   Sinks: NodeTypeCapability[];
 }
 
-// mirrors Server/Source.cs, as embedded in the /ws/state channel and Sink.Source/Source2.
-// CameraHardwareInfo here is lowercase {name,path} - unlike every other field on this type, it's
-// the raw native SWIG CameraHardwareInfo passed straight through (Source.cs's own property is a
-// CameraHardwareInfo, not a DTO wrapper), and SWIG generated lowercase C# properties for it since
-// that's what the C++ struct's own members are named. Confirmed empirically against a live
-// /ws/state frame: {"CameraHardwareInfo":{"name":"...","path":"/dev/video2"},...} - do NOT
-// "fix" this to PascalCase to match the rest of the file, that would silently break it again.
-// (CameraHardwareInfo below, the OTHER one, IS PascalCase - it comes from CameraHardwareInfoDto,
-// a real DTO wrapper used by /cameraSource/getNotRegistered and /cameraSource/create.)
+// mirrors Server/Source.cs, as embedded in /ws/state. CameraHardwareInfo here is lowercase
+// {name,path} (the raw native struct); do not change it to PascalCase like the DTO version below.
 export interface WsSource {
   CameraHardwareInfo: { name: string; path: string } | null;
   Fps: number | null;
@@ -346,8 +308,7 @@ export interface WsDeviceStats {
   DiskUsagePercent: number;
   TemperatureC: number;
 }
-// mirrors Server/Dtos.cs's NetworkTablesStatusDto - ROADMAP.md Phase 8e's match view reads
-// Connected off this for each NetworkTablesSink it finds bound to a camera's detection chain.
+// mirrors Server/Dtos.cs's NetworkTablesStatusDto; the match view reads Connected from it
 export interface NetworkTablesStatus {
   Connected: boolean;
   Identity: string;

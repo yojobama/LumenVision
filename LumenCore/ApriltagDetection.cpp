@@ -30,7 +30,7 @@ std::string ApriltagDetection::ToString()
     }
     oss << "],";
 
-    // Pose parameters (now inside detection)
+    // Pose parameters
     oss << "\"pose\":{";
     // Rotation matrix
     oss << "\"R\":[";

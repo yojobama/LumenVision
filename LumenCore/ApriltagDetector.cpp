@@ -9,14 +9,8 @@
 
 ApriltagDetector::ApriltagDetector(std::shared_ptr<Logger> logger, std::string id, CameraCalibrationResult cameraCalibrationResult,
 	double tagSize, ApriltagBackendKind backendKind, int frameWidth, int frameHeight, ApriltagTuning tuning)
-	// requireColor=false: Process() below only ever calls result.frame->AsGray() on what it's
-	// bound to (a camera's raw frame, or another detector's output) - AsBgr() is only called
-	// further down, conditionally, on THIS detector's own annotated output, gated by this
-	// detector's own HasActiveFrameConsumer() (a separate, already-correct check - see this
-	// class's own Process()). Registering true here (matching every other requireFrame=true sink
-	// today) would defeat V4l2CameraBackend's decode-straight-to-gray optimization for exactly
-	// the case it exists for: a camera -> AprilTag -> NT4 pipeline with no preview/recording
-	// bound - see ISource::HasActiveColorFrameConsumer's own comment.
+	// requireColor=false: Process() only calls AsGray() on its input, so it must not force a colour
+	// decode upstream (see ISource::HasActiveColorFrameConsumer).
 	: ISource(logger, id), ISink(logger, 1, false, true, id, false)
 {
 	if (logger) logger->EnterLog("ApriltagDetector constructed");
@@ -26,8 +20,7 @@ ApriltagDetector::ApriltagDetector(std::shared_ptr<Logger> logger, std::string i
 	m_Tuning = tuning;
 	{
 		std::lock_guard<std::mutex> lock(m_BackendMutex);
-		// Vulkan with no real frame size yet: leave m_Backend null and let the first frame build
-		// it (see Process). Everything else can be built right now.
+		// Vulkan with no known frame size yet: the first frame builds the backend (see Process).
 		if (backendKind != APRILTAG_BACKEND_VULKAN || (frameWidth > 0 && frameHeight > 0))
 			BuildBackendLocked(frameWidth, frameHeight);
 		else
@@ -42,12 +35,8 @@ ApriltagDetector::ApriltagDetector(std::shared_ptr<Logger> logger, std::string i
 	m_DetectionInfo.cy = cameraCalibrationResult.cy;
 	m_HasCalibration = cameraCalibrationResult.fx > 0.0 && cameraCalibrationResult.fy > 0.0;
 
-	// m_CameraMatrix must exist whenever m_HasCalibration does - multi-tag PnP (ROADMAP.md
-	// Phase 7) needs real intrinsics regardless of whether this particular calibration happened
-	// to fit non-zero distortion coefficients. Previously this was only built inside the
-	// HasDistortion() branch, leaving m_CameraMatrix empty for an otherwise-valid calibration
-	// with zero-fit distortion - a real gap, not just an edge case multi-tag PnP happened to
-	// need fixed anyway.
+	// m_CameraMatrix must exist whenever m_HasCalibration does; multi-tag PnP needs intrinsics even
+	// when the fitted distortion is zero.
 	if (m_HasCalibration) {
 		m_CameraMatrix = (cv::Mat_<double>(3, 3) <<
 			cameraCalibrationResult.fx, 0, cameraCalibrationResult.cx,
@@ -92,8 +81,7 @@ void ApriltagDetector::BuildBackendLocked(int frameWidth, int frameHeight)
 			m_ActiveBackendKind = APRILTAG_BACKEND_VULKAN;
 			return;
 		} catch (const std::exception& e) {
-			// no usable Vulkan compute device, or GpuDetector/pipeline setup failed - fall back
-			// to CPU rather than fail outright (plan phase 5, item 5), and don't retry per frame
+			// No usable Vulkan device or setup failed: fall back to CPU, without retrying per frame.
 			if (m_Logger) m_Logger->EnterLog(LogLevel::Warning,
 				std::string("Vulkan AprilTag backend unavailable (") + e.what() + "), falling back to CPU");
 			m_VulkanUnavailable = true;
@@ -148,10 +136,7 @@ nlohmann::json ApriltagDetector::SolveMultiTagPnP(
 	const std::vector<cv::Point3d>& objectPoints, const std::vector<cv::Point2d>& imagePoints,
 	const cv::Mat& cameraMatrix, const cv::Mat& distCoeffs, int tagCount)
 {
-	// requires at least 2 tags - a single tag's own correspondences alone are exactly what the
-	// per-tag estimate_tag_pose path already computes; solvePnP over one tag's 4 (coplanar)
-	// corners would just reproduce the same estimate, not a more robust one, for the cost of a
-	// second pose solve.
+	// requires at least 2 tags; a single tag's corners would only reproduce the per-tag estimate.
 	if (tagCount < 2) return nullptr;
 
 	cv::Mat rvec, tvec;
@@ -161,9 +146,8 @@ nlohmann::json ApriltagDetector::SolveMultiTagPnP(
 	cv::Mat fieldToCameraRotation;
 	cv::Rodrigues(rvec, fieldToCameraRotation);
 
-	// solvePnP's own (rvec, tvec) map FIELD points INTO camera frame (p_camera = R*p_field + t)
-	// - the camera's own pose IN FIELD frame (what a robot program actually wants: "where am I")
-	// is the inverse of that.
+	// solvePnP's (rvec, tvec) map field points into the camera frame (p_camera = R*p_field + t);
+	// the camera pose in field frame is the inverse.
 	cv::Mat cameraRotationInField = fieldToCameraRotation.t();
 	cv::Mat cameraTranslationInField = -cameraRotationInField * tvec;
 
@@ -212,28 +196,16 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 		if (result.frame.has_value())
 		{
 			if (m_DriverMode) {
-				// still streams video (matches PhotonVision's own driver-mode behaviour) - just
-				// skips the actual detection call and NT4 publish, the expensive part. Keeps the
-				// same {"tags":[...],"multiTag":...} envelope as the real detection path below
-				// (both empty/null) so NetworkTablesSink clears tags/* AND multitag/* to "0 tags"
-				// rather than leaving stale data from before driver mode was enabled.
-				// AsBgrFrame(), not AsBgr() - a bare cv::Mat republished through SourceResult's
-				// implicit conversion would wrap it in a brand new, pool-ownership-less Frame,
-				// which is a real use-after-recycle risk the moment `result` (this function's own
-				// parameter, holding the ONLY other reference to that buffer's pool owner) goes
-				// out of scope at the end of this Process() call.
+				// Driver mode: republish the raw frame in an empty tags/multiTag envelope, skipping detection.
+				// AsBgrFrame() keeps pool ownership; a bare cv::Mat would risk use-after-recycle.
 				SetLatestResult(SourceResult(nlohmann::json{{"tags", nlohmann::json::array()}, {"multiTag", nullptr}, {"calibration", BuildCalibrationJson()}}, result.frame->AsBgrFrame(), result.captureTimeUs));
 				continue;
 			}
 
-			// AsGray() is free for a GRAY8/NV12-tagged Frame (no conversion needed) instead of
-			// always paying for a cvtColor here - the whole point of Frame carrying a format
-			// tag (ROADMAP.md Phase 3).
+			// AsGray() is free for GRAY8/NV12 frames (no conversion).
 			const cv::Mat& gray = result.frame->AsGray();
 
-			// Vulkan is sized to the actual frame: build it on the first frame (when it was
-			// requested without a known size) and rebuild it if the size changes, e.g. a camera
-			// mode switch - the GPU pipeline's buffers and decimation are fixed per instance.
+			// Vulkan is sized to the frame: build on the first frame, rebuild if the size changes.
 			if (m_RequestedBackendKind == APRILTAG_BACKEND_VULKAN && !m_VulkanUnavailable) {
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 				auto* vk = dynamic_cast<VkApriltagBackend*>(m_Backend.get());
@@ -248,26 +220,15 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				}
 			}
 
-			// Debug-level, not the implicit Info overload - this runs on every single processed
-			// frame, and Info unconditionally pays a recursive-mutex lock plus a file
-			// open/write/close cycle (Logger::FlushLogs). Debug is dropped before any of that
-			// unless LUMEN_LOG_DEBUG=1 is set - see Logger.cpp's own comment.
+			// Debug level: this runs every frame and Info would pay a mutex lock plus a file write.
 			m_Logger->EnterLog(LogLevel::Debug, "detecting apriltags using backend=" + m_Backend->Name());
 			zarray_t* detections = m_Backend->Detect(gray);
 
-			// annotate-on-demand: drawing tag outlines/labels only matters to something that
-			// actually wants this frame - a running WebRTC preview - never to NetworkTablesSink
-			// (json-only) or a robot with no preview open at all, the common case mid-match.
-			// Skipping the FramePool acquire/copy AND every cv::line/putText call below when
-			// nobody's watching is real CPU saved on every single detected frame, not just a
-			// theoretical one - see ISource::HasActiveFrameConsumer's own comment.
+			// Only draw the annotated frame when a consumer (e.g. a WebRTC preview) wants it.
 			bool wantsFrame = HasActiveFrameConsumer();
 
-			// Acquire()+copyTo() instead of .clone() - .clone() always mallocs a fresh buffer;
-			// this recycles one from the pool when one of the right size is free. `colourOwner`
-			// must be carried into the SetLatestResult call below via Frame's pool-owner
-			// constructor, not dropped by passing the bare cv::Mat through the implicit
-			// conversion - same hazard as AsBgrFrame's own comment describes.
+			// Acquire()+copyTo() recycles a pooled buffer; carry `colourOwner` into SetLatestResult via
+			// Frame's pool-owner constructor (see AsBgrFrame).
 			std::shared_ptr<void> colourOwner;
 			cv::Mat colouredFrame;
 			if (wantsFrame) {
@@ -278,10 +239,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			std::vector<nlohmann::json> jsonVector;
 
-			// ROADMAP.md Phase 7 (multi-tag PnP): accumulated across every tag this frame that
-			// has both a real detection AND a known field pose, then solved once, jointly, after
-			// the per-tag loop below - see the loop body for why this is more robust than any
-			// one tag's own single-tag pose.
+			// Multi-tag PnP: accumulates tags with a known field pose, solved jointly after the tag loop.
 			std::vector<cv::Point3d> multiTagObjectPoints;
 			std::vector<cv::Point2d> multiTagImagePoints;
 			int multiTagCount = 0;
@@ -290,13 +248,8 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				apriltag_detection_t* detection;
 				zarray_get(detections, i, &detection);
 
-				// estimate_tag_pose assumes a pure pinhole projection (no distortion) when it
-				// reconstructs the tag's homography from the four corners. If the camera has
-				// real distortion (any real lens does), pose estimation must run on undistorted
-				// corner coordinates instead, or the resulting pose is systematically wrong -
-				// worse the further a tag sits from the image center. The corners used for the
-				// JSON payload and the drawn overlay below stay untouched: those describe where
-				// the tag actually appears in this (distorted) frame.
+				// estimate_tag_pose assumes a pinhole model, so run it on undistorted corners. The JSON and
+				// overlay corners stay distorted, as they describe the actual image.
 				nlohmann::json detectionJson = {
 					{"id", detection->id},
 					{"center", {detection->c[0], detection->c[1]}},
@@ -308,20 +261,8 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					}}
 				};
 
-				// Multi-tag PnP accumulation: this tag's 4 corners, in FIELD-frame 3D (its known
-				// field pose composed with its 4 local corners) paired with the SAME corners'
-				// real (distorted) image pixels - cv::solvePnP takes distCoeffs directly, so
-				// these stay undistorted-uncorrected here, matching multiTagObjectPoints/
-				// multiTagImagePoints being fed straight into one solvePnP call below rather than
-				// through the separate undistortPoints path the single-tag estimate uses.
-				//
-				// The local corner order/convention below (halfSize,halfSize / -halfSize,halfSize
-				// / -halfSize,-halfSize / halfSize,-halfSize matched to detection->p[0..3], local
-				// +Z as the tag's outward normal) is NOT guessed - it was empirically verified
-				// against apriltag.c's own homography_project corner-assignment loop (confirmed
-				// by reading apriltag.c directly) and cross-checked against the real
-				// estimate_tag_pose() on synthetic on-axis AND rotated/off-axis test cases,
-				// recovering the exact known ground-truth pose in both.
+				// Multi-tag PnP: field-frame 3D corners paired with the raw (distorted) pixels; solvePnP takes distCoeffs.
+				// Local corner order matches detection->p[0..3], with +Z as the tag's outward normal (apriltag.c).
 				AprilTagFieldPose fieldPose;
 				if (m_HasCalibration && m_FieldLayout.TryGetTagPose(detection->id, fieldPose)) {
 					double halfSize = m_DetectionInfo.tagsize / 2.0;
@@ -340,11 +281,8 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					multiTagCount++;
 				}
 
-				// estimate_tag_pose has no way to report "these intrinsics are degenerate" - given
-				// fx=fy=0 (no calibration attached yet) it still returns, but pose.R/pose.t come
-				// back as garbage/invalid pointers; dereferencing or matd_destroy-ing them corrupts
-				// the heap (confirmed by reproducing standalone under gdb). Must not even attempt
-				// pose estimation without valid intrinsics.
+				// estimate_tag_pose returns invalid pose pointers for degenerate intrinsics (fx=fy=0), which
+				// corrupts the heap when freed, so skip pose estimation without valid intrinsics.
 				if (m_HasCalibration) {
 					apriltag_detection_t poseDetection = *detection;
 					if (m_HasDistortion) {
@@ -355,9 +293,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 							{ detection->p[3][0], detection->p[3][1] }
 						};
 						std::vector<cv::Point2d> undistortedCorners;
-						// passing m_CameraMatrix as both the "new" camera matrix (P) and the
-						// original one keeps the output in the same pixel scale as the input,
-						// just with distortion removed - exactly what estimate_tag_pose expects
+						// Passing m_CameraMatrix as the new matrix keeps the output in the input's pixel scale.
 						cv::undistortPoints(distortedCorners, undistortedCorners, m_CameraMatrix, m_DistCoeffs, cv::noArray(), m_CameraMatrix);
 						for (int corner = 0; corner < 4; corner++) {
 							poseDetection.p[corner][0] = undistortedCorners[corner].x;
@@ -369,15 +305,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					apriltag_pose_t pose;
 					double err = estimate_tag_pose(&m_DetectionInfo, &pose);
 
-					// R is row-major 3x3 (pose.R->data[i*3+j], confirmed against
-					// apriltag_pose.h/matd_t's own layout) - published whole, not decomposed into
-					// Euler angles here: WPILib's Rotation3d has its own constructor taking a
-					// rotation matrix directly (edu.wpi.first.math.geometry.Rotation3d(Matrix<N3,
-					// N3>)), so the robot-side vendordep (Phase 7) can build a Transform3d from
-					// this with no lossy intermediate representation or convention mismatch to
-					// get wrong on this end. No rotation published meant no Transform3d, no pose
-					// ambiguity handling, no pose estimator - the actual reason a team would
-					// switch to this vendordep at all.
+					// R is row-major 3x3 (pose.R->data[i*3+j]); published whole for WPILib's Rotation3d(Matrix).
 					detectionJson["pose"] = {
 						{"x", pose.t->data[0]},
 						{"y", pose.t->data[1]},
@@ -389,8 +317,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 						}}
 					};
 
-					// estimate_tag_pose allocates pose.R/pose.t and documents that freeing them is
-					// the caller's responsibility (see apriltag/common/matd.h) - this was never done
+					// estimate_tag_pose allocates pose.R/pose.t; the caller must free them (apriltag/common/matd.h).
 					matd_destroy(pose.R);
 					matd_destroy(pose.t);
 				}

@@ -10,10 +10,7 @@ using System.Reflection;
 
 namespace Server.Web
 {
-    // Registers exactly RegisteredControllers.All - not ASP.NET's default "every public
-    // ControllerBase subclass in the assembly" discovery - so that list stays the single source of
-    // truth shared with OpenApiGenerator (a controller reachable over HTTP is exactly a controller
-    // documented in /api/openapi.json, and vice versa). Also lets the controllers stay `internal`.
+    // Registers exactly RegisteredControllers.All (shared with OpenApiGenerator), not every public controller in the assembly.
     public sealed class RegisteredControllerFeatureProvider : IApplicationFeatureProvider<ControllerFeature>
     {
         public void PopulateFeature(IEnumerable<ApplicationPart> parts, ControllerFeature feature)
@@ -24,13 +21,8 @@ namespace Server.Web
         }
     }
 
-    // 400 for a query/route value that can't be converted to its parameter type (e.g.
-    // ?Enabled=maybe, or an enum given a name it doesn't have) - EmbedIO rejected those up front.
-    // Without [ApiController] (deliberately not used: its automatic binding-source inference and
-    // problem-details bodies would change far more than this), MVC would instead record the error,
-    // bind default(T), and run the action anyway, turning a bad request into a confusing 500 from
-    // deep inside native code. A key that's simply ABSENT is not an error here - it still binds
-    // the parameter's default, exactly as before.
+    // 400 for a query/route value that can't be converted to its parameter type (without [ApiController], MVC would bind
+    // default(T) and run the action). An absent key is not an error and still binds the parameter's default.
     public sealed class RejectUnparseableParametersFilter : IActionFilter
     {
         public void OnActionExecuting(ActionExecutingContext context)
@@ -50,9 +42,7 @@ namespace Server.Web
         public void OnActionExecuted(ActionExecutedContext context) { }
     }
 
-    // Prefixes every attribute route with "api/" - the ASP.NET equivalent of EmbedIO's
-    // WithWebApi("/api", ...) module base path. Keeps each controller's own route templates (and
-    // therefore OpenApiGenerator's documented paths, which have never included /api) unchanged.
+    // Prefixes every attribute route with "api/".
     public sealed class ApiPrefixConvention : IApplicationModelConvention
     {
         private readonly AttributeRouteModel _prefix = new(new RouteAttribute("api"));

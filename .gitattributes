@@ -1,6 +1,5 @@
 * text=auto
 *.sh text eol=lf
-# Debian maintainer scripts (extensionless by convention - dpkg refuses a shebang with a
-# trailing \r, "bad interpreter" at install time) - same reasoning as *.sh above.
+# Debian maintainer scripts: a shebang with a trailing CR is rejected by dpkg
 scripts/deb/postinst text eol=lf
 scripts/deb/prerm text eol=lf

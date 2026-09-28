@@ -6,34 +6,22 @@
 #include <cstdint>
 #include "CameraMode.h"
 
-// A single captured frame plus the instant it was captured. Deliberately still cv::Mat-based
-// (not the format-tagged Frame type ROADMAP.md Phase 3 describes) so this interface can land on
-// its own, with CameraFrameSource rewritten onto it, before Frame/SourceResult are touched in a
-// separate change.
+// A single captured frame plus the instant it was captured.
 struct CameraGrabResult
 {
 	bool success = false;
 	cv::Mat frame;
 	uint64_t captureTimeUs = 0;
-	// non-null when `frame` is backed by a FramePool buffer (V4l2CameraBackend::Grab() sets this;
-	// OpenCvCameraBackend leaves it null, which is exactly as correct - a null poolOwner just
-	// means `frame` owns its own memory the normal cv::Mat way). CameraFrameSource::CaptureFrame
-	// must carry this through to the Frame it constructs from `frame` - see Frame's own
-	// pool-owner-taking constructor - or the pooled buffer can be recycled out from under a Frame
-	// still using it the moment this shared_ptr's last reference (this struct, once Grab()
-	// returns) goes away.
+	// non-null when `frame` is backed by a FramePool buffer (V4l2CameraBackend sets it; null means `frame` owns its memory).
+	// CameraFrameSource::CaptureFrame must carry it into the Frame it builds, or the buffer can be recycled while still in use.
 	std::shared_ptr<void> poolOwner;
-	// what `frame` actually holds - BGR24 (CV_8UC3) or GRAY8 (CV_8UC1). A mono camera's frames
-	// stay single-channel all the way to the AprilTag detector (whose AsGray() is then free)
-	// instead of being expanded to BGR here and converted straight back there; sinks that need
-	// colour convert lazily via Frame::AsBgr().
+	// what `frame` holds: BGR24 (CV_8UC3) or GRAY8 (CV_8UC1). Mono frames stay single-channel to the AprilTag detector;
+	// sinks needing colour convert lazily via Frame::AsBgr().
 	FrameFormat format = FrameFormat::BGR24;
 };
 
-// Implemented per-platform: OpenCvCameraBackend is the always-available fallback (the only one
-// that exists right now); V4l2CameraBackend (Linux) and MediaFoundationCameraBackend (Windows)
-// are ROADMAP.md Phase 3 follow-ups. CameraFrameSource owns one of these rather than a
-// cv::VideoCapture directly, so swapping backends later doesn't touch ISource plumbing at all.
+// Implemented per platform: OpenCvCameraBackend (always available) and V4l2CameraBackend (Linux).
+// CameraFrameSource owns one of these rather than a cv::VideoCapture.
 class ICameraBackend
 {
 public:
@@ -45,46 +33,25 @@ public:
 	virtual void Close() = 0;
 	virtual bool IsOpened() const = 0;
 
-	// Must return within a bounded time even if the device stops producing frames (e.g.
-	// unplugged mid-capture) - ISource::Toggle(false) blocks joining the capture thread, so a
-	// backend that blocks forever here hangs StopSourceById/DeleteSource/process shutdown
-	// indefinitely. A real V4L2 backend needs poll() with a timeout ahead of VIDIOC_DQBUF; a
-	// real Media Foundation backend needs Close() to call IMFSourceReader::Flush to unblock a
-	// pending ReadSample from another thread.
-	// preferGray: true when no bound sink needs a colour frame this cycle (see
-	// ISource::HasActiveFrameConsumer) - a backend that can decode straight to grayscale should do
-	// so instead of decoding to BGR and letting Frame::AsGray() convert it back down, skipping the
-	// colour conversion work entirely rather than just moving it (V4l2CameraBackend's MJPEG/YUYV
-	// paths; every other backend is free to ignore this and always produce BGR, exactly as
-	// before - it's an optimization hint, not a contract).
+	// Must return within a bounded time even if the device stops producing frames (e.g. unplugged): ISource::Toggle(false)
+	// blocks joining the capture thread, so a backend that blocks forever here hangs stop/delete/shutdown.
+	// preferGray: true when no bound sink needs colour this cycle (see ISource::HasActiveFrameConsumer); a backend that can
+	// decode straight to grayscale should. Backends may ignore this hint and always produce BGR.
 	virtual CameraGrabResult Grab(bool preferGray = false) = 0;
 
 	virtual std::string Name() const = 0;
 
-	// Real device capabilities, queried after Open(). Empty on a backend with no way to enumerate
-	// them at all - none exist today: V4l2CameraBackend (CameraBackendFactory's preferred Linux
-	// backend) answers this via V4L2 ioctls, and OpenCvCameraBackend (the fallback there, and the
-	// only backend on every other platform including Windows) goes straight to Media Foundation
-	// on Windows specifically, bypassing cv::VideoCapture's own lack of a generic capability
-	// query - see OpenCvCameraBackend's own comment.
+	// Real device capabilities, queried after Open(). Empty on a backend that cannot enumerate them
+	// (V4L2 uses ioctls; OpenCvCameraBackend on Windows queries Media Foundation directly).
 	virtual std::vector<CameraMode> EnumerateModes() = 0;
 
-	// Both V4L2 and Media Foundation silently substitute a nearest mode rather than failing on a
-	// request they can't satisfy exactly - callers MUST re-read GetCurrentMode() afterwards
-	// (checking its isNative flag) rather than trusting this return value's true as "got exactly
-	// what was asked for". This return value only reports whether the underlying ioctl/API call
-	// itself succeeded.
+	// Both V4L2 and Media Foundation silently substitute the nearest mode: callers MUST re-read GetCurrentMode() and check
+	// isNative. This return value only reports whether the underlying call succeeded.
 	virtual bool SetMode(const CameraMode& mode) = 0;
 	virtual CameraMode GetCurrentMode() const = 0;
 
-	// Exposure/gain control - a fixed short exposure is what actually makes AprilTags detect
-	// reliably on a moving robot (motion blur otherwise smears the tag edges the detector needs).
-	// exposureAbsolute is in the backend's own native units (V4L2: 100us steps, matching
-	// V4L2_CID_EXPOSURE_ABSOLUTE's documented convention - or, on a sensor that only has
-	// V4L2_CID_EXPOSURE, e.g. many Arducam modules, that control's own units, typically lines; see
-	// GetExposureRange for what the device accepts). Returns false if the control isn't
-	// supported by this device/backend rather than throwing - an unsupported control is routine,
-	// not exceptional.
+	// Exposure/gain control. exposureAbsolute is in the backend's native units (V4L2: 100us steps for EXPOSURE_ABSOLUTE, or
+	// the sensor's own units, typically lines, for EXPOSURE; see GetExposureRange). Returns false if unsupported.
 	virtual bool SetExposure(int exposureAbsolute) = 0;
 	virtual bool SetAutoExposure(bool enabled) = 0;
 	virtual bool SetGain(int gain) = 0;

@@ -1,17 +1,6 @@
 name: CI
 
-# Linux x64 only for now. Windows CI is deliberately deferred, not forgotten:
-#   - Windows: install-deps' Windows-side equivalent is OpenCV built from source (confirmed the
-#     hard way this took well over an hour on a real dev machine); GitHub-hosted windows-latest
-#     runners have no ready equivalent of the /usr/local cache below (no single prefix vcpkg and
-#     a from-source build can both land in), and doing this properly needs either a hosted OpenCV
-#     binary artifact or vcpkg binary caching - real design work, not a small addition here.
-#   - ARM64 is no longer blocked the way this comment used to say: GitHub-hosted ubuntu-24.04-arm
-#     runners went GA for public repos in August 2025 (no self-hosted runner needed at all). This
-#     fast build/test job still only covers x64 on every push - the full ARM64 build (RKNN/RGA
-#     included, plus the .deb package) lives in release.yml instead, since it needs the complete
-#     install-deps.sh feature set and only makes sense to run when actually cutting a release,
-#     not on every push.
+# Linux x64 build and test on every push; the ARM64 build and .deb package are in release.yml
 on:
   push:
     branches: [main]
@@ -25,11 +14,8 @@ jobs:
         with:
           submodules: recursive
 
-      # install-deps.sh's own idempotency checks (pkg-config version checks, header-existence
-      # checks) already skip re-building anything found here, so a cache hit turns a 1-2 hour
-      # from-source OpenCV build into a no-op - keyed on the script's own contents so any change
-      # to it (a version bump, a new flag) invalidates the cache rather than silently reusing a
-      # stale build.
+      # install-deps.sh skips dependencies already present, so a cache hit avoids the from-source
+      # build; keyed on the script contents
       - name: Cache dependency build
         uses: actions/cache@v4
         with:
@@ -51,18 +37,12 @@ jobs:
       - name: Build
         run: cmake --build --preset ci-linux-x64
 
-      # `--output-on-failure`: bare ctest only prints a pass/fail summary line per test, not
-      # WHY one failed - useless for diagnosing a CI-only failure with no interactive access to
-      # the runner. No tests exist yet (ROADMAP.md Phase 5), so this currently passes vacuously;
-      # it activates automatically once that phase adds Catch2/GoogleTest targets, no workflow
-      # change needed then.
+      # --output-on-failure prints why a test failed
       - name: Test
         run: ctest --preset ci-linux-x64 --output-on-failure
 
-      # The C# Server was never compiled by CI before - a broken controller or a SWIG binding
-      # mismatch only surfaced at release time (or on the board). Built against the native
-      # library the steps above just produced (-p:LumenCorePreset matches the cmake preset, and
-      # -c Release matches its stage/Release output directory).
+      # Builds the C# Server against the native library produced above (-c Release matches its
+      # stage/Release output directory)
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"

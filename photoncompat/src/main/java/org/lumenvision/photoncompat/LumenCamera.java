@@ -12,17 +12,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Robot-side client for one LumenVision coprocessor node, mirroring photonlib's PhotonCamera
- * shape (same idea: construct with a name, poll getLatestResult()) so a team migrating from
- * PhotonVision changes an import line, not their whole vision-handling code.
+ * Robot-side client for one LumenVision coprocessor camera, mirroring photonlib's PhotonCamera.
  *
- * <p>Reads the NT4 schema NetworkTablesSink.cpp publishes under {@code
- * <rootTable>/<sourceName>/tags/*}: parallel DoubleArray topics {@code ids}, {@code x}, {@code
- * y}, {@code z}, and the tag's row-major 3x3 rotation matrix flattened into {@code r0}..{@code
- * r8} - see NetworkTablesSink.cpp and LumenTrackedTarget for why the raw matrix, not a derived
- * Euler/quaternion representation, crosses NT4. Also reads the sibling {@code
- * <rootTable>/<sourceName>/multitag/*} scalars (ROADMAP.md Phase 7) - see
- * {@link #getMultiTagResult()}.
+ * <p>Reads the NT4 tag topics published by NetworkTablesSink under {@code
+ * <rootTable>/<sourceName>/tags/*} and the {@code multitag/*} scalars ({@link #getMultiTagResult()}).
  */
 public class LumenCamera {
     private final DoubleArraySubscriber idsSub;
@@ -39,21 +32,13 @@ public class LumenCamera {
     private final DoubleSubscriber multiTagReprojErrSub;
 
     private final StringSubscriber versionSub;
-    // checked at most once - a coprocessor's ".version" never changes for the lifetime of its
-    // process (LumenCore/CMakeLists.txt bakes it in at build time), so there's nothing to gain
-    // from re-warning on every single getLatestResult() call once a real mismatch has already
-    // been reported.
+    // checked at most once; the coprocessor's ".version" is constant for the life of its process
     private boolean versionChecked = false;
 
     /**
-     * @param instance the NetworkTableInstance to read from - an explicit parameter (not always
-     *     {@link NetworkTableInstance#getDefault()}) so a robot program's simulation code can
-     *     inject a separate instance instead of this class silently only ever working against
-     *     the real robot's default one.
-     * @param rootTable must match the coprocessor's own NetworkTablesConfig.rootTable exactly
-     *     (the deployment default is "lumenvision" - see the Naming table in ROADMAP.md).
-     * @param sourceName must match the bound source's own ID on the coprocessor - the same
-     *     string that appears as a subtable under {@code rootTable} in the NT4 tree.
+     * @param instance the NetworkTableInstance to read from (injectable for simulation)
+     * @param rootTable must match the coprocessor's NetworkTablesConfig.rootTable (default "lumenvision")
+     * @param sourceName must match the bound source's ID, which is the subtable name under {@code rootTable}
      */
     public LumenCamera(NetworkTableInstance instance, String rootTable, String sourceName) {
         NetworkTable sourceTable = instance.getTable(rootTable + "/" + sourceName);
@@ -90,16 +75,11 @@ public class LumenCamera {
     }
 
     /**
-     * The most recent detection set published under this camera's table, decoded into WPILib
-     * geometry types. Never null - an empty {@link LumenPipelineResult#getTargets()} means "no
-     * tags this frame" (including "no frame has ever arrived yet"), not "no data available".
+     * The most recent detection set, decoded into WPILib geometry types. Never null; empty
+     * targets means no tags this frame (or no frame yet).
      */
     public LumenPipelineResult getLatestResult() {
-        // deferred to here rather than the constructor: right after construction, NT4's own
-        // client/server handshake hasn't necessarily completed yet, so ".version" would almost
-        // always still read back empty (LumenVersionCheck's own sentinel for "not received yet")
-        // and never actually catch a real mismatch - by the time any real robot loop calls
-        // getLatestResult() for the first time, the connection has normally long since settled.
+        // deferred from the constructor: the NT4 handshake may not have completed yet, so ".version" would read empty
         if (!versionChecked) {
             String coprocessorVersion = versionSub.get();
             if (!coprocessorVersion.isEmpty()) {
@@ -119,11 +99,7 @@ public class LumenCamera {
 
         List<LumenTrackedTarget> targets = new ArrayList<>(ids.length);
         for (int i = 0; i < ids.length; i++) {
-            // defends against a torn read (one topic updated, another not yet) rather than
-            // indexing out of bounds into a shorter array - the parallel arrays are published
-            // together in NetworkTablesSink::PublishSourceResult, but NT4 delivers each topic's
-            // update independently, so a reader can genuinely observe them out of step for one
-            // poll.
+            // guards against a torn read: the parallel arrays are published together but NT4 delivers each topic separately
             if (i >= x.length || i >= y.length || i >= z.length) break;
             double[] rotationRowMajor = new double[9];
             boolean rotationComplete = true;
@@ -139,27 +115,17 @@ public class LumenCamera {
             targets.add(new LumenTrackedTarget((int) ids[i], x[i], y[i], z[i], rotationRowMajor));
         }
 
-        // NT4's own subscriber timestamp is already reconciled into this client's local clock
-        // domain (that reconciliation is the actual point of NT4 over NT3 - a raw value read out
-        // of the JSON/NT payload itself would instead be in the COPROCESSOR's clock, not
-        // comparable to Timer.getFPGATimestamp() without doing that reconciliation by hand).
-        // Microseconds -> seconds to match what addVisionMeasurement expects.
+        // NT4 subscriber timestamps are already in the local clock domain; microseconds -> seconds
+        // as addVisionMeasurement expects
         double timestampSeconds = idsSub.getLastChange() / 1_000_000.0;
 
-        // read as part of the SAME snapshot as targets/timestamp, not left to a caller's own
-        // separate getMultiTagResult() call - LumenPoseEstimator.update(LumenPipelineResult)
-        // needs both from one coherent read, not two independent NT4 polls that could
-        // legitimately observe two different frames.
+        // read with the same snapshot as targets/timestamp so LumenPoseEstimator sees one coherent frame
         return new LumenPipelineResult(targets, timestampSeconds, getMultiTagResult());
     }
 
     /**
-     * The coprocessor's own multi-tag PnP result (ROADMAP.md Phase 7), if one has been published
-     * this frame. Empty when fewer than 2 simultaneously-visible tags have known field poses (no
-     * field layout loaded on the coprocessor sink, or fewer than 2 of the tags currently in
-     * frame are in it) - {@code multitag/tagCount} is the coprocessor's own explicit signal for
-     * this (NetworkTablesSink.cpp publishes 0 there specifically so this doesn't have to guess
-     * "stale data" from an unpublished topic apart from "no result this frame").
+     * The coprocessor's multi-tag PnP result, if published this frame. Empty when {@code
+     * multitag/tagCount} is 0 (fewer than 2 visible tags have known field poses).
      */
     public Optional<LumenMultiTagResult> getMultiTagResult() {
         int tagCount = (int) multiTagTagCountSub.get();

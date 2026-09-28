@@ -4,10 +4,7 @@
 namespace {
 	constexpr int MAX_BOUND_SOURCES = 1; // matches WebRTCSink's own single-source convention
 
-	// Standard base64 (RFC 4648, with '=' padding) - see MjpegSink.h's own comment for why this
-	// encoding, not raw bytes, is what crosses the SWIG boundary. No existing helper for this
-	// anywhere in LumenCore (checked), and pulling in a whole third-party base64 library for
-	// ~20 lines of well-known, easily-verified algorithm isn't worth the extra dependency.
+	// Standard base64 (RFC 4648, '=' padding); see MjpegSink.h for why the SWIG boundary needs it.
 	std::string Base64Encode(const std::vector<uint8_t>& data)
 	{
 		static const char* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

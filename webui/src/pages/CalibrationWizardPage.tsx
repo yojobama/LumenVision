@@ -8,17 +8,11 @@ import type { CameraCalibrationResult, CalibrationCoverage, Source } from '../ty
 
 const api = new ApiService();
 
-// a rule-of-thumb pass/fail threshold for mono reprojection RMS - OpenCV/community convention
-// (<0.5px very good, <1.0px acceptable for most lens/board setups); unlike stereo's
-// EPIPOLAR_RMS_GATE this isn't a hard gate documented elsewhere in this project, just a sensible
-// default for the pass/fail light the plan asks for.
+// rule-of-thumb pass/fail threshold for mono reprojection RMS (<0.5px very good, <1.0px acceptable)
 const MONO_RMS_GATE = 1.0;
 
-// ROADMAP.md Phase 8d: the camera calibration wizard - bind -> capture -> run -> result as
-// distinct full-screen steps (was previously not reachable from the webui at all; the only way
-// to drive a CameraCalibrationSink was raw REST calls, since SinksPage never had any
-// calibration-specific controls). Reached from the graph Inspector's "Calibrate" button on a
-// CameraCalibrationSink node.
+// Camera calibration wizard (bind, capture, run, result), reached from the Inspector's
+// "Calibrate" button on a CameraCalibrationSink node.
 export const CalibrationWizardPage: React.FC<{
   sources: Source[];
   onToast: (m: string, t: 'success' | 'error' | 'info') => void;

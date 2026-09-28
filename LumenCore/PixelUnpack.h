@@ -3,17 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 
-// Raw-sensor mono formats -> 8-bit grayscale. What global-shutter FRC cameras (Arducam OV9281 and
-// friends) hand out when they're not behind a UVC bridge that already converts to YUYV/MJPEG:
-// V4L2's Y10/Y16/Y10P/Y10BPACK. Nothing downstream (AprilTag, calibration, encoders) wants more
-// than 8 bits, so every path here keeps the most significant 8 bits rather than threading a
-// 16-bit Frame through the pipeline.
+// Raw-sensor mono formats (V4L2 Y10/Y16/Y10P/Y10BPACK) -> 8-bit grayscale, keeping the most significant 8 bits.
 //
-// Deliberately free of <linux/videodev2.h> so the conversions build (and are unit-tested) on
-// every platform, not only where V4l2CameraBackend itself compiles. `stride` is the driver's
-// bytesperline - it can exceed width * bytes-per-pixel (row padding), so rows are never assumed
-// to be contiguous. `dst` is (re)created as CV_8UC1 width x height; an already-right-sized dst
-// (e.g. a FramePool buffer) is written in place.
+// Free of <linux/videodev2.h> so it builds on every platform. `stride` is the driver's bytesperline (may exceed
+// width * bytes-per-pixel); `dst` is (re)created as CV_8UC1 width x height, or written in place if already that size.
 namespace PixelUnpack
 {
 	// V4L2_PIX_FMT_Y10: one little-endian 16-bit word per pixel, value in the low 10 bits.

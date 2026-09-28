@@ -18,24 +18,17 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 		const cv::Mat& sourceFrame = result.frame->AsBgr();
 
 		if (m_DriverMode) {
-			// AsBgrFrame(), not the bare sourceFrame cv::Mat - see ApriltagDetector.cpp's
-			// identical driver-mode passthrough for why passing a raw cv::Mat through
-			// SourceResult's implicit conversion here would drop FramePool ownership tracking.
+			// AsBgrFrame() rather than the bare cv::Mat, to keep FramePool ownership tracking.
 			SetLatestResult(SourceResult(nlohmann::json(std::vector<nlohmann::json>{}), result.frame->AsBgrFrame(), result.captureTimeUs));
 			continue;
 		}
 
 		std::vector<ObjectDetection> detections = m_Backend->Infer(sourceFrame);
 
-		// annotate-on-demand - see ApriltagDetector::Process's identical comment; skips the
-		// FramePool acquire/copy AND every cv::rectangle/putText call below when nothing bound
-		// to this sink actually wants the frame (NetworkTablesSink is json-only, and a robot
-		// with no preview open never needs it drawn at all).
+		// Annotate only when a bound sink wants the frame; otherwise skips the FramePool acquire/copy and drawing.
 		bool wantsFrame = HasActiveFrameConsumer();
 
-		// Acquire()+copyTo() instead of .clone() - see ApriltagDetector.cpp's identical pattern.
-		// annotOwner is carried into the SetLatestResult call below via Frame's pool-owner
-		// constructor, not dropped through the bare-cv::Mat implicit conversion.
+		// Acquire()+copyTo() rather than .clone(); annotOwner is passed via Frame's pool-owner constructor.
 		std::shared_ptr<void> annotOwner;
 		cv::Mat annotatedFrame;
 		if (wantsFrame) {

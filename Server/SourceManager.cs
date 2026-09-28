@@ -16,8 +16,6 @@ namespace Server
         private SourceManager()
         {
             sources = new List<Source>();
-            // Initialize the source manager
-            // This could include setting up data sources, initializing channels, etc.
         }
 
         public void ChangeSourceName(int sourceId, string newName)
@@ -26,7 +24,7 @@ namespace Server
             if (source != null)
             {
                 source.Name = newName;
-                DB.Instance.Save(); // Save changes to the database
+                DB.Instance.Save();
             }
         }
 
@@ -44,23 +42,15 @@ namespace Server
         {
             foreach (var source in sources)
             {
-                // Logic to disable the source
-                // This could involve setting its state to stopped and releasing any resources it holds.
-                ManagerWrapper.Instance.StopSourceById(source.Id); // Assuming Source has an isEnabled property
+                ManagerWrapper.Instance.StopSourceById(source.Id);
             }
-            // Logic to stop all sources
-            // This could involve iterating through a list of sources and stopping each one.
         }
         public void EnableAllSources()
         {
             foreach (var source in sources)
             {
-                // Logic to enable the source
-                // This could involve setting its state to running and initializing any necessary resources.
-                ManagerWrapper.Instance.StartSourceById(source.Id); // Assuming Source has an isEnabled property
+                ManagerWrapper.Instance.StartSourceById(source.Id);
             }
-            // Logic to start all sources
-            // This could involve iterating through a list of sources and starting each one.
         }
 
         public void DisableSourceById(int id)
@@ -69,14 +59,10 @@ namespace Server
             {
                 if (source.Id == id)
                 {
-                    // Logic to disable the source
-                    // This could involve setting its state to stopped and releasing any resources it holds.
-                    ManagerWrapper.Instance.StopSourceById(source.Id); // Assuming Source has an isEnabled property
+                    ManagerWrapper.Instance.StopSourceById(source.Id);
                     return;
                 }
             }
-            // Logic to disable a source by its ID
-            // This could involve finding the source in a list and disabling it.
         }
         public void EnableSourceById(int id)
         {
@@ -84,14 +70,10 @@ namespace Server
             {
                 if (source.Id == id)
                 {
-                    // Logic to enable the source
-                    // This could involve setting its state to running and initializing any necessary resources.
-                    if (!ManagerWrapper.Instance.StartSourceById(source.Id)) throw new Exception("unable to start source"); // Assuming Source has an isEnabled property
+                    if (!ManagerWrapper.Instance.StartSourceById(source.Id)) throw new Exception("unable to start source");
                     return;
                 }
             }
-            // Logic to enable a source by its ID
-            // This could involve finding the source in a list and enabling it.
         }
 
         public Source GetSourceById(int id)
@@ -116,7 +98,7 @@ namespace Server
                 sourceId = ManagerWrapper.Instance.CreateCameraSource(cameraHardwareInfo);
 
             sources.Add(new Source(sourceId, name, SourceType.Camera, cameraHardwareInfo: cameraHardwareInfo));
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
             return sourceId;
         }
 
@@ -130,7 +112,7 @@ namespace Server
                 sourceId = ManagerWrapper.Instance.CreateVideoFileSource(filePath, fps);
             
             sources.Add(new Source(sourceId, name, SourceType.VideoFile, filePath, fps));
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
             return sourceId;
         }
         
@@ -144,19 +126,17 @@ namespace Server
                 sourceId = ManagerWrapper.Instance.CreateImageFileSource(filePath);
             
             sources.Add(new Source(sourceId, name, SourceType.ImageFile, filePath));
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
             return sourceId;
         }
 
-        // NEW: delete a source and unbind it from any sinks referencing it
+        // deletes a source and unbinds it from any sinks referencing it
         public void DeleteSource(int sourceId)
         {
             ManagerWrapper.Instance.DeleteSource(sourceId);
 
-            // Remove source from list
             sources.RemoveAll(s => s.Id == sourceId);
 
-            // Unbind from any sinks that referenced it
             foreach (var sinkId in SinkManager.Instance.getAllSinkIds())
             {
                 var sink = SinkManager.Instance.GetSinkById(sinkId);
@@ -174,10 +154,8 @@ namespace Server
             return ManagerWrapper.Instance.IsSourceActive(sourceId);
         }
 
-        // ROADMAP.md Phase 7: pipeline profiles - see PipelineProfile.cs for the design this
-        // implements. Index is assigned once and never reused after a delete, matching
-        // PhotonVision's own pipelineIndex semantics (a robot program's stored index must keep
-        // meaning the same profile even after an unrelated one is removed).
+        // Pipeline profiles (see PipelineProfile.cs). Index is assigned once and never reused after a delete,
+        // so a robot program's stored index keeps meaning the same profile.
         public int AddApriltagProfile(int sourceId, string name, double tagSize, int? calibratorSinkId,
             ApriltagBackendKind backend, int frameWidth, int frameHeight, bool driverMode,
             int? threads = null, float? quadDecimate = null, bool? refineEdges = null)
@@ -233,10 +211,8 @@ namespace Server
             return source.Profiles;
         }
 
-        // writes a field layout JSON onto one profile (not the sink it may currently be running
-        // as - see PipelineProfile.FieldLayoutPath's own comment on why this is profile-scoped),
-        // and if that profile happens to be the active one, applies it to the live sink
-        // immediately so a caller doesn't have to reactivate the same index just to pick it up.
+        // writes a field layout JSON onto one profile (profile-scoped, see PipelineProfile.FieldLayoutPath);
+        // applied to the live sink immediately if that profile is active.
         public void SetProfileFieldLayout(int sourceId, int index, string path)
         {
             Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
@@ -249,15 +225,8 @@ namespace Server
                 ManagerWrapper.Instance.LoadFieldLayout(source.ActiveDetectionSinkId.Value, path);
         }
 
-        // Tears down whatever detection sink is currently running for this source (if any) and
-        // recreates it from the chosen profile's settings, AT THE SAME sink id
-        // (source.ActiveDetectionSinkId) once one has ever been assigned. Preserving that id is
-        // what lets a WebRTC preview or NetworkTablesSink stay configured against "this source's
-        // detection output" across a switch rather than needing to be re-pointed every time a
-        // profile changes - but Manager::DeleteSink natively unbinds every other sink from the
-        // one it deletes (it walks m_Sinks and calls UnbindSource on each), so those downstream
-        // bindings are captured before the delete and explicitly re-established after the
-        // replacement sink comes up at the same id.
+        // Tears down the source's current detection sink and recreates it from the chosen profile at the same id (source.ActiveDetectionSinkId), so downstream bindings survive.
+        // Manager::DeleteSink unbinds the other sinks natively, so their bindings are captured beforehand and re-established afterwards.
         public void ActivateProfile(int sourceId, int profileIndex)
         {
             Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");

@@ -1,14 +1,8 @@
 name: Release
 
-# Builds the backend .deb and the photoncompat vendordep, and publishes both to a GitHub
-# Release - triggered only by a version tag someone pushes (never by this workflow itself; no
-# step here runs `git tag` or `gh release create` outside the publish-release job's own final
-# step, and that job is entirely skipped on a manual run - see its own `if:`).
-#
-# workflow_dispatch is for shaking out build issues WITHOUT creating a public release:
-# build-deb-arm64/build-deb-x64/build-vendordep all run and upload their output as ordinary
-# workflow artifacts either way, but publish-release (the job that touches gh-pages and creates
-# the GitHub Release) only runs when this was triggered by an actual pushed tag.
+# Builds the backend .deb, board images and the photoncompat vendordep, and publishes them to a
+# GitHub Release on a pushed version tag. A workflow_dispatch run builds and uploads artifacts only;
+# publish-release runs only for a tag.
 on:
   push:
     tags: ['v*']
@@ -19,8 +13,7 @@ permissions:
 
 jobs:
   build-deb-arm64:
-    # GitHub-hosted arm64 runners (GA for public repos since August 2025) - no self-hosted
-    # runner needed, see ci.yml's own comment on this.
+    # GitHub-hosted arm64 runner
     runs-on: ubuntu-24.04-arm
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -38,9 +31,7 @@ jobs:
             echo "value=0.0.0-dev${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
-      # same cache strategy as ci.yml's x64 job - a from-source OpenCV/ffmpeg-rockchip/MPP build
-      # is far too slow to redo on every release otherwise (this feature set is heavier than
-      # ci.yml's own x64 job: RKNN and RGA both need real Rockchip-specific builds on top of it).
+      # From-source OpenCV/ffmpeg-rockchip/MPP builds are slow, so cache them
       - name: Cache dependency build
         uses: actions/cache@v4
         with:
@@ -77,9 +68,7 @@ jobs:
       - name: Build .deb
         env:
           VERSION: ${{ steps.version.outputs.value }}
-          # matches this job's own earlier Configure/Build/Test steps - see build-deb.sh's own
-          # comment for why it must be told this explicitly rather than falling back to its
-          # pi-arm64-release default (unconfigured on this runner).
+          # Must match the preset used by the Configure/Build/Test steps above
           LUMEN_CORE_PRESET: ci-linux-arm64
         run: ./scripts/build-deb.sh
 
@@ -90,11 +79,7 @@ jobs:
           if-no-files-found: error
 
   build-deb-x64:
-    # A plain x64 package alongside the arm64 one - installable on a dev machine or any non-Pi
-    # x86_64 Linux box, with no Pi/Rockchip hardware assumed (no --with-rknn/--with-mpp/
-    # --with-ffmpeg-rockchip - none of that exists off aarch64). Mirrors ci.yml's own x64 job
-    # exactly (same install-deps.sh flags, same ci-linux-x64 preset), just adds the packaging
-    # step ci.yml itself never does.
+    # Plain x64 package with no Rockchip components; same dependency flags and preset as ci.yml
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -112,7 +97,7 @@ jobs:
             echo "value=0.0.0-dev${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
-      # matches ci.yml's own x64 job cache key exactly - the same dependency set.
+      # Same cache key as ci.yml's x64 job (same dependency set)
       - name: Cache dependency build
         uses: actions/cache@v4
         with:
@@ -148,8 +133,7 @@ jobs:
       - name: Build .deb
         env:
           VERSION: ${{ steps.version.outputs.value }}
-          # matches this job's own earlier Configure/Build/Test steps - see build-deb.sh's own
-          # comment for why it must be told this explicitly.
+          # Must match the preset used by the Configure/Build/Test steps above
           LUMEN_CORE_PRESET: ci-linux-x64
         run: ./scripts/build-deb.sh
 
@@ -160,12 +144,8 @@ jobs:
           if-no-files-found: error
 
   build-images:
-    # One customized, flashable OS image per Orange Pi 5-family board - installs the .deb
-    # build-deb-arm64 just produced into Armbian's own published Debian 13 vendor-kernel image
-    # (see scripts/build-image.sh's own header for the full rationale). Pi-only - the plain x64
-    # package has no board image. No continue-on-error/fail-fast:false anywhere here - every
-    # board's image is a real gate on the release, the same as build-deb-arm64 itself, not a
-    # best-effort extra.
+    # One flashable OS image per Orange Pi 5-family board, built from the arm64 .deb (see
+    # scripts/build-image.sh); every board image gates the release
     needs: build-deb-arm64
     runs-on: ubuntu-24.04-arm
     strategy:
@@ -182,8 +162,7 @@ jobs:
       - name: Build image
         env:
           VERSION: ${{ needs.build-deb-arm64.outputs.version }}
-        # --preserve-env, not `sudo VERSION=... cmd` - Ubuntu's default sudoers has env_reset on,
-        # which silently drops a leading VAR=value assignment unless it's in env_keep.
+        # --preserve-env because sudo's env_reset drops a leading VAR=value assignment
         run: sudo --preserve-env=VERSION scripts/build-image.sh ${{ matrix.board }}
 
       - uses: actions/upload-artifact@v4
@@ -193,7 +172,7 @@ jobs:
           if-no-files-found: error
 
   build-vendordep:
-    # pure Java - no ARM64 (or any C++ toolchain) needed.
+    # Pure Java; no native toolchain needed
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -236,9 +215,7 @@ jobs:
   publish-release:
     needs: [build-deb-arm64, build-deb-x64, build-images, build-vendordep]
     runs-on: ubuntu-24.04
-    # only a real pushed tag creates a public release - a workflow_dispatch run stops after
-    # build-deb-arm64/build-deb-x64/build-images/build-vendordep so their artifacts can be
-    # inspected without publishing anything.
+    # Only a pushed tag publishes a release
     if: github.ref_type == 'tag'
     steps:
       - uses: actions/checkout@v4
@@ -275,9 +252,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: maven-repo
           destination_dir: maven
-          # additive: this release's artifacts land alongside every previous release's, not
-          # replacing them - an older robot project pinned to an older photoncompat-java version
-          # must keep resolving it.
+          # Keep earlier releases resolvable for robot projects pinned to older versions
           keep_files: true
 
       - name: Create GitHub Release

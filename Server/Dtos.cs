@@ -3,14 +3,8 @@ using System.Linq;
 
 namespace Server
 {
-    // ROADMAP.md Phase 8a: plain, OpenAPI-friendly response/request shapes for the handful of
-    // endpoints that used to serialize a SWIG-generated type directly. Those types work (SWIG
-    // already round-trips CameraCalibrationResult through System.Text.Json today, e.g.
-    // CalibrationManager's own persistence), but every property getter is a live PINVOKE call
-    // into the native library rather than a plain field read, and the field names are the raw
-    // C++ member spelling (lowercase: fx/fy/width/height) rather than conventional C# PascalCase
-    // - both are surprises a reflection-driven OpenAPI generator (see Server/OpenApi) would bake
-    // straight into the generated TypeScript client. Map once at the controller boundary instead.
+    // Plain, OpenAPI-friendly shapes for endpoints that would otherwise serialise SWIG types (live P/Invoke getters, raw C++ field names).
+    // Mapped once at the controller boundary.
 
     public record struct CameraModeDto(int Width, int Height, double Fps, FrameFormat PixelFormat, bool IsNative)
     {
@@ -66,10 +60,7 @@ namespace Server
 
     public record struct StoredCalibrationDto(string CameraPath, CameraCalibrationResultDto Result, long CalibratedAtUnixMs)
     {
-        // deliberately NOT touching StoredCalibration/CalibrationManager's own on-disk shape -
-        // that JSON is already persisted (calibrations.json) with the raw SWIG field names, and
-        // changing it would silently strand every already-saved calibration on an existing
-        // deployment. This DTO only exists at the REST response boundary.
+        // Independent of StoredCalibration's on-disk shape (calibrations.json keeps the raw SWIG field names); this DTO exists only at the REST boundary.
         public static StoredCalibrationDto From(StoredCalibration stored) =>
             new(stored.CameraPath, CameraCalibrationResultDto.From(stored.Result), stored.CalibratedAtUnixMs);
     }
@@ -141,24 +132,15 @@ namespace Server
 
     public record struct StereoDepthStatsDto(double ValidFraction, double MedianDepthMeters);
 
-    // Threads/QuadDecimate are genuinely user-adjustable (not hardcoded - see
-    // ApriltagDetector's own constructor comment). QuadDecimateSupported is false for the
-    // Vulkan backend (fixed 2x decimation baked into its compute pipeline), telling the
-    // Inspector to hide/disable that control rather than let a user set a value that's
-    // silently ignored.
+    // Threads/QuadDecimate are user-adjustable; QuadDecimateSupported is false for Vulkan (fixed 2x decimation),
+    // so the Inspector disables that control.
     public record struct ApriltagTuningDto(int Threads, float QuadDecimate, bool QuadDecimateSupported, bool RefineEdges);
 
-    // ROADMAP.md Phase 8d: every saved snapshot/pair's detected corner points, for the
-    // calibration wizard's live coverage heatmap - which region of the frame still needs more
-    // checkerboard coverage. Each entry in Snapshots is one snapshot's corners flattened as
-    // [x0,y0,x1,y1,...] (SWIG has no vector<vector<double>> binding - see
-    // CameraCalibrator::GetSnapshotCorners' own comment).
+    // Every saved snapshot/pair's detected corners for the calibration coverage heatmap;
+    // each Snapshots entry is one snapshot flattened as [x0,y0,x1,y1,...].
     public record struct CalibrationCoverageDto(int FrameWidth, int FrameHeight, double[][] Snapshots);
 
-    // NetworkTablesSink::GetConnectionStatus()/WebRTCSink::GetConnectionStatus() both return an
-    // nlohmann::json object serialized to a std::string - the SWIG boundary can only express that
-    // as a C# string, so the two controllers used to hand it back as Task<string> and the webui
-    // had to JSON.parse() it a second time. Parse it once here into a real typed object instead.
+    // NetworkTablesSink/WebRTCSink::GetConnectionStatus() return JSON as a std::string; it is parsed once here into a typed object.
     public record struct NetworkTablesStatusDto(bool Connected, string Identity, string RootTable, int? TeamNumber, string? ServerAddress)
     {
         public static NetworkTablesStatusDto Parse(string json)

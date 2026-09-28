@@ -12,9 +12,7 @@ namespace {
 	// arbitrary but generous; a real deployment binds a handful of detector nodes, not dozens
 	constexpr int MAX_BOUND_SOURCES = 16;
 
-	// bumped whenever the binary "result" packet's own byte layout changes - a consumer
-	// (photoncompat, ROADMAP.md Phase E2) reads this first and refuses to decode a payload from a
-	// schema version it doesn't understand, rather than silently misreading bytes.
+	// bumped whenever the binary "result" packet layout changes; a consumer refuses payloads from a schema version it doesn't understand
 	constexpr uint16_t RESULT_PACKET_SCHEMA_VERSION = 1;
 
 	void AppendU8(std::vector<uint8_t>& buf, uint8_t v) {
@@ -24,8 +22,7 @@ namespace {
 		buf.push_back(static_cast<uint8_t>(v >> 8));
 		buf.push_back(static_cast<uint8_t>(v));
 	}
-	// big-endian regardless of host - the byte layout must not depend on this coprocessor
-	// (little-endian aarch64/x86_64) and whatever eventually decodes it happening to agree.
+	// big-endian regardless of host, as the packet layout is an explicit contract
 	void AppendF32(std::vector<uint8_t>& buf, float v) {
 		uint32_t bits;
 		static_assert(sizeof(bits) == sizeof(v));
@@ -45,27 +42,18 @@ namespace {
 		int id = -1;
 		double yawDeg = 0.0;
 		double pitchDeg = 0.0;
-		// PhotonVision's own AprilTag pipelines never actually compute a meaningful skew (that
-		// field exists for the colored-shape/retroreflective pipelines PhotonVision also
-		// supports) - always 0 here is matching real upstream behaviour for a fiducial-only
-		// target, not a corner cut.
+		// always 0: PhotonVision's AprilTag pipelines never compute skew (it only applies to colour-shape pipelines)
 		double skewDeg = 0.0;
 		double areaPercent = 0.0;
 		bool hasPose = false;
 		float tx = 0.0f, ty = 0.0f, tz = 0.0f;
 		float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
-		// estimate_tag_pose (ApriltagDetector.cpp) runs a single-hypothesis homography solve, not
-		// the dual-hypothesis IPPE PhotonVision's own ambiguity metric is derived from - there is
-		// no second candidate pose here to compare against, so this is always 0 rather than a
-		// fabricated number. Kept as a real field (not omitted) so the packet layout matches what
-		// a future dual-hypothesis solve could actually populate.
+		// always 0: estimate_tag_pose is single-hypothesis, so there is no second pose to derive an ambiguity from; kept so the layout matches
 		double poseAmbiguity = 0.0;
 		std::array<float, 8> corners{}; // x0,y0,x1,y1,x2,y2,x3,y3
 	};
 
-	// Shoelace formula on the 4 detected corners - works regardless of calibration (unlike
-	// yaw/pitch/pose, which need real intrinsics), so this alone is enough to pick a "best" target
-	// even on an uncalibrated camera.
+	// Shoelace formula on the 4 corners; needs no calibration, so it can pick a "best" target on an uncalibrated camera.
 	double QuadPixelArea(const std::array<float, 8>& c) {
 		double sum = 0.0;
 		for (int i = 0; i < 4; i++) {
@@ -75,9 +63,8 @@ namespace {
 		return std::abs(sum) / 2.0;
 	}
 
-	// Row-major 3x3 rotation matrix (ApriltagDetector.cpp's own pose.R layout) -> unit quaternion,
-	// via the standard largest-diagonal-term method (avoids the sqrt-of-a-small/negative-number
-	// instability a naive formula hits when trace is small).
+	// Row-major 3x3 rotation matrix (ApriltagDetector.cpp's pose.R layout) to unit quaternion, via the largest-diagonal-term
+	// method (stable for small trace).
 	void RotationMatrixToQuaternion(const nlohmann::json& r, float& qw, float& qx, float& qy, float& qz) {
 		double m00 = r[0][0], m01 = r[0][1], m02 = r[0][2];
 		double m10 = r[1][0], m11 = r[1][1], m12 = r[1][2];
@@ -139,16 +126,9 @@ namespace {
 				m.tx = static_cast<float>(x);
 				m.ty = static_cast<float>(y);
 				m.tz = static_cast<float>(z);
-				// apriltag's own camera-frame convention (also used verbatim for tags/x,y,z below):
-				// +X right, +Y down, +Z forward out of the lens. Yaw is the horizontal angle off
-				// boresight (positive = target to the right), pitch the vertical angle (negated Y
-				// so positive = target above boresight, matching PhotonVision's own sign
-				// convention for pitch) - deliberately NOT remapped into WPILib's NWU field
-				// convention here, same reasoning the existing tags/r0..r8 rotation matrix publish
-				// already documents: publish the raw, unambiguous camera-frame numbers and let the
-				// robot-side vendordep (which already owns the WPILib Rotation3d/Transform3d
-				// conversion) apply whatever convention it needs, rather than risking a
-				// server-side convention bug no robot-side code could detect.
+				// apriltag camera-frame convention (also used for tags/x,y,z): +X right, +Y down, +Z forward. Yaw is the horizontal angle
+				// off boresight (positive = right), pitch the vertical angle (Y negated: positive = above, as PhotonVision). Not remapped
+				// to WPILib NWU; the robot-side vendordep applies its own conversion.
 				m.yawDeg = std::atan2(x, z) * 180.0 / std::numbers::pi;
 				m.pitchDeg = std::atan2(-y, z) * 180.0 / std::numbers::pi;
 				static const std::array<double, 3> identityRow{ 0.0, 0.0, 0.0 };
@@ -160,13 +140,9 @@ namespace {
 		return out;
 	}
 
-	// [u16 schemaVersion][u8 targetCount][repeated per target: u16 fiducialId, f64 yaw, f64 pitch,
-	// f64 area, f64 skew, f32x3 translation, f32x4 rotation-quaternion(w,x,y,z), f64 poseAmbiguity,
-	// f32x8 corners] - all multi-byte fields big-endian (see AppendU16/F32/F64 above). Mirrors
-	// photonlib's own hand-packed Packet approach: results are variable-length per frame, and
-	// WPILib's fixed-size Struct serialization has no way to express that. There is no shared IDL
-	// between this C++ side and the eventual Java decoder (ROADMAP.md Phase E2/photoncompat) -
-	// this comment IS the spec both sides have to agree with by hand.
+	// [u16 schemaVersion][u8 targetCount][repeated per target: u16 fiducialId, f64 yaw, f64 pitch, f64 area, f64 skew, f32x3
+	// translation, f32x4 rotation-quaternion(w,x,y,z), f64 poseAmbiguity, f32x8 corners], all big-endian (see AppendU16/F32/F64).
+	// Hand-packed like photonlib's Packet as results are variable-length; this comment is the spec the Java decoder follows.
 	std::vector<uint8_t> BuildResultPacket(const std::vector<TargetMetrics>& targets) {
 		std::vector<uint8_t> packet;
 		AppendU16(packet, RESULT_PACKET_SCHEMA_VERSION);
@@ -209,14 +185,9 @@ NetworkTablesSink::NetworkTablesSink(std::shared_ptr<Logger> logger, std::string
 	}
 	m_Instance.StartClient4(config.clientIdentity);
 
-	// prefix-subscribed to this sink's own whole subtree (not per-bound-source - ISink has no
-	// hook for "a source just got bound/unbound" this could piggyback on, and a robot writing to
-	// an id nothing is currently bound to is just a harmless no-op once polled) so a robot can
-	// write "<rootTable>/<sourceId>/config/pipelineIndex" or ".../driverMode" for any source this
-	// sink ever publishes, present or not yet bound.
-	// leading slash required - every real topic name is absolute ("/lumenvision/...", confirmed
-	// against this sink's own published topics), and a prefix without it matches nothing at all
-	// (confirmed the hard way: the listener never fired once, silently, with no error).
+	// prefix-subscribed to this sink's whole subtree (not per bound source) so a robot can write
+	// "<rootTable>/<sourceId>/config/pipelineIndex" or ".../driverMode" for any source, bound or not.
+	// The leading slash is required: topic names are absolute, and a prefix without it matches nothing.
 	std::string configPrefix = "/" + m_Config.rootTable + "/";
 	std::array<std::string_view, 1> prefixes{ std::string_view(configPrefix) };
 	m_ConfigListener = m_Instance.AddListener(prefixes, NT_EVENT_VALUE_REMOTE,
@@ -237,9 +208,7 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 	const nt::ValueEventData* valueData = event.GetValueEventData();
 	if (valueData == nullptr) return;
 
-	// "/<rootTable>/<sourceId>/config/pipelineIndex" or ".../driverMode" - GetTopicName always
-	// returns a leading-slash absolute name (confirmed against every other topic this sink itself
-	// publishes), so the expected prefix below includes it too.
+	// "/<rootTable>/<sourceId>/config/pipelineIndex" or ".../driverMode"; GetTopicName returns a leading-slash absolute name, so the prefix includes it
 	std::string name = nt::GetTopicName(valueData->topic);
 	std::string prefix = "/" + m_Config.rootTable + "/";
 	if (name.rfind(prefix, 0) != 0) return;
@@ -331,21 +300,14 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 	const nlohmann::json& json = result.json.value();
 	auto table = m_Instance.GetTable(m_Config.rootTable + "/" + sourceId);
 
-	// AprilTag detector shape: either a bare array of {id, center, corners, pose:{x,y,z,R}}
-	// objects (the original shape, still what e.g. ObjectDetectionSink's differently-shaped
-	// array falls through past below), or - since ROADMAP.md Phase 7's multi-tag PnP - an
-	// object envelope {"tags": [...same per-tag shape...], "multiTag": {...} | null,
-	// "calibration": {...} | null}, ApriltagDetector's own current shape. Detect both
-	// structurally rather than trusting a "type" field the JSON doesn't carry today.
+	// AprilTag detector shape: a bare array of {id, center, corners, pose:{x,y,z,R}} objects, or an object envelope
+	// {"tags": [...], "multiTag": {...} | null, "calibration": {...} | null}. Detected structurally, as no "type" field exists.
 	nlohmann::json tagsArray;
 	nlohmann::json calibration = nullptr;
 	bool looksLikeTags = false;
 	bool hasEnvelope = false;
 	if (json.is_array()) {
-		// An EMPTY array counts too - not just non-empty arrays shaped like a tag - or a tag
-		// leaving frame would leave tags/ids (and x/y/z/r0..r8) at their last stale published
-		// values forever instead of updating to "zero tags this frame", which a robot pose
-		// estimator reading this table has no way to distinguish from "still seeing that tag".
+		// An EMPTY array counts too, so tags leaving frame update to "zero tags" instead of leaving stale values published.
 		looksLikeTags = json.empty() || (json[0].is_object() && json[0].contains("id") && json[0].contains("pose"));
 		tagsArray = json;
 	} else if (json.is_object() && json.contains("tags") && json["tags"].is_array()) {
@@ -357,15 +319,8 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 
 	if (looksLikeTags) {
 		std::vector<double> ids, x, y, z;
-		// row-major 3x3 rotation matrix, flattened into 9 parallel arrays (r0..r8, matching
-		// ApriltagDetector.cpp's own R=[[r0,r1,r2],[r3,r4,r5],[r6,r7,r8]] layout) rather than a
-		// quaternion or Euler angles: NT4's NumberArray type has no nested-array support, and
-		// publishing the raw matrix (not a derived representation computed here) is what lets
-		// WPILib's own Rotation3d(Matrix<N3, N3>) constructor build a Transform3d robot-side
-		// with no conversion-convention bug this end could introduce - see ApriltagDetector.cpp
-		// for the full rationale (ROADMAP.md Phase 7's blocking prerequisite). Kept alongside the
-		// newer flattened/binary publishes below rather than replaced - AdvantageScope graphing
-		// of a raw per-tag array is still useful and nothing downstream depended on removing it.
+		// row-major 3x3 rotation matrix flattened into 9 parallel arrays (r0..r8, ApriltagDetector.cpp's R layout): NT4 has no nested
+		// arrays, and the raw matrix lets WPILib's Rotation3d(Matrix<N3, N3>) build a Transform3d robot-side.
 		std::array<std::vector<double>, 9> r;
 		ids.reserve(tagsArray.size());
 		x.reserve(tagsArray.size());
@@ -375,11 +330,8 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 
 		for (const auto& tag : tagsArray) {
 			ids.push_back(tag.value("id", -1));
-			// "pose" is only present when ApriltagDetector had real calibration attached
-			// (ApriltagDetector.cpp only sets it under m_HasCalibration) - an uncalibrated
-			// detector's tags still publish ids/corners, just no x/y/z/R (left at the same
-			// zeroed default the missing-multiTag/missing-rotation branches elsewhere in this
-			// function already use), rather than indexing a key that may not exist.
+			// "pose" is only present when ApriltagDetector had a calibration (m_HasCalibration); otherwise tags publish ids/corners only,
+			// leaving x/y/z/R at their zeroed defaults.
 			nlohmann::json pose = tag.value("pose", nlohmann::json::object());
 			x.push_back(pose.value("x", 0.0));
 			y.push_back(pose.value("y", 0.0));
@@ -402,11 +354,8 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 			table->PutNumberArray("tags/r" + std::to_string(i), r[i]);
 		}
 
-		// multi-tag PnP result (ROADMAP.md Phase 7) - only present in the object-envelope shape.
-		// Published as scalars, not parallel arrays (there's only ever one result per frame, not
-		// one per tag) - x/y/z/r0..r8 are the CAMERA's own pose in FIELD frame (not
-		// camera-to-tag, unlike tags/x,y,z above), matching what a robot program actually wants:
-		// "where am I", not "where is this specific tag relative to me".
+		// multi-tag PnP result, only present in the object-envelope shape. Published as scalars (one per frame); x/y/z/r0..r8 are the
+		// CAMERA's pose in FIELD frame, not camera-to-tag as in tags/x,y,z.
 		nlohmann::json multiTag = hasEnvelope ? json.value("multiTag", nlohmann::json(nullptr)) : nlohmann::json(nullptr);
 		if (!multiTag.is_null()) {
 			table->PutNumber("multitag/x", multiTag.value("x", 0.0));
@@ -422,14 +371,12 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 			table->PutNumber("multitag/tagCount", multiTag.value("tagCount", 0));
 			table->PutNumber("multitag/reprojErrPixels", multiTag.value("reprojErrPixels", 0.0));
 		} else {
-			// no multi-tag result this frame (fewer than 2 known-field-pose tags visible, no
-			// field layout loaded, or this sink predates Phase 7 and never sends the envelope) -
-			// clear tagCount to 0 rather than leaving a stale prior result/pose published, same
-			// reasoning as tags/* above.
+			// no multi-tag result this frame (fewer than 2 known-field-pose tags, no field layout, or no envelope): clear tagCount to 0
+			// rather than leaving a stale pose published.
 			table->PutNumber("multitag/tagCount", 0);
 		}
 
-		// --- flattened best-target scalars + versioned binary packet (ROADMAP.md Phase E1) ---
+		// --- flattened best-target scalars + versioned binary packet ---
 		std::vector<TargetMetrics> targets = ComputeTargetMetrics(tagsArray, calibration);
 		const TargetMetrics* best = nullptr;
 		for (const auto& t : targets) {
@@ -440,11 +387,7 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 		table->PutNumber("targetYaw", best ? best->yawDeg : 0.0);
 		table->PutNumber("targetPitch", best ? best->pitchDeg : 0.0);
 		table->PutNumber("targetArea", best ? best->areaPercent : 0.0);
-		// [x, y, z, qw, qx, qy, qz] - translation + unit quaternion, not NT4 struct:Transform3d:
-		// no wpi::Struct<Transform3d> specialization exists on this C++ side (nothing in this
-		// codebase publishes WPILib struct-schema topics yet), and a flat double array needs no
-		// new machinery to get right - photoncompat (Phase E2) can build a real Transform3d from
-		// these 7 numbers with one WPILib constructor call.
+		// [x, y, z, qw, qx, qy, qz]: translation + unit quaternion as a flat double array (no wpi::Struct<Transform3d> specialisation here)
 		table->PutNumberArray("targetPose", best
 			? std::vector<double>{best->tx, best->ty, best->tz, best->qw, best->qx, best->qy, best->qz}
 			: std::vector<double>{0, 0, 0, 1, 0, 0, 0});
@@ -461,10 +404,7 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 		table->PutString("raw", json.dump());
 	}
 
-	// pipeline latency (capture -> published-to-NT), independent of NT4's own network-layer
-	// timestamping - both captureTimeUs/producedTimeUs are drawn from the same clock
-	// (SourceResult::NowUs(), see its own comment), so this is a real measurement even before
-	// accounting for anything NT4-specific.
+	// pipeline latency (capture -> published-to-NT), independent of NT4's network timestamping; both times come from SourceResult::NowUs()
 	double latencyMs = (result.producedTimeUs > result.captureTimeUs)
 		? static_cast<double>(result.producedTimeUs - result.captureTimeUs) / 1000.0
 		: 0.0;
@@ -491,17 +431,10 @@ void NetworkTablesSink::Process(const std::vector<SourceResult>& results)
 	auto rootTable = m_Instance.GetTable(m_Config.rootTable);
 	rootTable->PutNumber("heartbeat", static_cast<double>(m_Heartbeat++));
 
-	// re-published every tick, not just once at construction: a value Set() before this sink's
-	// own NT4 client has completed its first connection to the server doesn't reliably reach a
-	// server it wasn't yet connected to (confirmed the hard way writing this sink's own NT4 e2e
-	// test - a one-shot ".version" publish in the constructor never arrived, a per-tick one
-	// always does, same as heartbeat/.status already being per-tick). Cheap enough (one string,
-	// same rate as heartbeat) that there's no reason to special-case it back to one-shot.
+	// re-published every tick: a value Set() before the NT4 client first connects doesn't reliably reach the server (as with heartbeat/.status)
 	rootTable->PutString(".version", LUMEN_VERSION_STRING);
 
-	// server time offset (ntcore's own NT4 time-sync measurement, nt::GetServerTimeOffset) - not
-	// re-derived here, just surfaced: a bad/absent offset is exactly what a robot program needs
-	// to see to know its own addVisionMeasurement() timestamps can't be trusted yet.
+	// server time offset (nt::GetServerTimeOffset), surfaced as-is so a robot program can tell when its addVisionMeasurement() timestamps can't be trusted yet
 	std::optional<int64_t> serverTimeOffsetUs = m_Instance.GetServerTimeOffset();
 	nlohmann::json statusJson{
 		{"uptimeSeconds", static_cast<double>(SourceResult::NowUs() - m_ConstructedAtUs) / 1'000'000.0},

@@ -3,15 +3,11 @@
 #include "PixelUnpack.h"
 #include <vector>
 
-// Synthetic-buffer coverage for the raw mono formats an Arducam OV9281-class camera delivers
-// (V4L2 Y10/Y16/Y10P/Y10BPACK) - no camera needed. Every buffer here is built from a known 10- or
-// 16-bit value per pixel by an independent reference packer written straight from the V4L2 format
-// docs, then unpacked and checked pixel-for-pixel against the expected 8 MSBs. Widths that aren't
-// a multiple of the 4-pixel packing group, and row padding (bytesperline > minimum), are both
-// exercised: those are exactly where an off-by-one in the packed paths would hide.
+// Synthetic-buffer tests for the raw mono formats (V4L2 Y10/Y16/Y10P/Y10BPACK), checked against
+// an independent reference packer, including widths off the packing group and row padding.
 
 namespace {
-	// deterministic, covers the full 10-bit range including 0 and 1023
+	// Deterministic; covers 0 to 1023.
 	uint16_t Sample10(int x, int y) { return static_cast<uint16_t>((x * 37 + y * 101 + (x ^ y) * 7) % 1024); }
 	uint16_t Sample16(int x, int y) { return static_cast<uint16_t>((x * 2654435761u + y * 40503u) & 0xFFFF); }
 
@@ -123,7 +119,7 @@ TEST_CASE("PixelUnpack Y10P (MIPI RAW10) drops the packed LSB byte", "[pixelunpa
 	int w = GENERATE(16, 6, 1);
 	size_t padding = GENERATE(size_t{ 0 }, size_t{ 3 });
 	int h = 3;
-	// the reference packer writes whole 5-byte groups, so size rows for that
+	// The reference packer writes whole 5-byte groups.
 	size_t stride = static_cast<size_t>((w + 3) / 4) * 5 + padding;
 	std::vector<uint8_t> buf = PackY10P(w, h, stride);
 	cv::Mat out;

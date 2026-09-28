@@ -76,9 +76,8 @@ bool CodecStereoBackend::Compute(const cv::Mat& rectLeft, const cv::Mat& rectRig
 	disparityOut.assign((size_t)cols * rows, STEREO_DISPARITY_INVALID);
 
 	cs_disparity_config dcfg{};
-	dcfg.fx = 0.0f;              // unused by cs_mv_field_to_disparity - only cs_disparity_to_depth
-	dcfg.baseline = 0.0f;        // needs these, and depth conversion is StereoDepthNode's job so
-	                              // it stays backend-agnostic across CodecStereoBackend/SgbmStereoBackend
+	dcfg.fx = 0.0f;              // unused here: only cs_disparity_to_depth needs fx/baseline,
+	dcfg.baseline = 0.0f;        // and StereoDepthNode does the depth conversion
 	dcfg.min_disparity = m_Cfg.minDisparity;
 	dcfg.max_dy = m_Cfg.maxDy;
 	dcfg.max_cost = m_Cfg.maxCost;

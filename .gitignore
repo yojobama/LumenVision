@@ -21,12 +21,8 @@ CMakeUserPresets.json
 compile_commands.json
 .cache/
 
-# SWIG-generated (regenerated at build time). Unrooted and matched by directory name rather
-# than a full path rooted at the repo root: FRCVLib/FRCVCore are the pre-rename locations,
-# LumenCore/Interop the post-rename ones - keeping both patterns means this file stays correct
-# across the directory-flattening rename commit instead of needing to change in lockstep with it.
+# SWIG-generated (regenerated at build time)
 swig_wrap.cxx
-**/FRCVCore/*.cs
 **/Interop/*.cs
 .swig-stamp
 
@@ -42,14 +38,10 @@ data.json
 *.log
 *Log.txt
 graph-profiles/
-# uploaded ImageFile/VideoFile source files, robot-side AprilTag field layout JSON uploads, and
-# saved snapshots (SourceController.SaveSnapshot) - all runtime state a fresh checkout never has
-# and a running server recreates on demand, same as models/ above.
+# Uploaded image/video sources, AprilTag field layout uploads and saved snapshots
 images/
 videos/
 fieldLayouts/
 snapshots/
 
-# Third-party: vkapriltag and codec-stereo are git submodules (tracked as a reference, not
-# ignored); only their build output is ignored, matching the rest of this file's
-# [Bb]in/[Oo]bj/build/ rules.
+# Third-party: vkapriltag and codec-stereo are submodules; only their build output is ignored

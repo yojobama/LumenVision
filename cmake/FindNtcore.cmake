@@ -1,21 +1,11 @@
 #[[
-  Finds WPILib's ntcore + wpiutil + wpinet (the NT4 client library) and exposes them as ONE
-  interface target, Ntcore::ntcore.
+  Finds WPILib's ntcore, wpiutil and wpinet and exposes them as one interface target,
+  Ntcore::ntcore, which links all three on every platform.
 
-  wpinet is the point of this module, not an afterthought: LumenCore.vcxproj's LibraryDependencies
-  (`apriltag;opencv_core;...;ntcore;wpiutil;onnxruntime;...`) never listed wpinet explicitly, and
-  it only ever resolved on Linux because libntcore.so's own DT_NEEDED entry pulls libwpinet.so in
-  transitively (confirmed: `readelf -d libntcore.so` lists it). Windows has no ELF-style transitive
-  resolution, so a Windows build silently missing wpinet would fail to link with undefined
-  references the moment anything in NetworkTablesSink.cpp actually touches networking code, not at
-  the include site. Linking Ntcore::ntcore always pulls all three, on every platform, so this class
-  of bug can't recur.
 
   Variables consulted (all optional):
-    WPILIB_ROOT   - root of an unpacked WPILib artifact tree (a directory containing include/ and
-                    (lib|bin)/). Set this for the Windows/prebuilt-zip case; on Linux, plain
-                    /usr/local (already a default CMake search path) is normally enough on its own
-                    since that's where install-deps.sh's `--with-nt4` step installs them.
+    WPILIB_ROOT   - root of an unpacked WPILib tree (include/ and lib|bin/); on Linux /usr/local
+                    is normally enough
 
   Provides:
     Ntcore::ntcore        - INTERFACE target: include dirs + ntcore, wpiutil, wpinet all linked
@@ -37,10 +27,7 @@ find_path(WPIUTIL_INCLUDE_DIR
     HINTS "${WPILIB_ROOT}/include"
 )
 
-# On Windows, WPILib's prebuilt zips split each library into an import .lib (linked at build
-# time) and a runtime .dll (needed at run time, discovered separately via
-# $<TARGET_RUNTIME_DLLS:...> once this target is linked into LumenCore - see LumenCore/CMakeLists.txt).
-# find_library on Windows finds the .lib; on Linux it finds the .so directly.
+# On Windows find_library returns the import .lib; the runtime .dll is derived from it below
 find_library(NTCORE_LIBRARY   NAMES ntcore   HINTS "${WPILIB_ROOT}/lib" "${WPILIB_ROOT}/bin")
 find_library(WPIUTIL_LIBRARY  NAMES wpiutil  HINTS "${WPILIB_ROOT}/lib" "${WPILIB_ROOT}/bin")
 find_library(WPINET_LIBRARY   NAMES wpinet   HINTS "${WPILIB_ROOT}/lib" "${WPILIB_ROOT}/bin")
@@ -53,10 +40,7 @@ find_package_handle_standard_args(Ntcore
 
 if(NTCORE_FOUND AND NOT TARGET Ntcore::ntcore)
     if(WIN32)
-        # See FindOnnxRuntime.cmake's identical comment: a plain INTERFACE target linking the
-        # .lib paths (the Linux-style approach below) leaves $<TARGET_RUNTIME_DLLS:...> with no
-        # runtime .dll to find - ntcore.dll/wpinet.dll/wpiutil.dll never made it next to
-        # LumenCore.dll until each got its own real SHARED IMPORTED target.
+        # Real SHARED IMPORTED targets so $<TARGET_RUNTIME_DLLS:...> can find each .dll
         foreach(_lib NTCORE WPINET WPIUTIL)
             get_filename_component(_dir "${${_lib}_LIBRARY}" DIRECTORY)
             get_filename_component(_name "${${_lib}_LIBRARY}" NAME_WE)
@@ -70,8 +54,7 @@ if(NTCORE_FOUND AND NOT TARGET Ntcore::ntcore)
         target_link_libraries(Ntcore::ntcore INTERFACE Ntcore::NTCORE Ntcore::WPINET Ntcore::WPIUTIL)
     else()
         add_library(Ntcore::ntcore INTERFACE IMPORTED)
-        # Order matters for a plain (non-CMake-target) linker line on Linux: ntcore depends on
-        # wpiutil/wpinet, so they must come after it. Harmless on Windows either way.
+        # ntcore depends on wpiutil/wpinet, so they must follow it on the link line
         target_link_libraries(Ntcore::ntcore INTERFACE
             "${NTCORE_LIBRARY}" "${WPINET_LIBRARY}" "${WPIUTIL_LIBRARY}"
         )

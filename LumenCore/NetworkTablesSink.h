@@ -16,90 +16,51 @@ struct NetworkTablesConfig {
 	std::optional<unsigned int> teamNumber;
 	std::string serverAddress; // used when teamNumber is not set
 	unsigned int port = 0;     // 0 = NT4 default port
-	// independent literals, not one copied into the other: sharing a single default (as this
-	// struct used to) means two coprocessors on one robot silently register the same NT4 client
-	// identity if neither is customized. A real per-device default (hostname-derived, or similar)
-	// is a vendordep-phase concern, not a rename - these are the same plain defaults the REST
-	// controllers already pass explicitly, so in practice this struct's own initializers are only
-	// reached by a caller that default-constructs NetworkTablesConfig directly.
 	std::string clientIdentity = "lumenvision";
 	std::string rootTable = "lumenvision";
 };
 
-// One bound source's rolling stream stats, tracked across Process() calls so fps can be derived
-// (a single SourceResult only carries enough to compute per-frame latency, not a rate).
+// One bound source's rolling stream stats, tracked across Process() calls to derive fps.
 struct NetworkTablesStreamStats {
 	uint64_t lastFrameNumber = 0;
 	uint64_t lastCaptureTimeUs = 0;
 	double fps = 0.0;
 };
 
-// Terminal sink (produces nothing, so it is never also registered as an ISource): publishes
-// every bound source's latest JSON result onto an NT4 server, one subtable per source keyed by
-// that source's id. This is deliberately generic rather than AprilTag-specific, since it will
-// also carry object detection results (phase 4) - PublishSourceResult below is where a result's
-// shape gets interpreted, and is the place to extend when a new sink type's JSON shape needs
-// dedicated NT topics rather than the raw-JSON fallback.
+// Terminal sink (not an ISource): publishes every bound source's latest JSON result to an NT4 server,
+// one subtable per source id.
 class NetworkTablesSink : public ISink
 {
 public:
-	// systemMonitor is a non-owning pointer to Manager's own single SystemMonitor instance
-	// (Manager::m_SystemMonitor) - sharing it rather than each NetworkTablesSink spinning up its
-	// own polling thread. May be null (e.g. constructed directly in a test, outside Manager),
-	// in which case ".status" simply omits the cpu/temperature/ram fields rather than crashing.
-	// Manager always outlives every sink in m_Sinks, so this pointer's lifetime is safe for as
-	// long as this object exists - the same ownership assumption GetTable()'s returned
-	// shared_ptr<NetworkTable> and m_Logger already rely on.
+	// Non-owning pointer to Manager's shared SystemMonitor; must outlive this sink.
+	// May be null, in which case ".status" omits the cpu/temperature/ram fields.
 	NetworkTablesSink(std::shared_ptr<Logger> logger, std::string id, NetworkTablesConfig config,
 		SystemMonitor* systemMonitor = nullptr);
 	~NetworkTablesSink();
 
 	bool IsConnected() const;
-	// small JSON status blob (connected, server, identity, latency) for Manager::GetSinkResult-
-	// style introspection; NetworkTablesSink has no ISource half of its own to hang this off, so
-	// it is exposed as a plain method instead
+	// small JSON status blob (connected, server, identity, latency)
 	std::string GetConnectionStatus() const;
 
-	// Drains every robot-writable "<sourceId>/config/pipelineIndex" and
-	// "<sourceId>/config/driverMode" write seen since the last call, as a JSON array of
-	// {"sourceId": ..., "pipelineIndex": int|omitted, "driverMode": bool|omitted}. Consuming
-	// (not just reading) is deliberate: Manager/the C# Server side is expected to poll this on its
-	// own existing periodic loop and apply each request exactly once via its own SetDriverMode/
-	// pipeline-profile-activation logic - this sink has no way to call into that logic directly
-	// (ISink/ISource classes never reach back into Manager), so it can only surface the request,
-	// not apply it. The C# Server's NetworkTablesControlService polls this.
+	// Drains "<sourceId>/config/pipelineIndex" and ".../driverMode" writes since the last call as a JSON
+	// array of {"sourceId", "pipelineIndex"?, "driverMode"?}; each request is returned once.
 	std::string PollConfigRequests();
 
-	// The coprocessor-wide (not per-source) robot-writable "<rootTable>/config/recording"
-	// boolean: -1 if it hasn't been written since the last call, else 0/1 for the most recent
-	// value. It's DESIRED STATE, not a toggle - a coprocessor that reboots mid-match picks the
-	// robot's retained value back up on reconnect and resumes recording. Consuming, same as
-	// PollConfigRequests; kept separate so that method's per-source array stays unchanged.
+	// Drains the coprocessor-wide "<rootTable>/config/recording" boolean: -1 if unwritten since the last
+	// call, else 0/1. Desired state, not a toggle.
 	int PollRecordingRequest();
 
-	// Publishes "<rootTable>/status/recording" - whether the coprocessor is actually recording,
-	// so robot code can confirm its request took effect (the Server calls this every poll tick).
+	// Publishes "<rootTable>/status/recording": whether the coprocessor is actually recording.
 	void SetRecordingStatus(bool recording);
 
 private:
-	// nt::Event callback registered on m_Instance covering every topic under this sink's own
-	// root table - parses "<rootTable>/<sourceId>/config/pipelineIndex" and ".../driverMode"
-	// writes out of the raw topic name (there is no cheaper way to know which bound source a
-	// remote write was meant for: NT4 topics are flat strings, and ISink has no per-source
-	// listener hook to piggyback on).
+	// nt::Event callback for every topic under this sink's root table; parses the source id and
+	// config/pipelineIndex|driverMode writes out of the topic name.
 	void OnConfigValueChanged(const nt::Event& event);
 	void Process(const std::vector<SourceResult>& results) override;
 
-	// interprets one source's JSON and writes it into that source's NT subtable: the legacy
-	// parallel-array shape (tags/ids, tags/x, ...), the new flattened best-target scalar topics
-	// (hasTargets/targetYaw/...), and the versioned binary "result" packet (see
-	// BuildResultPacket's own comment for the exact layout) all side by side - AdvantageScope/
-	// Shuffleboard can graph the flattened scalars with no decoding, while photoncompat
-	// (ROADMAP.md Phase E1/E2) decodes the packet for the full per-target detail none of the
-	// scalar topics carry alone (corners, quaternion, ambiguity). Anything that doesn't look like
-	// an AprilTag detector's shape - including today's object-detection stub - falls back to a
-	// single "raw" string topic with the JSON as-is, so nothing bound to this sink is ever
-	// silently dropped even before its specific NT mapping is written.
+	// Writes one source's JSON to its NT subtable: legacy parallel arrays, flattened best-target scalars and
+	// the binary "result" packet (see BuildResultPacket). Non-AprilTag JSON falls back to a "raw" string topic.
 	void PublishSourceResult(const SourceResult& result);
 
 	nt::NetworkTableInstance m_Instance;
@@ -116,8 +77,7 @@ private:
 		std::optional<int> pipelineIndex;
 		std::optional<bool> driverMode;
 	};
-	// guarded by m_ConfigMutex - OnConfigValueChanged runs on ntcore's own listener thread, not
-	// this sink's own Process() thread.
+	// guarded by m_ConfigMutex; OnConfigValueChanged runs on ntcore's listener thread
 	std::unordered_map<std::string, PendingConfigRequest> m_PendingConfig;
 	std::optional<bool> m_PendingRecording; // guarded by m_ConfigMutex too
 

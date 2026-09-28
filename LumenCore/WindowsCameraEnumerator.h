@@ -9,31 +9,19 @@
 
 class Logger;
 
-// Separated out from Manager.cpp on purpose: Manager.h brings `using namespace std;` into scope,
-// and the Windows SDK's COM/RPC headers (rpcndr.h, objidl.h, wtypes.h, ...) that mfapi.h/mfidl.h
-// transitively pull in reference an unqualified `byte` of their own - with std::byte ALSO in
-// unqualified lookup because of that using-directive, every one of those references becomes a
-// real ambiguous-symbol compile error (confirmed the hard way: dozens of C2872s the moment
-// mfapi.h was included straight into Manager.cpp). This translation unit has no `using namespace
-// std;` anywhere, so the ambiguity never arises.
+// Separate from Manager.cpp because Manager.h has `using namespace std;`, which makes the Windows SDK headers' unqualified
+// `byte` ambiguous with std::byte (C2872) once mfapi.h is included; this translation unit has no using-directive.
 struct WindowsCameraDevice {
     std::string name;
-    int index; // MFEnumDeviceSources' array position - see EnumerateWindowsCameras' own comment
+    int index; // MFEnumDeviceSources' array position
 };
 
-// Enumerates video capture devices via Media Foundation's MFEnumDeviceSources - the same
-// underlying API the Windows Camera app and Device Manager use, so what this returns should
-// match what a user sees there. Logger is optional (nullable) purely so this can be unit-tested
-// without constructing one.
+// Enumerates video capture devices via Media Foundation's MFEnumDeviceSources (as the Windows Camera app does).
+// Logger is optional (nullable) so this can be unit-tested.
 std::vector<WindowsCameraDevice> EnumerateWindowsCameras(const std::shared_ptr<Logger>& logger);
 
-// Enumerates the native capture modes (resolution/fps/pixel format) MFEnumDeviceSources'
-// deviceIndex'th device advertises, via an IMFSourceReader's GetNativeMediaType - Windows'
-// equivalent of V4l2CameraBackend's VIDIOC_ENUM_FRAMESIZES/VIDIOC_ENUM_FRAMEINTERVALS walk. This
-// is why OpenCvCameraBackend::EnumerateModes() always returned empty on Windows: cv::VideoCapture
-// genuinely has no generic mode-enumeration API on any backend, MSMF included - it only exposes
-// get/set on the CURRENTLY active mode. Going straight to Media Foundation sidesteps that
-// limitation entirely, the same way this file's device enumeration already does.
+// Enumerates the native capture modes (resolution/fps/pixel format) of MFEnumDeviceSources' deviceIndex'th device via
+// IMFSourceReader's GetNativeMediaType (the Windows equivalent of V4l2CameraBackend's VIDIOC_ENUM_FRAMESIZES walk).
 std::vector<CameraMode> EnumerateWindowsCameraModes(int deviceIndex, const std::shared_ptr<Logger>& logger);
 
 #endif // _WIN32

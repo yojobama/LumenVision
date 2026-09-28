@@ -7,12 +7,8 @@ import type { NetworkTablesStatus } from '../types';
 
 const api = new ApiService();
 
-// ROADMAP.md Phase 8e: read-only per-camera FPS/latency/NT4/temperature, readable across a pit.
-// Driven by the same /ws/state channel the graph uses (Phase 8a/8c) for FPS/latency/device
-// stats; NT4 connection state is fetched separately over REST (occasional, event-driven data,
-// not something to poll at the WS channel's own ~1s cadence - matches the existing
-// driver-mode/snapshot REST-not-WS split established for LumenCoprocessorControl on the robot
-// side).
+// Read-only per-camera FPS/latency/NT4/temperature view. FPS/latency/device stats come from
+// /ws/state; NT4 connection state is fetched over REST.
 export const MatchPage: React.FC = () => {
   const { snapshot, connected } = useStateSocket();
   const [nt4Status, setNt4Status] = useState<Record<number, NetworkTablesStatus>>({});
@@ -36,8 +32,7 @@ export const MatchPage: React.FC = () => {
       setNt4Status(next);
     });
     return () => { cancelled = true; };
-    // re-fetch whenever the sink topology changes (NT4 sink created/removed) - the interval
-    // below covers connection-state changes to an already-existing sink.
+    // re-fetch when the sink topology changes; the interval covers connection-state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot?.Sinks.length]);
 
@@ -51,11 +46,8 @@ export const MatchPage: React.FC = () => {
     );
   }
 
-  // for each camera source, find whichever detection sink (if any) is bound to it, and whichever
-  // NetworkTablesSink (if any) is bound to THAT detector's own output - the same dual-role-sink
-  // chain the graph editor already understands (see graph/model.ts's own comment on it).
-  // recordSink is looked up directly on the raw source (RecordSink binds straight to the camera
-  // for match footage, not downstream of a detector the way NT4 does).
+  // per camera: find the bound detection sink and the NetworkTablesSink bound to its output;
+  // the recordSink is bound directly to the raw source
   const rows = snapshot.Sources.map(source => {
     const detector = snapshot.Sinks.find(s => s.Sink.Source?.Id === source.Id);
     const nt4Sink = detector
@@ -67,13 +59,8 @@ export const MatchPage: React.FC = () => {
     return { source, detector, nt4Sink, recordSink, stats, status };
   });
 
-  // one button for every camera at once - Match view is otherwise deliberately read-only/
-  // non-destructive (ROADMAP.md F3's own "no editing, nothing destructive" principle is about
-  // pipeline topology, not a record button), the one place this page acts rather than just
-  // displays. The logic (reuse or create a RecordSink per camera, or stop them all) lives
-  // server-side in SinkManager.SetAllRecording - the same code robot code triggers over NT
-  // (<root>/config/recording), so the button and the robot can never disagree about what
-  // "record" means.
+  // one button for every camera; logic lives in SinkManager.SetAllRecording, the same code robot
+  // code triggers over NT (<root>/config/recording)
   const anyRecording = rows.some(r => r.recordSink?.IsRunning);
   const toggleAllRecording = async () => {
     setTogglingRecording(true);

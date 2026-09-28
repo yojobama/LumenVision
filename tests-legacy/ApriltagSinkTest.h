@@ -1,7 +1,7 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/ApriltagSink.h"
-#include "../FRCVLib/Frame.h"
+#include "../LumenCore/ApriltagSink.h"
+#include "../LumenCore/Frame.h"
 
 class ApriltagSinkTest : public UnitTestBase
 {

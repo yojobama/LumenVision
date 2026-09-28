@@ -6,18 +6,11 @@ using System.Threading.Tasks;
 
 namespace Server.HttpModules
 {
-    // ROADMAP.md Phase 8/E7: serves MjpegSink's latest frame as a long-lived
-    // multipart/x-mixed-replace HTTP response - a plain endpoint (mapped at /stream/mjpeg in
-    // Program.cs), not a controller action, since a normal controller method is expected to return
-    // once with a complete response; this deliberately never returns until the client disconnects
-    // or the server shuts down. Kept off the /api prefix like /ws/state, since a browser's own
-    // <img> tag is the client here, not the REST API.
+    // Serves MjpegSink's latest frame as a long-lived multipart/x-mixed-replace response (mapped at /stream/mjpeg).
+    // A plain endpoint, not a controller action: it never returns until the client disconnects or the server shuts down.
     public static class MjpegStreamModule
     {
-        // ~10fps cap - MjpegSink itself only re-encodes as fast as its bound source actually
-        // produces frames; this just bounds how often this loop re-checks for a new one, not the
-        // real frame rate. Skips re-sending an unchanged frame (see the loop below) rather than
-        // resending stale bytes just because the interval elapsed with nothing new processed yet.
+        // ~10fps poll cap: bounds how often the loop checks for a new frame, not the frame rate; unchanged frames are not resent.
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
         private const string Boundary = "lumenvision-mjpeg-frame";
 

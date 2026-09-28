@@ -8,8 +8,7 @@ import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation2d;
 import org.lumenvision.photoncompat.LumenUtils;
 
-/** Thin {@link LumenUtils} wrapper (same method names/signatures) - see
- * {@link PhotonCamera}'s own class comment for why this package exists. */
+/** Thin {@link LumenUtils} wrapper with the same method names and signatures. */
 public final class PhotonUtils {
     private PhotonUtils() {}
 

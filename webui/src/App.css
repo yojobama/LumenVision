@@ -300,7 +300,7 @@
   background: rgba(0, 0, 0, 0.5);
 }
 
-/* Responsive utilities for mobile optimization */
+/* Responsive utilities for mobile optimisation */
 @media (max-width: 640px) {
   .mobile-stack {
     flex-direction: column !important;

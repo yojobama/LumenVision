@@ -3,9 +3,7 @@
 #include <fstream>
 
 namespace {
-	// standard unit-quaternion (w,x,y,z) -> 3x3 rotation matrix conversion - the same formula
-	// WPILib's own Rotation3d(Quaternion) constructor uses, so a field layout round-trips
-	// through both this loader and a robot program's own WPILib-side loader identically.
+	// Unit quaternion (w,x,y,z) to 3x3 rotation matrix, as in WPILib's Rotation3d(Quaternion).
 	cv::Matx33d QuaternionToRotationMatrix(double w, double x, double y, double z)
 	{
 		return cv::Matx33d(
@@ -55,8 +53,7 @@ bool AprilTagFieldLayout::LoadFromFile(const std::string& jsonPath)
 				quaternionJson.at("Z").get<double>());
 			m_Tags[id] = fieldPose;
 		} catch (const nlohmann::json::exception&) {
-			// one malformed tag entry doesn't invalidate the whole file - skip it and keep the
-			// rest (matches how a robot program would rather have 15 of 16 tags than none)
+			// Skip a malformed tag entry rather than rejecting the whole file.
 			continue;
 		}
 	}

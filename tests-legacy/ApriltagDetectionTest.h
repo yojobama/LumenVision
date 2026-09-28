@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/ApriltagDetection.h"
+#include "../LumenCore/ApriltagDetection.h"
 
 class ApriltagDetectionTest : public UnitTestBase {
 public:

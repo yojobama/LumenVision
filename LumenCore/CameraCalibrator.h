@@ -17,9 +17,8 @@ struct CalibrationBoardConfig {
 	float squareSizeMeters = 0.025f;
 	// ChArUco only, ignored for a plain checkerboard
 	float markerSizeMeters = 0.018f;
-	// cv::aruco::PredefinedDictionaryType numeric value (e.g. DICT_6X6_250 == 10); left as a
-	// plain int rather than that enum so this struct doesn't need aruco_dictionary.h's full
-	// enum wrapped through SWIG for one field
+	// cv::aruco::PredefinedDictionaryType numeric value (e.g. DICT_6X6_250 == 10); a plain int so the
+	// enum needn't be wrapped through SWIG
 	int arucoDictionaryId = 10;
 };
 
@@ -28,10 +27,8 @@ class CameraCalibrator : public ISource, public ISink
 public:
 	CameraCalibrator(std::shared_ptr<Logger> logger, std::string id, CalibrationBoardConfig boardConfig = CalibrationBoardConfig());
 
-	// runs cv::calibrateCamera over every snapshot saved so far and caches the result; throws
-	// if fewer than 4 snapshots have been saved (cv::calibrateCamera's own practical minimum
-	// for a stable solution, not enforced by OpenCV itself but by us, since a 1-3 view result
-	// is numerically unstable enough to be actively misleading rather than just imprecise)
+	// runs cv::calibrateCamera over all saved snapshots and caches the result; throws if fewer than 4
+	// snapshots have been saved (a 1-3 view result is unstable)
 	CameraCalibrationResult RunCalibration();
 	// returns the last result RunCalibration() produced, or an empty result if it hasn't run yet
 	CameraCalibrationResult GetCalibrationResult() const;
@@ -46,15 +43,10 @@ public:
 	bool RemoveSnapshot(int index);
 	void ClearSnapshots();
 
-	// ROADMAP.md Phase 8a/8d: the detected corner points for one saved snapshot, flattened as
-	// [x0,y0,x1,y1,...] - SWIG has no vector<vector<double>> binding registered (would need its
-	// own %template, unused anywhere else in this project), so the REST layer loops
-	// 0..GetSnapshotCount()-1 itself calling this once per index rather than fetching every
-	// snapshot in one call. Empty if index is out of range. Feeds the calibration wizard's live
-	// coverage heatmap - which region of the frame still needs more checkerboard coverage.
+	// the detected corners of one saved snapshot, flattened as [x0,y0,x1,y1,...]; empty if index is out
+	// of range. Called per index because SWIG has no vector<vector<double>> binding.
 	std::vector<double> GetSnapshotCorners(int index) const;
-	// the resolution GetSnapshotCorners' points are in - 0,0 if no snapshot has been saved yet
-	// (frameSize is only set by SaveBoardDetection, matching RunCalibration's own use of it).
+	// the resolution GetSnapshotCorners' points are in; 0,0 if no snapshot has been saved yet
 	int GetFrameWidth() const;
 	int GetFrameHeight() const;
 
@@ -66,8 +58,7 @@ private:
 	std::shared_ptr<Logger> m_Logger;
 	CalibrationBoardConfig m_BoardConfig;
 
-	// ChArUco-only: constructed once from m_BoardConfig, since CharucoBoard/CharucoDetector are
-	// stateless with respect to individual frames
+	// ChArUco only: built once from m_BoardConfig (board and detector are stateless per frame)
 	std::optional<cv::aruco::CharucoBoard> m_CharucoBoard;
 	std::optional<cv::aruco::CharucoDetector> m_CharucoDetector;
 

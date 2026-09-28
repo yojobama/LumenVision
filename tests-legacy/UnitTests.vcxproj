@@ -110,17 +110,17 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FRCVLib\FRCVLib.vcxproj">
+    <ProjectReference Include="..\LumenCore\LumenCore.vcxproj">
       <Project>{2e3f446d-3dab-4584-9ba8-c4eeddfe0279}</Project>
     </ProjectReference>
   </ItemGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Link>
-      <AdditionalLibraryDirectories>~/projects/FRCVLib/bin/x64/Debug;%(Link.AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <LibraryDependencies>FRCVLib</LibraryDependencies>
+      <AdditionalLibraryDirectories>~/projects/LumenCore/bin/x64/Debug;%(Link.AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <LibraryDependencies>LumenCore</LibraryDependencies>
     </Link>
     <ClCompile>
-      <AdditionalIncludeDirectories>~/projects/FRCVLib;/usr/local/include/apriltag;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>~/projects/LumenCore;/usr/local/include/apriltag;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

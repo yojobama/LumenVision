@@ -6,20 +6,18 @@ using Server.Web;
 
 namespace Server.Controllers
 {
-    // ROADMAP.md Phase 8/E6: save/restore the whole node graph under a name - see
-    // GraphProfile.cs's own comment for how this differs from the existing per-source
-    // PipelineProfile.
+    // Save/restore/list whole-graph profiles (see GraphProfile.cs).
     internal class GraphProfileController : ControllerBase
     {
-        // GET: every saved whole-graph profile name, for the top-bar dropdown / LeftRail list.
+        // GET: every saved whole-graph profile name.
         [HttpGet("graphProfile/list")]
         public Task<List<string>> List()
         {
             return Task.FromResult(GraphProfile.Instance.ListProfiles());
         }
 
-        // POST: snapshot the CURRENTLY LIVE graph (every source, sink, and binding) under `name`
-        // - overwrites any existing profile with the same name.
+        // POST: snapshot the live graph (every source, sink and binding) under `name`,
+        // overwriting any existing profile with that name.
         [HttpPost("graphProfile/saveCurrentAs")]
         public Task SaveCurrentAs([FromQuery] string name)
         {
@@ -27,8 +25,8 @@ namespace Server.Controllers
             return Task.CompletedTask;
         }
 
-        // POST: tear down whatever graph is currently live and reconstruct the named saved one
-        // in its place - irreversible unless the current graph was itself saved first.
+        // POST: tear down the live graph and rebuild it from the named profile;
+        // irreversible unless the current graph was saved first.
         [HttpPost("graphProfile/activate")]
         public Task Activate([FromQuery] string name)
         {

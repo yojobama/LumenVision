@@ -6,12 +6,8 @@
 #endif
 
 namespace {
-	// AUTO backend selection: V4L2 on Linux (real mode/exposure control, DMA-friendly capture),
-	// falling back to OpenCvCameraBackend if the device won't open through V4L2 at all (e.g. a
-	// non-UVC capture device V4l2CameraBackend's QUERYCAP capability check rejects) - the same
-	// construction-failure-falls-back-to-CPU pattern ApriltagDetector.cpp already uses for its
-	// Vulkan->CPU fallback. OpenCvCameraBackend is the only option on every other platform until
-	// MediaFoundationCameraBackend (ROADMAP.md Phase 3) lands.
+	// AUTO: V4L2 on Linux, falling back to OpenCvCameraBackend if the device won't open through V4L2;
+	// OpenCvCameraBackend on other platforms.
 	std::unique_ptr<ICameraBackend> OpenAutoBackend(const std::string& devicePath, std::shared_ptr<Logger> logger)
 	{
 #ifdef __linux__
@@ -38,8 +34,6 @@ CameraFrameSource::CameraFrameSource(std::string devicePath, std::string deviceN
 {
     m_Backend = OpenAutoBackend(devicePath, logger);
     if (!m_Backend->IsOpened()) {
-        // previously silent: this constructor never checked whether the device actually opened,
-        // so a persisted-but-now-missing camera produced no frames forever with no diagnostic.
         if (logger) logger->EnterLog(LogLevel::Error, "unable to open webcam: " + devicePath);
     }
     this->m_DeviceName = deviceName;
@@ -108,32 +102,17 @@ CameraControlRange CameraFrameSource::GetGainRange()
 void CameraFrameSource::CaptureFrame()
 {
     if (m_Backend->IsOpened()) {
-        // no bound sink needs COLOUR this cycle -> ask the backend to decode straight to
-        // grayscale if it can (V4l2CameraBackend's MJPEG/YUYV paths - see ICameraBackend::Grab's
-        // own comment). Deliberately HasActiveColorFrameConsumer(), not HasActiveFrameConsumer():
-        // an AprilTag detector bound directly to this camera correctly registers as requiring A
-        // frame (it needs one to call AsGray() on) but not colour specifically - checking the
-        // plain frame-consumer flag here would make this always true whenever any detector is
-        // bound, which defeated this optimization entirely for the single most common real
-        // pipeline shape (camera -> AprilTag -> NT4, no preview/recording). A live WebRTC/Mjpeg
-        // preview or an active recording still gets full colour, unchanged.
+        // No bound sink needs colour: ask the backend to decode straight to grayscale. Uses
+        // HasActiveColorFrameConsumer(), as a bound detector needs a frame but not colour.
         CameraGrabResult grab = m_Backend->Grab(!HasActiveColorFrameConsumer());
         if (grab.success) {
-            // Carries grab.poolOwner through explicitly (not the implicit bare-cv::Mat
-            // conversion SourceResult also accepts) - THAT overload has no pool-owner parameter
-            // at all, so going through it here would silently let the FramePool buffer get
-            // recycled the moment this function returns, out from under every sink still
-            // processing this exact frame on its own thread. See ICameraBackend.h's own comment
-            // on CameraGrabResult::poolOwner.
+            // Carries grab.poolOwner explicitly: the bare-cv::Mat overload has no pool owner, so the buffer
+            // could be recycled while sinks still use it (see CameraGrabResult::poolOwner).
             SetLatestResult(SourceResult(std::nullopt, Frame(grab.frame, grab.format, grab.poolOwner), grab.captureTimeUs));
         } else {
-            // previously: this branch didn't exist at all - a failed grab (device still open,
-            // read() returning false) was silently dropped with no diagnostic.
             m_Logger->EnterLog(LogLevel::Error, "camera grab failed for " + m_DevicePath);
         }
     } else {
-        // previously: logged unconditionally after the if-block, so a SUCCESSFUL grab logged
-        // "camera is closed" on every single frame - see ROADMAP.md Phase 6's latent-bugs list.
         m_Logger->EnterLog(LogLevel::Error, "camera is closed, not capturing a frame");
     }
 }

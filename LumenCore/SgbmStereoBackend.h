@@ -1,12 +1,8 @@
 #pragma once
 #include "IStereoDepthBackend.h"
 
-// cv::StereoSGBM, block-averaged onto the same cols x rows grid a codec-stereo backend would
-// produce, so the two are directly comparable (STEREO_IMPLEMENTATION_PLAN.md ss0/ss10.6 item 4)
-// and trivially swappable behind IStereoDepthBackend. Always compiled in (unlike
-// CodecStereoBackend) - it has no dependency beyond OpenCV, which every LumenVision configuration
-// already links, and it is the accuracy reference / fallback if codec-stereo's numbers turn out
-// not to be good enough on real FRC scenes.
+// cv::StereoSGBM, block-averaged onto the same cols x rows grid as the other stereo backends.
+// Depends only on OpenCV, so it is always compiled in.
 class SgbmStereoBackend : public IStereoDepthBackend {
 public:
 	// numDisparities must be a positive multiple of 16 (cv::StereoSGBM's own requirement).

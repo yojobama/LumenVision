@@ -36,10 +36,8 @@ bool RknnDetectionBackend::Load(const DetectionBackendConfig& config)
 	m_InputAttr.index = 0;
 	if (rknn_query(m_Context, RKNN_QUERY_INPUT_ATTR, &m_InputAttr, sizeof(m_InputAttr)) != RKNN_SUCC) return false;
 
-	// read the model's OWN expected input size rather than trusting config.inputWidth/Height -
-	// they must match exactly or rknn_inputs_set below silently feeds the NPU a wrongly-shaped
-	// buffer. NHWC (the overwhelmingly common export layout for a quantized RKNN yolo model) puts
-	// height/width at dims[1]/dims[2]; NCHW puts them at dims[2]/dims[3].
+	// read the model's own input size (config.inputWidth/Height must match, else rknn_inputs_set feeds a wrongly-shaped
+	// buffer); NHWC has H/W at dims[1]/dims[2], NCHW at dims[2]/dims[3]
 	if (m_InputAttr.fmt == RKNN_TENSOR_NHWC) {
 		m_InputHeight = static_cast<int>(m_InputAttr.dims[1]);
 		m_InputWidth = static_cast<int>(m_InputAttr.dims[2]);
@@ -54,10 +52,8 @@ bool RknnDetectionBackend::Load(const DetectionBackendConfig& config)
 		m_FusedOutputAttr.index = 0;
 		if (rknn_query(m_Context, RKNN_QUERY_OUTPUT_ATTR, &m_FusedOutputAttr, sizeof(m_FusedOutputAttr)) != RKNN_SUCC) return false;
 	} else if (m_NumOutputs % 3 == 0) {
-		// the airockchip/rknn_model_zoo yolov8 export recipe: every FPN scale contributes three
-		// outputs (box[4*regMax,H,W], class[numClasses,H,W], scoreSum[1,H,W] - the third is a
-		// fast NPU-side pre-filter this decode doesn't need), ordered largest grid to smallest
-		// (stride 8, 16, 32 for a 640 input) - confirmed against the real shipped models.
+		// airockchip/rknn_model_zoo yolov8 export: each FPN scale gives three outputs (box[4*regMax,H,W],
+		// class[numClasses,H,W], scoreSum[1,H,W] - unused), ordered largest grid to smallest (stride 8, 16, 32 for a 640 input)
 		m_IsMultiScaleDfl = true;
 		m_Scales.clear();
 		int numScales = m_NumOutputs / 3;
@@ -70,8 +66,7 @@ bool RknnDetectionBackend::Load(const DetectionBackendConfig& config)
 			clsAttr.index = static_cast<uint32_t>(s * 3 + 1);
 			if (rknn_query(m_Context, RKNN_QUERY_OUTPUT_ATTR, &clsAttr, sizeof(clsAttr)) != RKNN_SUCC) return false;
 
-			// dims are [N, C, H, W] for these outputs (fmt reports NCHW) regardless of the
-			// input tensor's own NHWC layout - confirmed against the real model, not assumed.
+			// dims are [N, C, H, W] for these outputs regardless of the input tensor's NHWC layout
 			int gridH = static_cast<int>(boxAttr.dims[2]);
 			int gridW = static_cast<int>(boxAttr.dims[3]);
 			int regMax = static_cast<int>(boxAttr.dims[1]) / 4;
@@ -108,8 +103,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 	YoloPostProcess::LetterboxInfo letterboxInfo;
 	cv::Mat letterboxed = YoloPostProcess::Letterbox(bgrFrame, m_InputWidth, m_InputHeight, letterboxInfo);
 
-	// RGB uint8, NHWC, no normalization - the quantized graph bakes mean/std normalization into
-	// its own weights, unlike the ONNX Runtime path which normalizes to [0,1] float32 itself.
+	// RGB uint8, NHWC, no normalisation: the quantised graph has mean/std baked in (the ONNX path normalises itself)
 	cv::Mat rgb;
 	cv::cvtColor(letterboxed, rgb, cv::COLOR_BGR2RGB);
 
@@ -127,7 +121,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 	std::vector<rknn_output> outputs(static_cast<size_t>(m_NumOutputs));
 	for (int i = 0; i < m_NumOutputs; i++) {
 		outputs[i] = rknn_output{};
-		outputs[i].want_float = 1; // dequantize int8/fp16 to float32 for us - see this class's own header comment
+		outputs[i].want_float = 1; // dequantise int8/fp16 to float32
 		outputs[i].index = static_cast<uint32_t>(i);
 	}
 	if (rknn_outputs_get(m_Context, static_cast<uint32_t>(m_NumOutputs), outputs.data(), nullptr) != RKNN_SUCC) return {};
@@ -135,8 +129,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 	std::vector<ObjectDetection> detections;
 
 	if (!m_IsMultiScaleDfl) {
-		// the exported head shape both this path and OnnxDetectionBackend expect:
-		// [1, 4+numClasses, numAnchors] (batch dim already stripped by the runtime's own dims report)
+		// the head shape shared with OnnxDetectionBackend: [1, 4+numClasses, numAnchors]
 		if (m_FusedOutputAttr.n_dims == 3 || m_FusedOutputAttr.n_dims == 2) {
 			// n_dims==3 -> [1, C, N]; n_dims==2 -> [C, N] (some conversions drop the batch dim)
 			uint32_t channelCount = m_FusedOutputAttr.n_dims == 3 ? m_FusedOutputAttr.dims[1] : m_FusedOutputAttr.dims[0];

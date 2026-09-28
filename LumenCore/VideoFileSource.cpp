@@ -17,7 +17,6 @@ void VideoFileFrameSource::CaptureFrame()
     if (m_Capture.isOpened()) {
         m_Logger->EnterLog(LogLevel::Info, "camera is open, grabbing frame and returning it");
 
-        // Use OpenCV Mat to receive frame data
         cv::Mat mat;
         // Grab to advance and then sleep to respect the configured FPS
         m_Capture.grab();
@@ -25,7 +24,6 @@ void VideoFileFrameSource::CaptureFrame()
         std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
 
         if (m_Capture.read(mat) && !mat.empty()) {
-            // SetLatestResult() bumps m_FrameCount itself now; see ISource::SetLatestResult
             SetLatestResult(SourceResult(std::nullopt, mat));
         } else {
             m_Logger->EnterLog(LogLevel::Error, "Failed to read frame from video file");

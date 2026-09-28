@@ -2,17 +2,14 @@
 Description=LumenVision vision coprocessor server
 After=network-online.target
 Wants=network-online.target
-# PhotonVision and LumenVision both want exclusive access to the same V4L2 camera device(s) and
-# compete for CPU/NPU - let systemd enforce that only one runs at a time rather than relying on
-# an operator to remember to stop one first. See scripts/pi-mode.sh.
+# PhotonVision and LumenVision both need exclusive access to the camera devices and CPU/NPU
 Conflicts=photonvision.service
 
 [Service]
 Type=simple
 User=lumen
 Group=lumen
-# supplementary groups for /dev/dri (Vulkan/rkmpp) and /dev/mpp_service (rkmpp encode) access -
-# the deploy script adds the lumen user to both; see docs/history/IMPLEMENTATION_PLAN.md phase 9
+# Access to /dev/dri (Vulkan/rkmpp) and /dev/mpp_service (rkmpp encode)
 SupplementaryGroups=video render
 
 WorkingDirectory=/opt/lumenvision
@@ -20,21 +17,11 @@ ExecStart=/opt/lumenvision/Server
 Restart=always
 RestartSec=2
 
-# libLumenCore.so lives next to the published Server binary (Server.csproj copies it there via
-# its Content/CopyToOutputDirectory item), so the default rpath already resolves it - this is
-# only needed if that ever changes to a separate directory.
+# libLumenCore.so sits next to the Server binary
 Environment=LD_LIBRARY_PATH=/opt/lumenvision
 
-# Pins the Vulkan driver so a future mesa/panvk package appearing on the system can never be
-# silently selected over the libmali ICD install-deps.sh registers (see phase 5 item 0 and
-# phase 9 in docs/history/IMPLEMENTATION_PLAN.md). This default matches the Armbian/PhotonVision
-# bench board (Mali-G610, ICD file mali.json) - but it is only ever a same-image-as-last-time
-# guess, never a cross-image guarantee (the ubuntu-rockchip image install-deps.sh originally
-# targeted uses libmali-gbm.json instead, a different real path). install-deps.sh's
-# install_vulkan() discovers the ICD actually registered on the board it's run on and writes a
-# systemd drop-in (/etc/systemd/system/lumenvision.service.d/10-vulkan-icd.conf) that overrides
-# this line with the real path - re-run it after imaging a different board rather than hand-
-# editing this file.
+# Pins the Vulkan ICD to the libmali driver; install-deps.sh install_vulkan() writes a drop-in
+# (lumenvision.service.d/10-vulkan-icd.conf) overriding this with the ICD registered on the board
 Environment=VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/mali.json
 
 StandardOutput=journal

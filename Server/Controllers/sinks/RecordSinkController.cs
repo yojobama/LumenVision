@@ -16,26 +16,11 @@ namespace Server.Controllers.sinks
         public DateTime LastWriteTimeUtc { get; set; }
     }
 
-    // Recording, for both post-match telemetry and footage teams download to feature in videos -
-    // see RecordSink.h's own comment for the design (segmented MP4 + a JSON-Lines sidecar per
-    // segment). This is also the first controller in this project to serve a file back over HTTP
-    // at all - no generic download/static-file endpoint existed anywhere before this.
+    // Recording as segmented MP4 plus a JSON-Lines telemetry sidecar per segment (see RecordSink.h).
     internal class RecordSinkController : ControllerBase
     {
-        // POST: create a RecordSink. Bind it afterwards (PATCH /sink/bind) to the node whose
-        // frames should be recorded, same as WebRTCSink/MjpegSink. dstFolder defaults to null
-        // (resolved from the sink's own name - see SinkManager.AddRecordSink's own comment) so a
-        // caller doesn't have to invent a path just to start recording.
-        //
-        // Every numeric parameter is nullable here, resolved to its real default in the method
-        // body via ?? - NOT a plain `int x = 8000`-style C# default parameter. Confirmed the hard
-        // way: EmbedIO's [QueryField] binding does not apply a value-type parameter's own C#
-        // default when the query string omits that key - it silently binds default(int) (0)
-        // instead, which happened to make fps and bitrateKbps 0 and avcodec_open2 fail outright
-        // ("The encoder timebase is not set") the first time this endpoint was called without
-        // every parameter spelled out. A nullable value type's "absent" state is unambiguous, so
-        // the binder leaves it null instead of guessing - the same reason dstFolder/encoderName
-        // above were already nullable strings rather than defaulted non-nullable ones.
+        // POST: create a RecordSink; bind it afterwards (PATCH /sink/bind). dstFolder null = derived from the sink name.
+        // Numeric parameters are nullable and defaulted in the body via ??, since an omitted [FromQuery] value type binds 0.
         [HttpPost("recordSink/create")]
         public Task<int> Create([FromQuery] string name, [FromQuery] string? dstFolder = null,
             [FromQuery] string? encoderName = null, [FromQuery] int? bitrateKbps = null,
@@ -47,10 +32,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinkId);
         }
 
-        // GET: every recorded segment for this sink, newest first, with size/last-write-time -
-        // real video duration isn't probed here (would need an actual container parse, not just
-        // a filesystem stat); a segment's own JSON-Lines sidecar carries real per-frame
-        // timestamps for anything that needs precise timing.
+        // GET: recorded segments, newest first, with size and last-write time (video duration is not probed)
         [HttpGet("recordSink/{id}/segments")]
         public Task<List<RecordSegmentDto>> GetSegments(int id)
         {
@@ -66,16 +48,8 @@ namespace Server.Controllers.sinks
             return Task.FromResult(result);
         }
 
-        // GET: download one segment (the video itself, or its .jsonl telemetry sidecar) as a raw
-        // byte stream - genuinely new ground for this project, see this file's own top comment.
-        // `file` is resolved strictly against this sink's OWN RecordDstFolder (TryResolveSegmentPath),
-        // never trusted as a caller-supplied path directly - the obvious trap for a brand-new
-        // "serve a file by name" endpoint.
-        //
-        // PhysicalFile with range processing: a browser <video> element (or a download manager)
-        // can seek/resume via HTTP Range requests instead of re-fetching a multi-hundred-MB match
-        // recording from the start. fileDownloadName sets the same attachment Content-Disposition
-        // the old hand-written header did.
+        // GET: download one segment (video or .jsonl sidecar); `file` is resolved only within this sink's RecordDstFolder.
+        // PhysicalFile with range processing lets clients seek and resume.
         [HttpGet("recordSink/{id}/download")]
         public Task<IActionResult> Download(int id, [FromQuery] string file)
         {
@@ -89,13 +63,9 @@ namespace Server.Controllers.sinks
             return Task.FromResult(result);
         }
 
-        // POST: use an already-recorded segment as a VideoFileSource directly, no re-upload - the
-        // old (deleted) RecordSink stub's own second aspirational comment, now real. Reuses
-        // VideoFileSourceController's exact underlying call (InitializeVideoFileSource) against
-        // the file already on disk.
-        // POST: start (enabled=true) or stop (enabled=false) recording on EVERY source at once -
-        // the Match View button. The robot does the same over NT (<root>/config/recording); both
-        // go through SinkManager.SetAllRecording. Returns how many RecordSinks are now running.
+        // POST: use an already-recorded segment as a VideoFileSource, without re-uploading.
+        // POST: start (enabled=true) or stop (enabled=false) recording on every source; returns the running RecordSink count.
+        // The robot does the same via NT <root>/config/recording (SinkManager.SetAllRecording).
         [HttpPost("recordSink/all")]
         public Task<int> SetAllRecording([FromQuery] bool enabled)
         {
@@ -121,8 +91,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sourceId);
         }
 
-        // DELETE: remove one segment (and its .jsonl sidecar) manually, alongside the automatic
-        // retention EnforceRetention() already applies.
+        // DELETE: remove one segment and its .jsonl sidecar
         [HttpDelete("recordSink/{id}/segments")]
         public Task<bool> DeleteSegment(int id, [FromQuery] string file)
         {
@@ -140,11 +109,8 @@ namespace Server.Controllers.sinks
             return sink;
         }
 
-        // filename must be a bare name (no path separators/"..") AND resolve to somewhere inside
-        // dstFolder once normalized - the two checks together are what actually close the
-        // path-traversal trap; either alone can be bypassed (a bare-looking name can still
-        // resolve outside on some platforms, and a "no .." check alone doesn't catch every
-        // absolute-path form).
+        // filename must be a bare name (no separators or "..") and resolve inside dstFolder once normalised;
+        // both checks are needed to prevent path traversal.
         private static bool TryResolveSegmentPath(string dstFolder, string filename, out string fullPath)
         {
             fullPath = "";

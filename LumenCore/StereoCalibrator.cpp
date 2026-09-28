@@ -203,9 +203,7 @@ int StereoCalibrator::GetFrameHeight() const
 
 StereoCalibrationResult StereoCalibrator::RunCalibration()
 {
-	// stereo extrinsics have more DOF than a single-eye calibration, and the same "too few views
-	// is actively misleading, not just imprecise" argument from CameraCalibrator applies harder
-	// here - see STEREO_IMPLEMENTATION_PLAN.md ss10.2.
+	// stereo extrinsics have more DOF than a single-eye calibration, so too few views is actively misleading
 	if (m_ObjPoints.size() < 8) {
 		throw std::runtime_error("StereoCalibrator::RunCalibration: need at least 8 saved pairs, have " + std::to_string(m_ObjPoints.size()));
 	}
@@ -221,9 +219,7 @@ StereoCalibrationResult StereoCalibrator::RunCalibration()
 		K2.at<double>(0, 2) = m_PriorRight->cx; K2.at<double>(1, 2) = m_PriorRight->cy;
 		D2 = cv::Mat(m_PriorRight->distCoeffs, true).reshape(1, (int)m_PriorRight->distCoeffs.size());
 	} else {
-		// no prior intrinsics supplied - solve per-eye from the stereo snapshots themselves
-		// first, then hand stereoCalibrate CALIB_FIX_INTRINSIC just the same, matching
-		// STEREO_IMPLEMENTATION_PLAN.md ss10.2's preferred (more stable) path either way
+		// no prior intrinsics supplied: solve per-eye from the stereo snapshots first, then use CALIB_FIX_INTRINSIC as usual
 		std::vector<cv::Mat> rvecs, tvecs;
 		K1 = cv::Mat::eye(3, 3, CV_64F);
 		D1 = cv::Mat::zeros(8, 1, CV_64F);
@@ -271,11 +267,8 @@ StereoCalibrationResult StereoCalibrator::RunCalibration()
 	result.roiRightX = validRoi2.x; result.roiRightY = validRoi2.y;
 	result.roiRightW = validRoi2.width; result.roiRightH = validRoi2.height;
 
-	// self-check: P2's baseline term and norm(T) must agree in sign and magnitude, per
-	// cv::stereoRectify's own documented convention - a mismatch means a units or sign
-	// assumption elsewhere in this function no longer holds. Logged, not thrown - a bad
-	// self-check should not make an otherwise-computed result unrecoverable, but IsValid()
-	// callers (StereoDepthNode) should treat epipolarRms as the real gate regardless.
+	// self-check: P2's baseline term and norm(T) must agree in sign and magnitude (cv::stereoRectify convention);
+	// logged, not thrown, since epipolarRms is the real gate
 	double p2Baseline = -P2.at<double>(0, 3) / P1.at<double>(0, 0);
 	if (std::abs(p2Baseline - result.baselineMeters) > 1e-6 * std::max(1.0, result.baselineMeters)) {
 		if (m_Logger) m_Logger->EnterLog(LogLevel::Warning,
@@ -283,9 +276,7 @@ StereoCalibrationResult StereoCalibrator::RunCalibration()
 			" vs P2-derived=" + std::to_string(p2Baseline) + ")");
 	}
 
-	// epipolarRms: push every saved corner through the rectification maps and measure how far
-	// off the epipolar lines actually land - the number that predicts codec-stereo density much
-	// more directly than stereoRms does (it gates blocks on |dy|). See ss10.2.
+	// epipolarRms: push every saved corner through the rectification maps and measure how far it lands off the epipolar line
 	double sumAbsDy = 0.0;
 	int64_t countDy = 0;
 	for (size_t i = 0; i < m_LeftImgPoints.size(); i++) {

@@ -8,22 +8,15 @@ using System.Threading.Tasks;
 
 namespace Server
 {
-    // Applies what robot code writes over NetworkTables (ROADMAP.md E1's robot-writable config
-    // topics) - the piece that was missing: NetworkTablesSink has always *collected* those writes
-    // (PollConfigRequests), but nothing on the C# side ever polled them, so robot-side driver mode
-    // and pipeline switching never actually did anything. Every tick, for every NetworkTablesSink:
-    //   <root>/config/recording          (bool)  -> SinkManager.SetAllRecording
-    //   <root>/<nodeId>/config/driverMode (bool) -> SetDriverMode on that detector
-    //   <root>/<nodeId>/config/pipelineIndex     -> activate that source's pipeline profile
-    // and publishes <root>/status/recording back so the robot can confirm the request took effect.
-    //
-    // Robot control therefore needs a NetworkTablesSink to exist - which it already must for the
-    // robot to receive any vision results at all. Several NT sinks seeing the same robot write is
-    // harmless: every request is idempotent desired state.
+    // Applies robot-written NetworkTables config each tick, for every NetworkTablesSink:
+    //  <root>/config/recording          (bool)  -> SinkManager.SetAllRecording
+    //  <root>/<nodeId>/config/driverMode (bool) -> SetDriverMode on that detector
+    //  <root>/<nodeId>/config/pipelineIndex     -> activate that source's pipeline profile
+    // and publishes <root>/status/recording back as confirmation. Requests are idempotent desired state, so several
+    // NT sinks seeing the same write is harmless.
     public sealed class NetworkTablesControlService : BackgroundService
     {
-        // fast enough that "start recording" at the auto/teleop boundary lands within a frame or
-        // two; each tick is a handful of in-process calls, not network I/O
+        // fast enough for recording changes at the auto/teleop boundary to land within a frame or two; in-process calls only
         private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(100);
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -83,12 +76,8 @@ namespace Server
             }
         }
 
-        // entries are {"sourceId": "<nodeId>", "pipelineIndex"?: int, "driverMode"?: bool} - see
-        // NetworkTablesSink::PollConfigRequests. <nodeId> is the id of the node whose results that
-        // NT subtable carries: normally a detector (the sink an NT sink is bound to), which is what
-        // driverMode applies to; pipelineIndex is a property of the CAMERA source that detector
-        // runs on, so it's mapped back (a source whose active profile detector is that node, or the
-        // node itself if a robot addressed the source directly).
+        // entries are {"sourceId": "<nodeId>", "pipelineIndex"?: int, "driverMode"?: bool} (see NetworkTablesSink::PollConfigRequests);
+        // driverMode applies to that detector node, pipelineIndex to the camera source it runs on (mapped back from the node).
         private static void ApplyConfigRequests(string json)
         {
             if (string.IsNullOrEmpty(json) || json == "[]") return;

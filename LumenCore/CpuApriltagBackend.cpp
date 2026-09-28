@@ -6,18 +6,8 @@ CpuApriltagBackend::CpuApriltagBackend(ApriltagTuning tuning)
 	m_Detector = apriltag_detector_create();
 	apriltag_detector_add_family(m_Detector, m_Family);
 
-	// apriltag_detector_create()'s own "reasonable values" are nthreads=1 (single-threaded),
-	// quad_decimate=2.0 and refine_edges=true. All three are genuinely tunable at runtime (not
-	// fixed here) - see SinkManager.SetApriltagBackend, which rebuilds a live sink with new values
-	// exactly the way switching CPU<->Vulkan already does. <= 0 for nthreads/quadDecimate means
-	// "use this backend's own library default".
-	//
-	// quad_decimate only affects the initial quad SEARCH resolution - the doc comment on this
-	// field is explicit that "decoding the binary payload is still done at full resolution", so
-	// a value above 1 trades a small amount of detection range for a speed win, not tag-id/pose
-	// accuracy on tags actually found. refine_edges is recommended by the apriltag docs
-	// specifically to compensate for decimation's reduced quad quality ("very computationally
-	// inexpensive"); switching it off is for a measured speed win on a tight CPU budget.
+	// <= 0 for nthreads/quadDecimate uses the library default (1 thread, quad_decimate 2.0); refine_edges defaults on.
+	// quad_decimate only lowers quad-search resolution (payload decoding stays full resolution); refine_edges offsets its coarser quads.
 	if (tuning.nthreads > 0) m_Detector->nthreads = tuning.nthreads;
 	if (tuning.quadDecimate > 0.0f) m_Detector->quad_decimate = tuning.quadDecimate;
 	m_Detector->refine_edges = tuning.refineEdges;

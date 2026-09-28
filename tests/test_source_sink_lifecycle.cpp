@@ -5,10 +5,7 @@
 #include <chrono>
 #include <thread>
 
-// Regression coverage for this project's std::jthread migration (raw pthread_t before it): the
-// two bugs that migration fixed for free - ISource's destructor never joining its capture
-// thread, and Toggle(false) needing to return promptly rather than hang - had NO test coverage
-// before, so a future refactor could silently reintroduce either with nothing to catch it.
+// ISource destruction must join its capture thread, and Toggle(false) must return promptly.
 
 namespace {
 
@@ -21,8 +18,7 @@ protected:
     void CaptureFrame() override {
         captureCount++;
         SetLatestResult(SourceResult(std::nullopt, cv::Mat(1, 1, CV_8UC1), SourceResult::NowUs()));
-        // avoid pegging a CPU core spinning as fast as possible - a real capture backend blocks
-        // on I/O between frames, this just needs to yield regularly instead
+        // Yield between frames rather than spin.
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 };
@@ -68,8 +64,7 @@ TEST_CASE("ISource::Toggle(false) returns promptly instead of hanging", "[ISourc
     source->Toggle(false);
     auto elapsed = std::chrono::steady_clock::now() - start;
 
-    // generous bound (the capture loop itself only sleeps 1ms between frames) - this is a
-    // "didn't hang forever" check, not a tight timing assertion
+    // Generous bound: checks it does not hang, not timing.
     REQUIRE(elapsed < std::chrono::seconds(2));
     REQUIRE_FALSE(source->GetToggleStatus());
 }
@@ -88,9 +83,7 @@ TEST_CASE("ISink::Toggle(false) returns promptly instead of hanging", "[ISink][r
 }
 
 TEST_CASE("a source destroyed while its capture thread is still running does not hang or crash", "[ISource][regression]") {
-    // Previously a no-op: ~ISource() never joined the capture thread at all, so this either
-    // leaked a thread running against a half-destroyed object or (depending on timing) crashed
-    // outright - confirmed as a real bug this project's own std::jthread migration fixed.
+    // Destroying a toggled-on source joins its capture thread.
     auto start = std::chrono::steady_clock::now();
     {
         auto source = std::make_shared<TestSource>(nullptr, "test-source-destroy");
@@ -103,12 +96,10 @@ TEST_CASE("a source destroyed while its capture thread is still running does not
 }
 
 TEST_CASE("calling Toggle(true) twice does not leak a second capture thread", "[ISource][regression]") {
-    // ISource::Toggle's own comment documents this exact historical bug: calling Toggle(true)
-    // while already running used to spawn a second capture thread without stopping the first,
-    // silently overwriting the handle needed to ever join the original.
+    // Toggle(true) while running must not spawn a second capture thread.
     auto source = std::make_shared<TestSource>(nullptr, "test-source-idempotent");
     source->Toggle(true);
-    source->Toggle(true); // should be a no-op, not a second thread
+    source->Toggle(true); // no-op
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
     auto start = std::chrono::steady_clock::now();

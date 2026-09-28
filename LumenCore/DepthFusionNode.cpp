@@ -28,9 +28,8 @@ void DepthFusionNode::Process(const std::vector<SourceResult>& results)
 	StereoCalibrationResult calibration = m_DepthNode->GetCalibration();
 	double fx = calibration.rectifiedFx, cx = calibration.rectifiedCx, cy = calibration.rectifiedCy;
 
-	// annotate-on-demand - see ApriltagDetector::Process's identical comment. Skips the clone
-	// AND every distance-label cv::putText call below when nothing bound to this sink actually
-	// wants the frame.
+	// annotate-on-demand: skips the clone and distance labels when nothing bound wants the frame
+	// (see ApriltagDetector::Process).
 	bool wantsFrame = HasActiveFrameConsumer();
 
 	cv::Mat annotatedFrame;
@@ -56,8 +55,7 @@ void DepthFusionNode::Process(const std::vector<SourceResult>& results)
 			}
 		}
 
-		// median, not mean - a single background block bleeding into the box wrecks a mean far
-		// more than it wrecks a median. See STEREO_IMPLEMENTATION_PLAN.md ss10.4.
+		// median, not mean, so one background block in the box doesn't skew the result
 		double distanceMeters = 0.0;
 		double validFraction = validDepths.empty() ? 0.0 : (double)validDepths.size() / ((blockX1 - blockX0) * (blockY1 - blockY0));
 		if (!validDepths.empty()) {
@@ -65,10 +63,8 @@ void DepthFusionNode::Process(const std::vector<SourceResult>& results)
 			distanceMeters = validDepths[validDepths.size() / 2];
 		}
 
-		// pixel-center pinhole projection, approximating fy=fx (true after rectification for
-		// OpenCV's stereoRectify output, which shares one focal length across both P1 columns
-		// bar rounding) - not the full Q-matrix reprojection, but equivalent to it for a point
-		// already known to lie on the rectified left image plane at this pixel.
+		// pixel-centre pinhole projection assuming fy=fx (true after stereoRectify); equivalent to the
+		// Q-matrix reprojection for a point on the rectified left image plane
 		double u = bx + bw / 2.0, v = by + bh / 2.0;
 		double xMeters = (fx > 0 && distanceMeters > 0) ? (u - cx) * distanceMeters / fx : 0.0;
 		double yMeters = (fx > 0 && distanceMeters > 0) ? (v - cy) * distanceMeters / fx : 0.0;

@@ -6,49 +6,24 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <Configurations>Debug;Release;LocalCheck</Configurations>
-    <!-- Microsoft.NET.Sdk.Web globs wwwroot\** as Content by default; this project already
-         declares its own wwwroot Content items below (including the linked webui\dist build), so
-         the default glob would produce duplicate Content items (NETSDK1022). -->
+    <!-- wwwroot Content items are declared explicitly below, so the default glob would duplicate them (NETSDK1022). -->
     <EnableDefaultContentItems>false</EnableDefaultContentItems>
 
-    <!-- The Pi's deploy image has no libicu installed, and a self-contained publish doesn't
-         bundle it - .NET dynamically loads it at startup, so without this every deploy target
-         needs a new apt dependency or crashes with FailFast("Couldn't find a valid ICU package")
-         the instant LinuxResourceMonitor's first Console.WriteLine touches the encoding. Nothing
-         here does culture-aware string work (LinuxResourceMonitor.cs already parses with
-         CultureInfo.InvariantCulture) - invariant mode is a real fit, not a workaround. -->
+    <!-- The Pi deploy image has no libicu and a self-contained publish does not bundle it; invariant mode avoids the dependency. -->
     <InvariantGlobalization>true</InvariantGlobalization>
 
     <!--
-      LumenCore is built by CMake (see /CMakeLists.txt, /CMakePresets.json, LumenCore/CMakeLists.txt),
-      not by MSBuild's normal C# build graph, so it is consumed as a prebuilt native library rather
-      than via <ProjectReference> — that also lets Server build/publish (e.g. `dotnet publish -r
-      linux-arm64`) without a C++ toolchain on the machine, as long as the library already exists.
-      Override LumenCorePreset directly (e.g. -p:LumenCorePreset=pi-arm64-release) to pick up a
-      build produced by a different preset than the one inferred below.
+      LumenCore is built by CMake, so it is consumed as a prebuilt native library rather than a <ProjectReference>.
+      Override LumenCorePreset (e.g. -p:LumenCorePreset=pi-arm64-release) to select a different build.
     -->
-    <!--
-      $(RuntimeIdentifier), not $(OS), decides which preset to look for - and RID must be checked
-      FIRST, with $(OS) only as a last-resort fallback when RID gives no signal at all. $(OS) is
-      the BUILD HOST, not the target: deploy.ps1 runs `dotnet publish -r linux-arm64` FROM WINDOWS,
-      where $(OS)=='Windows_NT' - keying off $(OS) first there would resolve to the Windows preset
-      and bundle a Windows-built LumenCore.dll into a linux-arm64 publish. That is exactly the
-      DllNotFoundException class of bug this project already hit once with the old LumenCorePlatform
-      property (deploying to the Orange Pi silently picked up the x64/WSL2-built library instead of
-      an ARM64 one - an x86-64 ELF cannot be dlopen()'d on aarch64, and there was no build-time
-      warning at all, only a runtime failure on the deployed device).
-    -->
+    <!-- The preset comes from $(RuntimeIdentifier) first; $(OS) (the build host, not the target) is only a fallback when RID is unset. -->
     <LumenCorePresetBase Condition="'$(LumenCorePresetBase)'=='' And '$(RuntimeIdentifier)'=='linux-arm64'">pi-arm64</LumenCorePresetBase>
     <LumenCorePresetBase Condition="'$(LumenCorePresetBase)'=='' And '$(RuntimeIdentifier)'=='linux-x64'">wsl-x64</LumenCorePresetBase>
     <LumenCorePresetBase Condition="'$(LumenCorePresetBase)'=='' And $([MSBuild]::ValueOrDefault('$(RuntimeIdentifier)', '').StartsWith('win'))">windows-x64</LumenCorePresetBase>
     <LumenCorePresetBase Condition="'$(LumenCorePresetBase)'=='' And '$(OS)'=='Windows_NT'">windows-x64</LumenCorePresetBase>
     <LumenCorePresetBase Condition="'$(LumenCorePresetBase)'==''">wsl-x64</LumenCorePresetBase>
 
-    <!-- CMakePresets.json's preset names are lowercase ("wsl-x64-debug"); the multi-config
-         generators' own per-configuration output subdirectory is title-case ("Debug"/"Release"),
-         matching exactly what cmake's own build/config options expect - both are needed, for the
-         preset name and the stage subdirectory respectively. LocalCheck maps to Debug, same as
-         the old LumenCoreConfiguration property did. -->
+    <!-- Preset names are lowercase; the stage subdirectory is title-case (Debug/Release). Non-Release configurations map to Debug. -->
     <LumenCoreConfigLower Condition="'$(Configuration)'=='Release'">release</LumenCoreConfigLower>
     <LumenCoreConfigLower Condition="'$(Configuration)'!='Release'">debug</LumenCoreConfigLower>
     <LumenCoreConfigTitle Condition="'$(Configuration)'=='Release'">Release</LumenCoreConfigTitle>
@@ -62,36 +37,18 @@
     <Folder Include="Interop\" />
   </ItemGroup>
 
-  <!-- ASP.NET Core (Kestrel + MVC) comes from the Microsoft.NET.Sdk.Web shared framework itself -
-       no web-server package. EmbedIO was archived upstream (unmaintained for years); System.Text.Json
-       ships in the framework, so its old explicit PackageReference is gone too (NU1510). Systemd:
-       UseSystemd() gives proper sd_notify/SIGTERM handling under lumenvision.service instead of the
-       old stdin-blocking workaround in Program.cs. -->
+  <!-- ASP.NET Core (Kestrel + MVC) comes from the Microsoft.NET.Sdk.Web shared framework.
+       UseSystemd() provides sd_notify/SIGTERM handling under lumenvision.service. -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.0" />
   </ItemGroup>
 
   <!--
-    Globs the CMake stage directory rather than hardcoding one filename (libLumenCore.so vs
-    LumenCore.dll, plus every DLL it transitively depends on - OpenCV, ONNX Runtime, ntcore,
-    ffmpeg, libdatachannel - which LumenCore/CMakeLists.txt's own POST_BUILD step already copies
-    next to it on Windows, since Windows has no rpath/LD_LIBRARY_PATH equivalent). This is what
-    keeps this list from needing to be kept in sync by hand on the C# side as dependencies change.
-
-    CopyToOutputDirectory must be Always, not PreserveNewest: PreserveNewest only compares file
-    timestamps, and the native library is copied to the SAME output filename regardless of which
-    preset it came from. Building pi-arm64-release (for an Orange Pi deploy) and then switching
-    back to wsl-x64-debug (for local debugging) without a clean lands a newer wsl source next to
-    an already-copied pi-arm64 output that's newer still (from the earlier build) - PreserveNewest
-    sees the destination as "already newest" and skips the copy, silently leaving the
-    wrong-architecture library in the output directory. Confirmed the hard way in the previous,
-    single-file version of this same problem.
+    Globs the CMake stage directory for the native library and every DLL it depends on.
+    CopyToOutputDirectory is Always because PreserveNewest can leave a wrong-architecture library from an earlier preset in the output.
   -->
   <ItemGroup>
-    <!-- *.so* (not just *.so): versioned SONAMEs like libopencv_core.so.5.0.0 and their
-         unversioned-major symlinks like libapriltag.so.3 don't end in a literal ".so" - see
-         LumenCore/CMakeLists.txt's Linux POST_BUILD step (CopyLinuxRuntimeDeps.cmake), which
-         stages exactly these files/symlinks next to libLumenCore.so for packaging. -->
+    <!-- *.so* also matches versioned SONAMEs and symlinks (e.g. libopencv_core.so.5.0.0, libapriltag.so.3) staged by CopyLinuxRuntimeDeps.cmake. -->
     <LumenCoreStageFiles Include="$(LumenCoreStageDir)\*.so*;$(LumenCoreStageDir)\*.dll" Condition="Exists('$(LumenCoreStageDir)')" />
   </ItemGroup>
   <ItemGroup>
@@ -102,18 +59,7 @@
   </ItemGroup>
 
   <!--
-    SWIG's generated Interop bindings declare every native entry point as
-    [DllImport("libLumenCore")] - a Linux-style module name (SWIG's own default, not something
-    this project's CMake naming chose; LumenCore/CMakeLists.txt genuinely produces "LumenCore.dll"
-    on Windows, no "lib" prefix, matching every other native Windows DLL). .NET's own unmanaged-DLL
-    resolution does NOT strip a "lib" prefix on Windows the way the equivalent lookup effectively
-    does on Linux (where "libLumenCore.so" - the real CMake output there too - already matches the
-    DllImport name literally) - confirmed the hard way: a truly clean `dotnet run` threw
-    DllNotFoundException for "libLumenCore" even with "LumenCore.dll" sitting right there in the
-    output directory, and every earlier successful run this session turned out to have been
-    reusing an already-running server process rather than actually validating a fresh start. This
-    second copy, aliased to the literal filename P/Invoke needs, is what a clean run actually
-    requires - Linux needs no equivalent since CMake's own output there is already named right.
+    SWIG bindings use [DllImport("libLumenCore")] but Windows builds LumenCore.dll; this alias copy gives P/Invoke the name it loads.
   -->
   <ItemGroup Condition="Exists('$(LumenCoreStageDir)\LumenCore.dll')">
     <Content Include="$(LumenCoreStageDir)\LumenCore.dll">
@@ -123,12 +69,7 @@
   </ItemGroup>
 
   <!--
-    The React WebUI (webui) is a separate npm/Vite project, not part of this C# build graph -
-    `npm run build` there produces webui\dist, which Program.cs serves as static files from a
-    "wwwroot" folder next to Server.dll. Guarded on Exists() the same way as the native library
-    above: a machine that hasn't built the WebUI yet still builds and runs Server fine
-    (Program.cs falls back to API-only with a warning), rather than failing the build over a
-    separate project's output.
+    The React WebUI (webui, built with npm run build) is served by Program.cs from wwwroot; included only if webui\dist exists.
   -->
   <ItemGroup>
     <Content Include="wwwroot\**" Exclude="wwwroot\dist\**">
@@ -141,17 +82,8 @@
   </ItemGroup>
 
   <!--
-    Builds LumenCore via CMake before Server itself, so a plain `dotnet build` in this directory
-    still "just works" the way it always has, without requiring a separate manual CMake step or
-    routing everything through Visual Studio's own CMake integration first. Mirrors the role the
-    old RunSwig target played (it silently regenerated bindings before each build) but invokes
-    CMake instead of swig directly - CMake now owns the SWIG invocation (LumenCore/CMakeLists.txt).
-
-    Skipped gracefully, with a warning rather than a hard failure, when cmake isn't on PATH or the
-    preset has never been configured (no CMakeCache.txt yet) - a machine that only runs an
-    already-published server has no reason to need a C++ toolchain at all. CheckLumenCoreExists
-    below is what turns a genuinely missing native library into a hard, clearly-worded failure;
-    this target's job is only to build one that's known to be configured already.
+    Builds LumenCore via CMake before Server. Skipped with a warning when cmake is not on PATH or the preset is unconfigured;
+    CheckLumenCoreExists fails the build if the native library is missing.
   -->
   <Target Name="BuildLumenCore" BeforeTargets="BeforeBuild">
     <Exec Command="where cmake" Condition="'$(OS)'=='Windows_NT'" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
@@ -174,14 +106,8 @@
   </Target>
 
   <!--
-    A missing/wrong-architecture native library, or C# bindings that were generated by a
-    DIFFERENT configure than the one that built it, are otherwise silent at build time (the
-    Content item above just has no match) and only surface as a runtime DllNotFoundException or
-    EntryPointNotFoundException on whatever machine ends up running Server.dll - a much harder
-    place to diagnose it, especially once it's been deployed to a remote target. Fail the build
-    instead, checking both: that the library exists, and that the Interop bindings next to it
-    came from an actual CMake configure (the .swig-stamp LumenCore/CMakeLists.txt writes) rather
-    than, say, a stale checked-out copy from a different preset entirely.
+    Fails the build if the native library is missing or the Interop bindings lack the .swig-stamp written by a CMake configure,
+    which would otherwise surface only as a runtime DllNotFoundException/EntryPointNotFoundException.
   -->
   <Target Name="CheckLumenCoreExists" BeforeTargets="Build;Publish">
     <ItemGroup>

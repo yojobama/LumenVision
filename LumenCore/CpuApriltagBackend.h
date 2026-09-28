@@ -2,8 +2,7 @@
 #include "IApriltagBackend.h"
 #include <apriltag/tag36h11.h>
 
-// Wraps today's apriltag_detector_detect() call - unchanged behavior, just moved out of
-// ApriltagDetector so it sits behind IApriltagBackend next to VkApriltagBackend.
+// Wraps apriltag_detector_detect() behind IApriltagBackend.
 class CpuApriltagBackend : public IApriltagBackend {
 public:
 	// see ApriltagTuning for what each field's "use the default" value means here

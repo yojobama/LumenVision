@@ -37,8 +37,7 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
     setNewModelLabelsFile(null);
   };
 
-  // Refresh the model list every time the dialog is opened on the Object Detection type, so a
-  // model uploaded in a previous visit shows up without a full page reload.
+  // Refresh the model list each time the dialog opens on Object Detection.
   useEffect(() => {
     if (isOpen && type === 'object') {
       setModelsLoading(true);
@@ -109,15 +108,12 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
           >
             <option value="ApriltagSink">AprilTag Detection</option>
             <option value="calibration">Camera Calibration</option>
-            {/* not "(ONNX)" - the actual backend (ONNX Runtime vs RKNN/NPU) is a property of
-                whichever model gets selected/uploaded below, not of the sink type itself; see the
-                per-model provider badge in that section. */}
+            {/* Backend (ONNX Runtime vs RKNN) depends on the selected model, not the sink type. */}
             <option value="object">Object Detection</option>
           </select>
         </div>
 
-        {/* AprilTag: tag size and detector backend (CPU always available; Vulkan/vkapriltag
-            falls back to CPU automatically if the device has no usable GPU) */}
+        {/* AprilTag: tag size and detector backend (Vulkan falls back to CPU without a usable GPU) */}
         {type === 'ApriltagSink' && (
           <div className="flex gap-2 p-3 border border-gray-200 dark:border-gray-700 rounded-md">
             <div className="flex-1">

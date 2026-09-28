@@ -11,11 +11,8 @@
 #include <mutex>
 #include <optional>
 
-// Checkerboard only for now - see STEREO_IMPLEMENTATION_PLAN.md ss10.2: a ChArUco board can
-// detect a different corner subset in each eye, which cv::stereoCalibrate can't consume without
-// first intersecting both eyes' detections by corner ID and rebuilding the object-point list
-// from that intersection. Deliberately deferred rather than half-done; BOARD_CHARUCO is accepted
-// here for API symmetry with CalibrationBoardConfig/CameraCalibrator but throws if actually used.
+// Checkerboard only: a ChArUco board can detect different corner subsets per eye, which cv::stereoCalibrate cannot
+// consume. BOARD_CHARUCO is accepted for API symmetry but throws.
 struct StereoCalibrationBoardConfig {
 	CalibrationBoardType type = BOARD_CHECKERBOARD;
 	int rows = 6;
@@ -23,11 +20,8 @@ struct StereoCalibrationBoardConfig {
 	float squareSizeMeters = 0.025f;
 };
 
-// ISource+ISink, maxSources=2 (left/right cameras). Mirrors CameraCalibrator's shape and the
-// same detection logic (findChessboardCorners + cornerSubPix), applied once per eye per paired
-// frame rather than once per frame - see STEREO_IMPLEMENTATION_PLAN.md P1/P2 for why pairing and
-// left/right roles need to be handled explicitly rather than reusing ISink's generic bind/
-// process path unchanged.
+// ISource+ISink, maxSources=2 (left/right). Same detection logic as CameraCalibrator (findChessboardCorners +
+// cornerSubPix), applied per eye per paired frame.
 class StereoCalibrator : public ISink, public ISource, public IStereoRoleReceiver
 {
 public:
@@ -38,32 +32,24 @@ public:
 	// IStereoRoleReceiver
 	void SetStereoRoles(const std::string& leftSourceId, const std::string& rightSourceId) override;
 
-	// optional: seed per-eye intrinsics from two already-run CameraCalibrator nodes, so
-	// RunCalibration() can pass cv::CALIB_FIX_INTRINSIC instead of solving for intrinsics AND
-	// extrinsics at once from (typically fewer) stereo-only snapshots - numerically more stable,
-	// and reuses calibration work an operator may have already done. Optional: leave unset to
-	// solve full intrinsics+extrinsics from the stereo snapshots alone.
+	// optional: seed per-eye intrinsics from two CameraCalibrator nodes so RunCalibration() uses cv::CALIB_FIX_INTRINSIC;
+	// if unset, intrinsics and extrinsics are solved together from the stereo snapshots
 	void SetPriorIntrinsics(const CameraCalibrationResult& left, const CameraCalibrationResult& right);
 
-	// saves the most recently matched (both-eyes-found, within-skew) checkerboard detection.
-	// returns false if no such pair is currently available - check GetLastPairStatusJson() for
-	// why (left-only / right-only / skew too large / not yet paired).
+	// saves the latest matched (both eyes found, within skew) checkerboard detection; returns false if none is
+	// available (see GetLastPairStatusJson())
 	bool SaveStereoDetection();
 	int GetPairCount() const;
 	bool RemovePair(int index);
 	void ClearPairs();
 
-	// ROADMAP.md Phase 8a/8d: same reasoning as CameraCalibrator's own GetSnapshotCorners - one
-	// eye's corner points for one saved pair, flattened as [x0,y0,x1,y1,...]. Empty if index is
-	// out of range or eye isn't "left"/"right".
+	// one eye's corner points for one saved pair, flattened as [x0,y0,x1,y1,...]; empty if index is out of range
+	// or eye isn't "left"/"right"
 	std::vector<double> GetPairCorners(int index, const std::string& eye) const;
 	int GetFrameWidth() const;
 	int GetFrameHeight() const;
 
-	// runs cv::stereoCalibrate + cv::stereoRectify over every saved pair; throws if fewer than 8
-	// pairs have been saved (stereo extrinsics have more DOF than a single-eye calibration, so
-	// the same "too few views is actively misleading" argument from CameraCalibrator applies
-	// harder here - see STEREO_IMPLEMENTATION_PLAN.md ss10.2).
+	// runs cv::stereoCalibrate + cv::stereoRectify over every saved pair; throws if fewer than 8 pairs are saved
 	StereoCalibrationResult RunCalibration();
 	StereoCalibrationResult GetCalibrationResult() const;
 
@@ -77,8 +63,7 @@ private:
 
 	std::string m_LeftSourceId, m_RightSourceId;
 
-	// constructed once SetStereoRoles() supplies real source ids (StereoPairer.h - shared with
-	// StereoDepthNode, which duplicated this exact pairing logic before ROADMAP.md Phase 3d).
+	// constructed once SetStereoRoles() supplies real source ids (see StereoPairer.h)
 	std::optional<StereoPairer> m_Pairer;
 
 	mutable std::mutex m_DetectionMutex;

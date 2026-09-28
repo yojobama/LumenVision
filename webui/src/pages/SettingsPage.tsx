@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle, Settings as SettingsIcon } from 'lucide-react';
 import type { Settings as SettingsType } from '../types';
 
-// ROADMAP.md Phase 8b: settings moves from a modal to a routed page (was SettingsModal in
-// App.tsx) - the same form, just reachable at /settings instead of behind a header button.
+// Settings form, routed at /settings.
 export const SettingsPage: React.FC<{
   settings: SettingsType;
   onSave: (settings: SettingsType) => void;

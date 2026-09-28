@@ -6,9 +6,7 @@ using Server.Web;
 
 namespace Server.Controllers.sinks
 {
-    // See STEREO_IMPLEMENTATION_PLAN.md ss10.2/ss10.5. Mirrors CameraCalibrationSinkController's
-    // shape, plus the explicit two-source bind every stereo sink needs (the generic
-    // /sink/bind only takes one source and has no left/right notion at all).
+    // Mirrors CameraCalibrationSinkController, plus an explicit left/right two-source bind.
     internal class StereoCalibrationSinkController : ControllerBase
     {
         // POST: Create a stereo calibration sink (default 6x9 checkerboard, 25mm squares)
@@ -20,8 +18,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinkId);
         }
 
-        // POST: Create a stereo calibration sink with an explicit checkerboard configuration.
-        // ChArUco is not supported for stereo (StereoCalibrator.h) - only BOARD_CHECKERBOARD.
+        // POST: create a stereo calibration sink with an explicit checkerboard configuration (ChArUco is unsupported).
         [HttpPost("stereoCalibrationSink/createWithBoard")]
         public Task<int> CreateWithBoard([FromQuery] string name, [FromQuery] CalibrationBoardType boardType,
             [FromQuery] int rows, [FromQuery] int cols, [FromQuery] double squareSizeMeters)
@@ -67,12 +64,8 @@ namespace Server.Controllers.sinks
             return Task.CompletedTask;
         }
 
-        // POST: explicitly run cv::stereoCalibrate + cv::stereoRectify over every saved pair -
-        // the UI decides when this happens rather than it running implicitly. Also persists the
-        // result (keyed by both cameras' device paths + resolution) if bound to two real cameras.
-        // Check the returned result's epipolarRms - gate real use at < 0.5px, see
-        // STEREO_IMPLEMENTATION_PLAN.md ss10.2; stereoRms alone does not predict codec-stereo
-        // density/validity the way epipolarRms does.
+        // POST: run cv::stereoCalibrate + cv::stereoRectify over all saved pairs; persists the result keyed by both
+        // cameras' device paths and resolution. Gate real use on the result's epipolarRms < 0.5px.
         [HttpPost("stereoCalibrationSink/{id}/run")]
         public Task<StereoCalibrationResultDto> RunCalibration(int id)
         {
@@ -86,8 +79,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(StereoCalibrationResultDto.From(SinkManager.Instance.GetStereoCalibrationResult(id)));
         }
 
-        // GET: every saved pair's detected corner points for one eye, for the calibration
-        // wizard's live coverage heatmap (ROADMAP.md Phase 8d).
+        // GET: every saved pair's detected corner points for one eye (for the calibration coverage heatmap)
         [HttpGet("stereoCalibrationSink/{id}/coverage")]
         public Task<CalibrationCoverageDto> GetCoverage(int id, [FromQuery] string eye)
         {

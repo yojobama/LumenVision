@@ -19,13 +19,8 @@ import type { AddSinkOptions, NodeTypesResponse, NT4Defaults, CameraHardwareInfo
 
 const api = new ApiService();
 
-// ROADMAP.md Phase 8c: the pipeline graph - the core of Phase 8. Sources and the graph-shaped
-// sink types are canvas nodes (see graph/model.ts for exactly which - terminal/preview sinks
-// render as badges instead); edges are the real bindings, driven live off /ws/state rather than
-// polled. Node creation stays modal-based for this pass (reusing AddSourceModal/AddSinkModal's
-// existing form logic) but the created node lands on the canvas instead of a list, and dragging
-// a connection between two nodes performs the real bind through the same REST endpoints the old
-// Configure modals used - drag/drop replaces the dropdown-based binding UI, not the API under it.
+// The pipeline graph: sources and graph-shaped sinks are nodes, edges are live bindings from
+// /ws/state, and dragging a connection performs the bind via REST.
 const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info') => void; nt4Settings: NT4Defaults; darkMode: boolean }> = ({ onToast, nt4Settings, darkMode }) => {
   const { snapshot, connected } = useStateSocket();
   const [capabilities, setCapabilities] = useState<NodeTypesResponse | null>(null);
@@ -40,9 +35,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
     api.getNodeTypeCapabilities().then(setCapabilities).catch(() => onToast('Failed to load node capabilities', 'error'));
   }, []);
 
-  // keep the position store in sync with whatever React Flow's own drag handling has already
-  // done to the live node array, so the next snapshot-driven rebuild below picks up drags
-  // instead of fighting them.
+  // sync the position store with React Flow's drags so the next rebuild keeps them
   useEffect(() => {
     for (const n of nodes) positionsRef.current.set(n.id, n.position);
   }, [nodes]);
@@ -55,38 +48,21 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
     };
     const built = buildGraph(snapshot, capabilities, store);
     setNodes(built.nodes);
-    // reuse the previous array reference when the edge set hasn't actually changed - see
-    // edgesEqual's own comment for why this matters every tick, not just as a micro-opt.
+    // reuse the previous array reference when the edge set is unchanged (see edgesEqual)
     setEdges(prev => (edgesEqual(prev, built.edges) ? prev : built.edges));
   }, [snapshot, capabilities, setNodes]);
 
   const selectedNode = nodes.find(n => n.id === selectedId) ?? null;
-  // WebRTCSink only ever holds ONE active peer connection (InitializePeerConnection replaces it
-  // wholesale on every new negotiation - see WebRTCSink.h's own comment) - if Inspector's own
-  // Live Preview and BottomStrip's "thumbnail for every running WebRTC sink" both try to
-  // negotiate against the SAME sink at once, one negotiation's answer arrives after the sink has
-  // already gone 'stable' from the other and gets rejected outright (confirmed the hard way:
-  // WebRTCSink::SetAnswer failed - "Unexpected remote answer description in signaling state
-  // stable" - which StreamView.tsx then (correctly, but pointlessly) treats as a real failure and
-  // falls back to MJPEG). Excluding whichever sink Inspector is already showing from BottomStrip
-  // avoids the double-negotiation instead of racing them.
-  //
-  // Derived straight from `snapshot` (the same source BottomStrip's own webrtcSinks filter
-  // reads), NOT from `selectedNode`/`nodes` - `nodes` is rebuilt in the effect above, one render
-  // behind `snapshot` itself, so on the very first tick a sink transitions to running,
-  // `snapshot` already reflects it (and BottomStrip, reading `snapshot` directly, would already
-  // render that thumbnail) while `nodes` - and this exclusion, if it were derived from it -
-  // hadn't caught up yet, still letting the two race for exactly one tick. Reading `snapshot`
-  // directly keeps both derived from identical data in the identical render, closing that gap
-  // rather than narrowing it.
+  // A WebRTCSink holds one peer connection, so the sink shown in the Inspector is excluded from
+  // BottomStrip to avoid double negotiation. Derived from `snapshot` (not `nodes`, which lags a
+  // render) so both see identical data.
   const selectedRawId = selectedId ? Number(selectedId.split('-')[1]) : null;
   const inspectorPreviewSinkId = selectedRawId != null && snapshot
     ? snapshot.Sinks.find(s => s.Sink.Type === 5 && s.IsRunning && s.Sink.Source?.Id === selectedRawId)?.Sink.Id ?? null
     : null;
 
   const onConnect = useCallback(async (connection: Connection) => {
-    // source-{id} -> sink-{id}: bind. sink-{id} -> sink-{id} (a StereoDepthSink's own output
-    // feeding a DepthFusionSink): attach as the depth source. Anything else isn't meaningful.
+    // source->sink: bind. sink->sink (StereoDepthSink output to a DepthFusionSink): attach as depth source.
     const [sourceKind, sourceRawId] = connection.source.split('-');
     const [targetKind, targetRawId] = connection.target.split('-');
     if (targetKind !== 'sink') return;
@@ -96,11 +72,10 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
       if (sourceKind === 'source') {
         const targetNode = nodes.find(n => n.id === connection.target);
         if (targetNode?.data.capability?.SourceRoles) {
-          // stereo sink - ask which role this connection fills rather than guessing
+          // stereo sink: ask which role this connection fills
           const role = prompt(`Bind as "left" or "right" camera?`, 'left');
           if (role !== 'left' && role !== 'right') return;
-          // the bind call needs both roles' ids at once - reuse whichever role is already bound
-          // (if any) as the other side.
+          // the bind call needs both ids: reuse the already-bound role, if any, as the other side
           const existingEdge = edges.find(e => e.target === connection.target);
           const existingSourceId = existingEdge ? Number(existingEdge.source.split('-')[1]) : undefined;
           const leftId = role === 'left' ? Number(sourceRawId) : existingSourceId;
@@ -119,8 +94,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
         }
         onToast('Connected', 'success');
       } else if (sourceKind === 'sink') {
-        // depth attach: only meaningful source-sink is a StereoDepthSink feeding a
-        // DepthFusionSink's HasDepthAttach input.
+        // depth attach: a StereoDepthSink feeding a DepthFusionSink's depth input
         await api.attachDepthFusionSource(targetSinkId, Number(sourceRawId));
         onToast('Depth source attached', 'success');
       }
@@ -141,7 +115,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
     if (!cap) return false;
 
     if (cap.HasDepthAttach) {
-      // DepthFusionSink: its depth input only accepts a StereoDepthSink's own output
+      // DepthFusionSink: depth input accepts only a StereoDepthSink's output
       return sourceNode.data.kind === 'sink' && sourceNode.data.typeName === 'StereoDepthSink';
     }
 
@@ -153,8 +127,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   }, [nodes, edges]);
 
   const placeNewNode = () => {
-    // simple staggered placement for newly-created nodes not yet reported by the server (the
-    // next snapshot tick gives them a real id-keyed slot in the position store)
+    // staggered placement for new nodes not yet in the snapshot
     const count = nodes.length;
     return { x: (count % 4) * 260, y: Math.floor(count / 4) * 140 + 400 };
   };
@@ -184,9 +157,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
       } else if (type === 'calibration') {
         await api.createCameraCalibrationSink(name);
       } else if (type === 'object' && options?.newModel) {
-        // "Upload a new model instead" - AddSinkModal collected the file but never uploaded it;
-        // do that first, then create the sink from the model id the upload returns. A failed
-        // upload throws into the catch below rather than a false "added" toast.
+        // upload a new model first, then create the sink from the returned model id; a failed upload throws
         const modelId = await api.uploadModel(options.newModel);
         await api.createObjectDetectionSink(name, modelId);
       } else if (type === 'object' && options?.modelId) {
@@ -202,13 +173,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   return (
     <div className="flex h-[calc(100vh-140px)] -m-6">
       <LeftRail snapshot={snapshot} onToast={onToast} />
-      {/* flex column, not another absolute overlay: BottomStrip used to be positioned
-          absolute/bottom-0 directly on top of the canvas, covering React Flow's own
-          bottom-anchored Controls/MiniMap panels entirely (they render within the ReactFlow
-          container's own bounds, so there was no way to reach them underneath it). Giving
-          BottomStrip its natural (dynamic - 1 or 2 rows depending on how many WebRTC sinks are
-          live) height in normal flow instead, with the canvas taking the remaining space above
-          it, means the two can never overlap regardless of BottomStrip's height. */}
+      {/* flex column so BottomStrip sits below the canvas without overlapping its controls */}
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 relative min-h-0">
           <div className="absolute top-4 left-4 z-10 flex gap-2">

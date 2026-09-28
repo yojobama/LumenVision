@@ -1,12 +1,8 @@
 import React, { useEffect, useRef } from 'react';
 import type { CalibrationCoverage } from '../types';
 
-// ROADMAP.md Phase 8d: a live coverage heatmap during the calibration wizard's capture step -
-// "which region of the frame still needs more checkerboard coverage", the gap the plan calls out
-// as "the biggest usability gap in every existing FRC calibration tool". Plots every saved
-// snapshot's detected corner points (each already flattened [x0,y0,x1,y1,...] by the server -
-// see CalibrationCoverageDto's own comment on why) over the frame bounds; a region with no dots
-// near it has never been covered by a checkerboard yet.
+// Plots each snapshot's detected corners (flat [x0,y0,x1,y1,...]) over the frame bounds;
+// regions with no nearby dots have not yet been covered by the checkerboard.
 export const CoverageHeatmap: React.FC<{ coverage: CalibrationCoverage | null; className?: string }> = ({ coverage, className = '' }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -31,13 +27,10 @@ export const CoverageHeatmap: React.FC<{ coverage: CalibrationCoverage | null; c
     const scaleX = width / coverage.FrameWidth;
     const scaleY = height / coverage.FrameHeight;
 
-    // each snapshot's own corner set drawn as a connected outline (its convex-hull-ish
-    // perimeter would be more precise, but the raw detection order already traces the board's
-    // own grid boundary closely enough to read as "this region was covered") plus dots at each
-    // corner, so both the covered outline and the corner density are visible at a glance.
+    // Each snapshot's corners as a connected outline plus a dot per corner.
     coverage.Snapshots.forEach((flat, i) => {
       if (flat.length < 4) return;
-      const hue = (i * 47) % 360; // spread distinct snapshots across the color wheel
+      const hue = (i * 47) % 360; // spread distinct snapshots across the colour wheel
       ctx.strokeStyle = `hsla(${hue}, 70%, 55%, 0.5)`;
       ctx.fillStyle = `hsla(${hue}, 70%, 55%, 0.7)`;
       ctx.lineWidth = 1;

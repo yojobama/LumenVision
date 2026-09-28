@@ -3,11 +3,8 @@
   Thin Windows-side launcher for scripts/install-deps.sh.
 
 .DESCRIPTION
-  This project builds via Visual Studio's WSL2 and Remote_GCC toolsets, not a Linux-native
-  build, so the actual dependency work happens inside WSL (for the local dev inner loop) or on
-  the Orange Pi over SSH (for the ARM64 target). This script just gets install-deps.sh running
-  in the right place and checks the couple of things that live on Windows itself.
-
+  Runs scripts/install-deps.sh inside WSL or on the Orange Pi over SSH, after checking
+  the Windows-side prerequisites.
 .PARAMETER Target
   'wsl' (default) runs install-deps.sh inside the WSL 'Ubuntu' distro.
   'pi' runs it on the Orange Pi over SSH (-HostName/-User required, or edit the defaults below).

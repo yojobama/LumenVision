@@ -8,13 +8,8 @@ const HEADER_TERMINATOR = '\r\n\r\n';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// Chrome dropped multipart/x-mixed-replace rendering for plain <img> tags (confirmed the hard
-// way: a real, correctly-framed stream just never fires <img>'s load event, img.naturalWidth
-// stays 0 forever) - the underlying HTTP mechanism itself still works fine, it just needs a
-// client that reads it, which is what this is. Finds the next occurrence of an ASCII needle in a
-// byte buffer - MjpegStreamModule.cs's own framing (a boundary line, MIME-style headers, a blank
-// line, then raw JPEG bytes) is plain ASCII throughout except the JPEG payload itself, so a
-// byte-for-byte scan is enough; no reason to decode the whole buffer as text first.
+// Finds the next occurrence of an ASCII needle in a byte buffer (the stream framing is ASCII
+// apart from the JPEG payload).
 function indexOfAscii(buf: Uint8Array, needle: string, from = 0): number {
   const bytes = encoder.encode(needle);
   outer: for (let i = from; i <= buf.length - bytes.length; i++) {
@@ -26,10 +21,8 @@ function indexOfAscii(buf: Uint8Array, needle: string, from = 0): number {
   return -1;
 }
 
-// Same-preview fallback for WebRTCStream.tsx (see StreamView.tsx) - reads the raw
-// multipart/x-mixed-replace stream MjpegStreamModule.cs serves via fetch()'s own streaming
-// ReadableStream body, parses out each JPEG part by hand, and blits it to a canvas. Deliberately
-// NOT an <img src="/stream/mjpeg?...">, for the Chrome-support reason above.
+// Fallback for WebRTCStream: reads the multipart/x-mixed-replace stream via fetch(), parses each
+// JPEG part and draws it to a canvas.
 export const MjpegStream: React.FC<WebRTCStreamProps> = ({
   sinkId,
   onStop,
@@ -64,9 +57,7 @@ export const MjpegStream: React.FC<WebRTCStreamProps> = ({
             buffer = merged;
           }
 
-          // drain every complete frame the buffer already holds before waiting on more bytes -
-          // a slow-polling client and a ~10fps server (MjpegStreamModule's own PollInterval) can
-          // both leave more than one frame queued up by the time control returns here.
+          // Drain every complete frame already buffered before reading more bytes.
           for (;;) {
             const boundaryIdx = indexOfAscii(buffer, BOUNDARY);
             if (boundaryIdx === -1) break;
@@ -77,7 +68,7 @@ export const MjpegStream: React.FC<WebRTCStreamProps> = ({
             const headerText = decoder.decode(buffer.slice(headerStart, headerEnd));
             const lengthMatch = headerText.match(/Content-Length:\s*(\d+)/i);
             if (!lengthMatch) {
-              // shouldn't happen against this project's own server, but resync rather than spin
+              // malformed part: resync rather than spin
               buffer = buffer.slice(headerEnd + HEADER_TERMINATOR.length);
               continue;
             }

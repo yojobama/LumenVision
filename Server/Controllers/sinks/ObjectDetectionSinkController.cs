@@ -7,9 +7,7 @@ namespace Server.Controllers.sinks
 {
     internal class ObjectDetectionSinkController : ControllerBase
     {
-        // POST: create an object detection sink bound to a previously uploaded model. The
-        // backend (ONNX Runtime vs RKNN/NPU) follows from the model itself (see
-        // Model.Provider's own comment) - there is no separate provider parameter to pass here.
+        // POST: create an object detection sink for an uploaded model; the backend (ONNX or RKNN) follows from the model.
         [HttpPost("objectDetectionSink/create")]
         public Task<int> Create([FromQuery] string name, [FromQuery] int modelId)
         {
@@ -17,8 +15,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinkId);
         }
 
-        // GET: which backend an existing sink is actually running - informational only, see
-        // ObjectDetectionSink::GetBackendName's own comment for why there's no PATCH to switch it.
+        // GET: the backend the sink is running (informational; it cannot be switched)
         [HttpGet("objectDetectionSink/backend")]
         public Task<string> GetBackend([FromQuery] int sinkId)
         {

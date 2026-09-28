@@ -4,12 +4,8 @@ using Server.Web;
 
 namespace Server.Controllers
 {
-    // upload/list/delete for YOLOv8/v11 detection models (ONNX Runtime or RKNN/NPU export). The
-    // variant is a plain form field (the WebUI's model-family dropdown), not inferred from the
-    // file - both variants share the same head shape in either format, so there is nothing in
-    // the file itself to detect it from. The PROVIDER (ONNX vs RKNN), by contrast, IS inferred
-    // from the file - see ModelManager.AddModel's own comment - since a .rknn export and a .onnx
-    // graph are different file formats, not a preference to ask for separately.
+    // Upload/list/delete for YOLOv8/v11 detection models (ONNX or RKNN). The variant is a form field;
+    // the provider (ONNX vs RKNN) is inferred from the file (see ModelManager.AddModel).
     internal class ModelController : ControllerBase
     {
         // POST multipart/form-data: fields "name", "variant" (0=YOLOv8, 1=YOLOv11),

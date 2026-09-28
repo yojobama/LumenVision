@@ -1,5 +1,5 @@
 #pragma once
-#include "../FRCVLib/Logger.h"
+#include "../LumenCore/Logger.h"
 #include <vector>
 #include <string>
 #include <iostream>

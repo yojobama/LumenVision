@@ -7,9 +7,8 @@
 #include <string>
 #include <vector>
 
-// Runs a YOLOv8/v11 ONNX export on the stock ONNX Runtime release, CPU execution provider only
-// (no OpenVINO, no MIGraphX - out of scope per project decision). This is the development/x86
-// path and the portable fallback; RknnBackend is the production path on the Orange Pi.
+// Runs a YOLOv8/v11 ONNX export on stock ONNX Runtime (CPU execution provider only).
+// Development/x86 path and portable fallback; RknnBackend is used on the Orange Pi.
 class OnnxDetectionBackend : public IDetectionBackend {
 public:
 	OnnxDetectionBackend();

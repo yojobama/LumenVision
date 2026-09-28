@@ -23,22 +23,8 @@ namespace Server
         private List<Source> sources;
         private readonly Logger logger;
 
-        // ROADMAP.md Phase 8c: guards a real, severe data-loss bug found while testing the graph
-        // editor's live-binding rebuild across a restart - SourceManager.InitializeCameraSource
-        // (and its ImageFile/VideoFile equivalents) each call DB.Instance.Save() unconditionally
-        // as soon as one source is created, which is correct for ordinary interactive use but
-        // corrupts data.json when called from inside Load()'s own reconstruction loop: sources
-        // are reconstructed BEFORE sinks, so a Save() fired mid-reconstruction serializes
-        // whatever SinkManager/SourceManager's LIVE state is at that exact moment - zero sinks,
-        // since none have been recreated yet - overwriting the on-disk file's real sink list with
-        // an empty one. Nothing writes it back afterward (the sink-reconstruction loop
-        // deliberately skips Save() during load - see AddSink's id.HasValue branch), so every
-        // sink a source was ever bound to was silently and permanently gone from disk after the
-        // very next restart, confirmed by reproducing it directly: bind a sink, restart once
-        // (fine, still in memory), restart again (gone - because the first restart had already
-        // wiped the file). Save() becomes a no-op for the whole duration of Load() instead -
-        // nothing actually needs persisting mid-reconstruction, since the file already has
-        // exactly the data being reconstructed FROM.
+        // Save() is a no-op while Load() runs: a mid-load Save() would serialise the partly reconstructed live state
+        // (no sinks yet) over data.json.
         private bool m_Loading = false;
 
         private DB(string jsonPath)
@@ -46,7 +32,7 @@ namespace Server
             this.jsonPath = jsonPath;
             sinks = new List<Sink>();
             sources = new List<Source>();
-            logger = new Logger("DBLog.txt"); // Initialize logger with a log file
+            logger = new Logger("DBLog.txt");
         }
 
         public string GetJson()
@@ -102,10 +88,7 @@ namespace Server
                                 break;
                         }
 
-                        // InitializeXxxSource above builds its OWN fresh Source object (native
-                        // creation always needs to run regardless of what's in the JSON), so the
-                        // pipeline-profile fields deserialized onto this loop's own `source`
-                        // never reach SourceManager's copy unless copied across explicitly here.
+                        // InitializeXxxSource builds its own Source object, so the pipeline-profile fields on this loop's `source` must be copied across explicitly
                         Source restored = SourceManager.Instance.GetSourceById(source.Id);
                         if (restored != null)
                         {
@@ -116,20 +99,15 @@ namespace Server
                     }
                     foreach (var sink in sinks)
                     {
-                        // an ApriltagSink saved with its configuration comes back exactly as
-                        // configured (tag size, requested backend, tuning); older records without
-                        // it still take the generic path's defaults - see RestoreApriltagSink
+                        // an ApriltagSink saved with its configuration (tag size, requested backend, tuning) is restored as configured;
+                        // records without it use the generic path's defaults - see RestoreApriltagSink
                         if (sink.Type == SinkType.ApriltagSink && sink.ApriltagTagSize.HasValue)
                             SinkManager.Instance.RestoreApriltagSink(sink);
                         else
                             SinkManager.Instance.AddSink(sink.Name, sink.Type.ToString(), sink.Id);
                     }
 
-                    // AddSink's generic (name, type, id) switch has no case for RecordSink - its
-                    // config (dstFolder/encoder/segment/retention) doesn't fit that signature, and
-                    // silently not restoring it would mean a recording never resumes after a
-                    // restart mid-competition-day. RestoreRecordSink reads the persisted Sink
-                    // object directly instead - see its own comment.
+                    // AddSink's generic switch cannot carry RecordSink's config, so RestoreRecordSink reads the persisted Sink directly
                     foreach (var sink in sinks)
                     {
                         if (sink.Type == SinkType.RecordSink)
@@ -138,16 +116,12 @@ namespace Server
                         }
                     }
 
-                    // AddSink only recreates the native node; the source->sink binding itself
-                    // was never restored here, so every pipeline came back unbound after a
-                    // restart (the robot power-cycles - this mattered). Sources must exist
-                    // (created above) before rebinding.
+                    // AddSink only recreates the native node; the source->sink bindings are restored here (sources are created above)
                     foreach (var sink in sinks)
                     {
                         if (sink.Source != null && sink.Source2 != null)
                         {
-                            // stereo sink (StereoCalibrationSink/StereoDepthSink) - Source is the
-                            // left role, Source2 the right one; see Sink.Source2's own comment
+                            // stereo sink (StereoCalibrationSink/StereoDepthSink): Source is the left role, Source2 the right
                             SinkManager.Instance.BindStereoSourcesToSink(sink.Id, sink.Source.Id, sink.Source2.Id);
                         }
                         else if (sink.Source != null)
@@ -161,25 +135,11 @@ namespace Server
                         }
                     }
 
-                    // the robot power-cycles - a vision coprocessor that comes back up not
-                    // actually running anything until an operator opens the WebUI defeats the
-                    // point, for the sink types that are meant to run unattended. Deliberately
-                    // NOT blanket: CameraCalibrationSink is an interactive, operator-driven
-                    // wizard - auto-starting it just burns CPU hunting for a checkerboard with
-                    // no one there to capture snapshots - and WebRTCSink's processing thread
-                    // runs the H.264 encoder on every frame regardless of whether a peer is
-                    // connected, so starting it before any client has even asked for a stream
-                    // is pure waste. StartSinkById (re-)starts a sink's bound source too, which
-                    // is safe now that ISource/ISink::Toggle are idempotent. RecordSink is
-                    // deliberately NOT excluded here - a recording that was running is exactly
-                    // the kind of thing that should resume unattended after a restart
-                    // mid-competition-day, same reasoning as NetworkTablesSink/StereoDepthSink.
+                    // Start the sinks meant to run unattended after a restart. Excluded: CameraCalibrationSink (interactive wizard) and WebRTCSink
+                    // (its encoder runs on every frame even with no peer). StartSinkById also starts a sink's bound source; RecordSink is included so recordings resume.
                     foreach (var sink in sinks)
                     {
-                        // StereoCalibrationSink is interactive/operator-driven like
-                        // CameraCalibrationSink - excluded for the same reason. StereoDepthSink
-                        // is meant to run unattended (like ApriltagSink/ObjectDetectionSink), so
-                        // it's not excluded here.
+                        // StereoCalibrationSink is interactive like CameraCalibrationSink, so it is excluded too
                         if (sink.Type != SinkType.CameraCalibrationSink && sink.Type != SinkType.WebRTCSink
                             && sink.Type != SinkType.StereoCalibrationSink)
                         {
@@ -187,16 +147,8 @@ namespace Server
                         }
                     }
 
-                    // ROADMAP.md Phase 7 (pipeline profiles): the loops above already recreated
-                    // a source's ActiveDetectionSinkId generically (it's a perfectly ordinary
-                    // entry in the persisted `sinks` list), but AddSink has no notion of a
-                    // profile's own settings - tag size, calibration, field layout and driver
-                    // mode would all silently come back at their defaults after a restart
-                    // otherwise. ActivateProfile deletes and properly recreates it from the
-                    // profile's real settings; the brief double-creation is harmless (once at
-                    // startup) and reusing ActivateProfile here is what keeps this in sync with
-                    // the exact same downstream-rebinding logic a live profile switch uses,
-                    // rather than a second, easy-to-drift copy of it.
+                    // Recreate each source's profile detection sink via ActivateProfile so tag size, calibration, field layout and driver mode
+                    // are applied (AddSink only restores defaults), using the same rebinding logic as a live profile switch.
                     foreach (var source in sources)
                     {
                         if (source.ActiveProfileIndex >= 0 && source.Profiles.Any(p => p.Index == source.ActiveProfileIndex))
@@ -227,9 +179,7 @@ namespace Server
 
         public void Save()
         {
-            // see m_Loading's own comment - a Save() triggered from inside a still-in-progress
-            // Load() reads live state that doesn't reflect the reconstruction yet and would
-            // corrupt the on-disk file with it.
+            // Save() is skipped during Load() (see m_Loading): live state is still partly reconstructed
             if (m_Loading) return;
 
             logger.EnterLog("DB Save called");

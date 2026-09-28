@@ -9,24 +9,19 @@ import edu.wpi.first.math.geometry.Translation2d;
 
 /**
  * Static helpers for turning a {@link LumenTrackedTarget} into robot/field poses, mirroring
- * photonlib's {@code PhotonUtils} (same method names/signatures) so a team migrating from
- * PhotonVision changes an import line, not their aiming/pose-estimation code.
+ * photonlib's {@code PhotonUtils}.
  *
- * <p>{@link #estimateFieldToRobotAprilTag} is the one most robot programs actually want: unlike
- * the 2D pitch/yaw helpers below (which assume a target's height and the camera's mount angle
- * are known constants, then solve a single distance+bearing triangle), it consumes {@link
- * LumenTrackedTarget#getBestCameraToTarget()} directly - the coprocessor's own solvePnP result,
- * already a full 3D transform - and needs no separate distance/angle bookkeeping at all.
+ * <p>{@link #estimateFieldToRobotAprilTag} uses the full 3D {@link
+ * LumenTrackedTarget#getBestCameraToTarget()}; the 2D pitch/yaw helpers assume known target height
+ * and camera mount angle.
  */
 public final class LumenUtils {
     private LumenUtils() {}
 
     /**
-     * Distance from the camera to a target, purely from mount geometry and the target's
-     * measured pitch - the classic "known target height" triangle every FRC vision tutorial
-     * starts with. Prefer {@link #estimateFieldToRobotAprilTag} when a full 3D
-     * {@link Transform3d} is already available (any {@link LumenTrackedTarget}), since that
-     * needs no separately-measured camera pitch/height at all.
+     * Distance from the camera to a target from mount geometry and the target's pitch (the "known
+     * target height" triangle). Prefer {@link #estimateFieldToRobotAprilTag} when a 3D {@link
+     * Transform3d} is available.
      *
      * @param cameraHeightMeters height of the camera's lens off the floor
      * @param targetHeightMeters height of the target off the floor
@@ -49,16 +44,11 @@ public final class LumenUtils {
     }
 
     /**
-     * Composes a camera-to-target translation with the target's known field pose and the
-     * robot's gyro heading into a camera-to-target {@link Transform2d} - the 2D-only path (no
-     * target roll/pitch, no camera mount transform); most callers with a real
-     * {@link LumenTrackedTarget} should reach for {@link #estimateFieldToRobotAprilTag} instead.
+     * Composes a camera-to-target translation with the target's field pose and the gyro heading
+     * into a camera-to-target {@link Transform2d} (2D only: no roll/pitch, no camera mount transform).
      *
-     * <p>cameraToTargetTranslation is already the target's position expressed in the camera's
-     * own local frame (that's what "camera-to-target" means), so it becomes the Transform2d's
-     * translation directly; the target's rotation relative to the camera is the one piece that
-     * needs computing, by subtracting the camera's own field-relative heading (gyroAngle) from
-     * the target's known field-relative rotation.
+     * <p>The translation is already in the camera frame; the rotation is the target's field rotation
+     * minus the camera's field heading (gyroAngle).
      */
     public static Transform2d estimateCameraToTarget(
             Translation2d cameraToTargetTranslation, Pose2d targetPose, Rotation2d gyroAngle) {
@@ -66,29 +56,23 @@ public final class LumenUtils {
     }
 
     /**
-     * The field-relative robot pose implied by one AprilTag detection's full 3D pose - the
-     * direct, no-separate-measurements path: {@code cameraToTarget} is
-     * {@link LumenTrackedTarget#getBestCameraToTarget()} (the coprocessor's own solvePnP
-     * result), {@code fieldToTarget} is that tag's known field pose (from a field layout - see
-     * ROADMAP.md Phase 7's multi-tag PnP note for why a single-tag estimate like this one is
-     * more sensitive to a distant/oblique tag's pose noise than a true multi-tag solve), and
-     * {@code cameraToRobot} is the camera's own mount offset on the robot.
+     * The field-relative robot pose from one AprilTag detection's 3D pose: {@code cameraToTarget}
+     * is {@link LumenTrackedTarget#getBestCameraToTarget()}, {@code fieldToTarget} is the tag's
+     * field pose and {@code cameraToRobot} is the camera mount offset. A single tag is noisier
+     * than a multi-tag solve at range or oblique angles.
      */
     public static Pose3d estimateFieldToRobotAprilTag(
             Transform3d cameraToTarget, Pose3d fieldToTarget, Transform3d cameraToRobot) {
         return fieldToTarget.transformBy(cameraToTarget.inverse()).transformBy(cameraToRobot);
     }
 
-    /** The 2D robot pose implied by a 2D camera-to-target transform, the target's known field
-     * pose, and the camera's own mount offset on the robot. */
+    /** The 2D robot pose from a camera-to-target transform, the target's field pose and the camera mount offset. */
     public static Pose2d estimateFieldToRobot(
             Transform2d cameraToTarget, Pose2d fieldToTarget, Transform2d cameraToRobot) {
         return fieldToTarget.transformBy(cameraToTarget.inverse()).transformBy(cameraToRobot);
     }
 
-    /** The bearing from the robot's current pose to a target's field pose - useful for a simple
-     * turn-to-face-target rotation setpoint independent of the camera's own instantaneous yaw
-     * reading. */
+    /** The bearing from the robot's pose to a target's field pose, e.g. for a turn-to-face setpoint. */
     public static Rotation2d getYawToPose(Pose2d robotPose, Pose2d targetPose) {
         Translation2d relativeTrl = targetPose.relativeTo(robotPose).getTranslation();
         return new Rotation2d(relativeTrl.getX(), relativeTrl.getY()).plus(robotPose.getRotation());

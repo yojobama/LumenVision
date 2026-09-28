@@ -10,11 +10,8 @@ namespace Server
         public long CalibratedAtUnixMs { get; set; }
     }
 
-    // Persists stereo calibration results keyed by BOTH cameras' device paths + resolution,
-    // mirroring CalibrationManager exactly but for a pair rather than a single camera - see
-    // STEREO_IMPLEMENTATION_PLAN.md ss10.2. Same caveat as CalibrationManager: auto-applying a
-    // stored result to a freshly created StereoDepthSink when a matching camera pair is bound is
-    // not wired up yet - this only covers save/list/lookup.
+    // Persists stereo calibration results keyed by both cameras' device paths + resolution
+    // (the camera-pair equivalent of CalibrationManager).
     public class StereoCalibrationManager
     {
         public static StereoCalibrationManager Instance { get; } = new StereoCalibrationManager();
@@ -43,10 +40,8 @@ namespace Server
             File.WriteAllText(path, JsonSerializer.Serialize(calibrations, new JsonSerializerOptions { WriteIndented = true }));
         }
 
-        // resolves the two camera paths a StereoCalibrationSink is bound to (Source = left,
-        // Source2 = right) and persists the result under them; a calibrator not bound to two
-        // real camera sources (e.g. bench-tested against video files) is not persisted - there
-        // is nothing to key it by that would still mean anything after a restart.
+        // resolves the two camera paths the StereoCalibrationSink is bound to (Source = left, Source2 = right)
+        // and persists the result under them; not persisted unless bound to two real camera sources.
         public void SaveResult(int calibratorSinkId, StereoCalibrationResult result)
         {
             var sink = SinkManager.Instance.GetSinkById(calibratorSinkId);

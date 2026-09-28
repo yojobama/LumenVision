@@ -1,13 +1,8 @@
 import type { Node, Edge } from '@xyflow/react';
 import type { StateSnapshot, WsSinkState, WsSource, WsSink, NodeTypesResponse, NodeTypeCapability } from '../types';
 
-// ROADMAP.md Phase 8c: enum-ordinal -> C# type name tables. Server/Sink.cs's SinkType and
-// Server/Source.cs's SourceType are plain enums with no [Description]-style string exposed over
-// the wire (WsSink.Type/WsSource.Type are raw ordinals) - these mirror their declaration order
-// exactly, matching how hooks/useAppData.ts's mapSinkType already has to.
-// index 2 stays a reserved gap, not 'CameraCalibrationSink' shifted down - Server/Sink.cs's
-// SinkType enum pins explicit numeric values for exactly this reason (2 was RecordingSink,
-// deleted but never reused, since it's a raw ordinal over the wire with no string converter).
+// Enum ordinal to type-name tables, mirroring the declaration order of Server/Sink.cs's SinkType
+// and Server/Source.cs's SourceType. SinkType index 2 is a reserved gap.
 const SINK_TYPE_NAMES = [
   'ApriltagSink', 'ObjectDetectionSink', undefined, 'CameraCalibrationSink',
   'NetworkTablesSink', 'WebRTCSink', 'StereoCalibrationSink', 'StereoDepthSink', 'DepthFusionSink',
@@ -15,11 +10,7 @@ const SINK_TYPE_NAMES = [
 ];
 const SOURCE_TYPE_NAMES = ['Camera', 'ImageFile', 'VideoFile', 'SinkOutput'];
 
-// Terminal/preview sinks render as a badge on the node they're bound to, not their own box - the
-// plan's original "toggles on a node's output" decision. MjpegSink joins WebRTCSink here for the
-// same reason: StreamView.tsx spins one up as a same-preview fallback when WebRTC breaks, and it
-// should disappear back into the badge it's standing in for, not get its own graph box.
-// RecordSink is the same shape again - terminal, single-source, toggled on a node's output.
+// Terminal/preview sinks (WebRTC, MJPEG, Record) render as badges on the node they are bound to.
 const BADGE_SINK_TYPES = new Set(['WebRTCSink', 'NetworkTablesSink', 'MjpegSink', 'RecordSink']);
 
 export function sinkTypeName(ordinal: number): string {
@@ -36,8 +27,7 @@ export interface PipelineNodeData extends Record<string, unknown> {
   capability: NodeTypeCapability | null;
   fps: number;
   latencyUs: number;
-  // the raw server object - the Inspector reads ids/bindings/profiles directly off this rather
-  // than this file re-deriving a second, narrower copy of the same data.
+  // the raw server object, read directly by the Inspector
   raw: WsSource | WsSink;
   // sink nodes only
   isRunning?: boolean;
@@ -55,11 +45,8 @@ export type PipelineNode = Node<PipelineNodeData, 'pipelineNode'>;
 const COLUMN_WIDTH = 260;
 const ROW_HEIGHT = 140;
 
-// Positions are kept OUTSIDE this function (by the caller, via PositionStore) - buildGraph is
-// called on every /ws/state tick (roughly once a second), and blindly recomputing a layout each
-// time would fight a user's own drag with their own data, snapping nodes back mid-drag. A node
-// id not yet in the store gets a fresh auto-layout slot; one already there keeps exactly where
-// it was left (dragged or auto-placed).
+// Positions are held by the caller (PositionStore) so the per-tick rebuild does not fight drags;
+// unknown ids get an auto-layout slot.
 export interface PositionStore {
   get(id: string): { x: number; y: number } | undefined;
   set(id: string, pos: { x: number; y: number }): void;
@@ -94,11 +81,7 @@ export function buildGraph(
     const id = `source-${source.Id}`;
     const stats = snapshot.NodeStats[String(source.Id)];
 
-    // badges: same dual-role lookup the sink loop below does, just keyed on this SOURCE's own
-    // id instead of a sink's output id - a WebRTCSink/NetworkTablesSink/MjpegSink can bind
-    // directly to a raw source (e.g. previewing a camera before any detector is attached to it),
-    // not only to a sink's own output. Previously only computed in the sink loop, which is why a
-    // source node's own "Live Preview" never had a webrtcSink to render against.
+    // badges: WebRTC/NT/MJPEG sinks can bind directly to a raw source as well as to a sink output
     const webrtcSink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'WebRTCSink' && s.Sink.Source?.Id === source.Id);
     const nt4Sink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'NetworkTablesSink' && s.Sink.Source?.Id === source.Id);
     const mjpegSink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'MjpegSink' && s.Sink.Source?.Id === source.Id);
@@ -127,8 +110,7 @@ export function buildGraph(
     sourceRow++;
   }
 
-  // Sink nodes (graph-shaped types only - badges attach to whichever node they're bound to
-  // instead of getting their own box) and edges for their bindings.
+  // Sink nodes (graph-shaped types only) and their binding edges; other sinks become badges.
   const graphSinks = snapshot.Sinks.filter(s => {
     const cap = findSinkCap(s.Sink.Type);
     return cap?.Implemented && !BADGE_SINK_TYPES.has(sinkTypeName(s.Sink.Type));
@@ -139,18 +121,14 @@ export function buildGraph(
     const id = `sink-${sink.Id}`;
     const stats = snapshot.NodeStats[String(sink.Id)];
 
-    // badges: a WebRTCSink/NetworkTablesSink bound to THIS sink's own output (dual-role sinks
-    // register themselves as a source too - see SinkManager.DualRoleSinkTypes)
+    // badges bound to this sink's output (dual-role sinks also register as sources)
     const webrtcSink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'WebRTCSink' && s.Sink.Source?.Id === sink.Id);
     const nt4Sink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'NetworkTablesSink' && s.Sink.Source?.Id === sink.Id);
-    // the StreamView.tsx-created same-preview MJPEG fallback, if WebRTC has broken for this
-    // node's preview and one's already been spun up - same dual-role lookup as webrtcSink above.
+    // same-preview MJPEG fallback badge
     const mjpegSink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'MjpegSink' && s.Sink.Source?.Id === sink.Id);
     const recordSink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'RecordSink' && s.Sink.Source?.Id === sink.Id);
 
-    // column: one to the right of whatever this sink's primary (left, for stereo) source is
-    // sitting in, so the graph visually flows left-to-right with data - falls back to column 1
-    // if unbound yet (a freshly-created, not-yet-connected sink).
+    // column: one right of the primary (left, for stereo) source; column 1 if unbound
     const upstreamId = sink.Source ? `source-${sink.Source.Id}` : null;
     const upstreamPos = upstreamId ? positions.get(upstreamId) : undefined;
     const col = upstreamPos ? Math.round(upstreamPos.x / COLUMN_WIDTH) + 1 : 1;
@@ -178,7 +156,7 @@ export function buildGraph(
     });
 
     if (sink.Source && sink.Source2) {
-      // stereo sink - Source is LEFT, Source2 is RIGHT (Server/Sink.cs's own Source2 comment)
+      // stereo sink: Source is LEFT, Source2 is RIGHT
       edges.push({ id: `${id}-left`, source: `source-${sink.Source.Id}`, target: id, label: 'left', type: 'smoothstep' });
       edges.push({ id: `${id}-right`, source: `source-${sink.Source2.Id}`, target: id, label: 'right', type: 'smoothstep' });
     } else if (sink.Source) {
@@ -186,8 +164,7 @@ export function buildGraph(
     }
 
     if (sink.DepthSourceId != null) {
-      // DepthFusionSink's depth-grid attach - not an ordinary Source bind (AttachDepthFusionSource
-      // reads a sibling StereoDepthSink's output directly, see Sink.cs's own DepthSourceId comment)
+      // DepthFusionSink depth attach: not an ordinary Source bind
       edges.push({ id: `${id}-depth`, source: `sink-${sink.DepthSourceId}`, target: id, label: 'depth', type: 'smoothstep' });
     }
   }
@@ -195,13 +172,8 @@ export function buildGraph(
   return { nodes, edges };
 }
 
-// buildGraph builds a brand new `edges` array (with brand new edge objects) every call, but
-// edges only actually change when a binding is made/broken - which is rare compared to how often
-// buildGraph runs (once per /ws/state tick, ~1/sec). Passing a new array+objects to React Flow's
-// `edges` prop every tick regardless forces it to redo edge-path layout (and the MiniMap to
-// redraw) every second even when literally nothing rebound. The caller should keep its previous
-// edges array and call this before calling setEdges - reuse the OLD array reference when it
-// returns true, so React Flow's own prop-identity check skips that work entirely.
+// True when edges are unchanged; the caller then keeps its previous array reference so React Flow
+// skips edge layout on every tick.
 export function edgesEqual(a: Edge[], b: Edge[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {

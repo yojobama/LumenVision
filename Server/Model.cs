@@ -13,10 +13,7 @@ namespace Server
         public float ConfThreshold { get; set; } = 0.25f;
         public float NmsThreshold { get; set; } = 0.45f;
 
-        // which backend this model actually runs on - derived once, at upload, from the
-        // uploaded file's own extension (see ModelManager.AddModel), not a preference a user
-        // sets: an RKNN NPU export and an ONNX graph are different file formats, not the same
-        // model choosing a different runtime the way ApriltagDetector's CPU/Vulkan backends do.
+        // the backend this model runs on, derived at upload from the file extension (see ModelManager.AddModel)
         public ObjectDetectionProvider Provider { get; set; }
     }
 }

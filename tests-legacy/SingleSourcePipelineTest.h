@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/SingleSourcePipeline.h"
+#include "../LumenCore/SingleSourcePipeline.h"
 
 class SingleSourcePipelineTest : public UnitTestBase {
 public:

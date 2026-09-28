@@ -6,24 +6,10 @@
 #include <cmath>
 #include <map>
 
-// The acceptance gate ROADMAP.md Phase D flagged as missing entirely: CpuApriltagBackend and
-// VkApriltagBackend must agree on the same input, not just each pass their own separate checks.
-// A faster detector that disagrees with the CPU reference is useless - this is that check.
-//
-// Uses the real, already-hardware-validated reference image from the vkapriltag submodule itself
-// (third_party/vkapriltag/apriltags_vulkan/grayimage.pgm, 1280x800, tag36h11) - the same file
-// vkapriltag's own tools/validate_against_libapriltag tool was verified against on the real
-// Orange Pi Mali G610 (0.58px corner RMS, matching tag IDs - see
-// docs/history/IMPLEMENTATION_PLAN.md's phase 5 notes). Not a synthetic render: a real
-// photographed tag is what that validation actually needs, and this file is already checked into
-// git (part of the submodule), so no camera is needed to run this test.
-//
-// [hitl]-labelled and self-skips if no usable Vulkan compute device is found (every machine
-// except the bench Orange Pi, or a dev box with a real GPU) - VkApriltagBackend's constructor
-// throws in that case (see its own header comment), which is exactly the "skip, don't fail"
-// signal every other hardware-dependent test in this suite already treats the same way.
+// CpuApriltagBackend and VkApriltagBackend must agree on the reference image from the
+// vkapriltag submodule (1280x800, tag36h11). Self-skips if no Vulkan compute device is found.
 TEST_CASE("VkApriltagBackend::ResolveDecimation picks an integer the frame size divides by", "[apriltag]") {
-	// no GPU needed - this is the rule that decides what decimation the Vulkan pipeline really runs
+	// Needs no GPU.
 	REQUIRE(VkApriltagBackend::ResolveDecimation(0.0f, 1280, 800) == 2);  // default
 	REQUIRE(VkApriltagBackend::ResolveDecimation(-1.0f, 1280, 800) == 2); // default
 	REQUIRE(VkApriltagBackend::ResolveDecimation(1.0f, 1280, 800) == 1);
@@ -42,12 +28,8 @@ TEST_CASE("CpuApriltagBackend and VkApriltagBackend agree on the same real image
 	cv::Mat gray = cv::imread(pgmPath, cv::IMREAD_GRAYSCALE);
 	REQUIRE_FALSE(gray.empty());
 
-	// Both backends get the SAME decimation and refine setting, across the combinations a user
-	// can now pick (1280x800 divides by 1, 2 and 4 - not 3). Decimation trades detection range
-	// for speed, not final tag-id/pose accuracy on tags actually found (apriltag's own binary
-	// payload decode always runs at full resolution regardless), and the Vulkan refine path
-	// (RefineEdgesMethod::kExact) is bit-identical to upstream's, so the two must agree at every
-	// setting, not just the old fixed 2x/no-refine one.
+	// Both backends use the same decimation and refine setting; decimation does not affect
+	// decoded tag IDs, so they must agree at every setting.
 	const int decimation = GENERATE(1, 2, 4);
 	const bool refine = GENERATE(false, true);
 	INFO("decimation " << decimation << ", refineEdges " << refine);
@@ -107,9 +89,6 @@ TEST_CASE("CpuApriltagBackend and VkApriltagBackend agree on the same real image
 
 	REQUIRE(comparedCorners > 0);
 	double cornerRmsPx = std::sqrt(sumSquaredCornerError / comparedCorners);
-	// the real, already-hardware-verified reference agreement was 0.58px on this exact image -
-	// a generous margin above that (not a razor-thin exact match) so ordinary floating-point/
-	// driver-version drift doesn't make this test flaky, while still catching a genuinely wrong
-	// (not just slightly-differently-rounded) detection.
+	// Tolerance is generous to allow for floating-point and driver drift.
 	REQUIRE(cornerRmsPx < 2.0);
 }

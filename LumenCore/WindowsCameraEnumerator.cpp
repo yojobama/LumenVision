@@ -10,12 +10,8 @@
 #include <mferror.h>
 
 namespace {
-    // Real UVC webcams overwhelmingly report NV12/YUY2/MJPG natively - the exact same three
-    // FrameFormat cases V4l2CameraBackend.cpp's own FourCcToFrameFormat handles for V4L2's
-    // equivalent fourccs. RGB24/RGB32 are included since some driver stacks do report them as a
-    // device's own native type, not just as an MF software-conversion target. Note Microsoft's
-    // own "RGB24" subtype is BGR byte order (the GDI/DIB convention MF inherited) - mapping it to
-    // FrameFormat::BGR24 is the byte-order-correct choice, not a mismatch.
+    // UVC webcams natively report NV12/YUY2/MJPG (as in V4l2CameraBackend's FourCcToFrameFormat); RGB24/RGB32 are included
+    // since some drivers report them. Microsoft's "RGB24" subtype is BGR byte order, so BGR24 is the correct mapping.
     FrameFormat MfSubtypeToFrameFormat(const GUID& subtype)
     {
         if (subtype == MFVideoFormat_NV12) return FrameFormat::NV12;
@@ -23,9 +19,7 @@ namespace {
         if (subtype == MFVideoFormat_MJPG) return FrameFormat::MJPEG;
         if (subtype == MFVideoFormat_RGB24) return FrameFormat::BGR24;
         if (subtype == MFVideoFormat_RGB32) return FrameFormat::BGR24; // closest 3-channel match; alpha/pad byte dropped
-        // no first-party consumer asks for anything else today - MJPEG is the closest honest
-        // default for "some compressed/unrecognised format", matching FourCcToFrameFormat's own
-        // default on Linux, not a claim this subtype IS MJPEG.
+        // MJPEG as the default for a compressed/unrecognised format, matching FourCcToFrameFormat on Linux (not a claim the subtype is MJPEG)
         return FrameFormat::MJPEG;
     }
 }
@@ -34,9 +28,7 @@ std::vector<WindowsCameraDevice> EnumerateWindowsCameras(const std::shared_ptr<L
 {
     std::vector<WindowsCameraDevice> cameras;
 
-    // MFSTARTUP_LITE skips Media Foundation's platform pipeline (mfplat.dll's own transform
-    // registry) - not needed just to enumerate device sources, and it starts up meaningfully
-    // faster than a full MFStartup(MF_VERSION) would.
+    // MFSTARTUP_LITE skips the platform pipeline, which enumerating device sources does not need, and starts faster
     HRESULT hr = MFStartup(MF_VERSION, MFSTARTUP_LITE);
     if (FAILED(hr)) {
         if (logger) logger->EnterLog(LogLevel::Error, "EnumerateWindowsCameras: MFStartup failed, hr=" + std::to_string(hr));
@@ -109,10 +101,7 @@ std::vector<CameraMode> EnumerateWindowsCameraModes(int deviceIndex, const std::
         hr = pAttributes->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
     }
     if (SUCCEEDED(hr)) {
-        // re-enumerated fresh rather than cached from an earlier EnumerateWindowsCameras call -
-        // deviceIndex is only meaningful as "this call's array position", the same assumption
-        // OpenCvCameraBackend::Open's own numeric-index-to-device mapping already makes (device
-        // topology not changing between an app's own enumerate-then-open calls).
+        // re-enumerated rather than cached: deviceIndex is only meaningful as this call's array position (as in OpenCvCameraBackend::Open)
         hr = MFEnumDeviceSources(pAttributes, &ppDevices, &count);
     }
 

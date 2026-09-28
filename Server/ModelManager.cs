@@ -2,9 +2,7 @@ using System.Text.Json;
 
 namespace Server
 {
-    // manages uploaded object-detection models under ./models, persisted to models.json.
-    // Deliberately separate from DB.cs (sinks/sources): a model is a static asset referenced by
-    // id when creating an ObjectDetectionSink, not a pipeline node itself.
+    // manages uploaded object-detection models under ./models, persisted to models.json
     public class ModelManager
     {
         public static ModelManager Instance { get; } = new ModelManager();
@@ -54,10 +52,8 @@ namespace Server
                 labelsData.CopyTo(output);
             }
 
-            // .rknn is the only export format RknnDetectionBackend actually reads (see its own
-            // Load() comment) - everything else (.onnx in practice) goes to ONNX Runtime. This
-            // is the ONE place the provider is decided; every sink-creation call site downstream
-            // reads it back off the model rather than hardcoding a provider itself.
+            // .rknn is the only format RknnDetectionBackend reads; everything else (.onnx) goes to ONNX Runtime.
+            // Sink creation reads the provider back from the model.
             ObjectDetectionProvider provider = Path.GetExtension(modelFileName).Equals(".rknn", StringComparison.OrdinalIgnoreCase)
                 ? ObjectDetectionProvider.RKNN
                 : ObjectDetectionProvider.ONNX;

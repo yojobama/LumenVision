@@ -2,8 +2,7 @@
 #include <stdexcept>
 
 namespace {
-	// legacy default: only ever used by CameraCalibrator's own no-config constructor callers
-	// (pre-existing behavior preserved exactly)
+	// legacy default for the no-config constructor
 	const cv::Size LEGACY_CHECKERBOARD_PATTERN_SIZE(6, 9);
 }
 
@@ -161,9 +160,8 @@ void CameraCalibrator::ProcessCharuco(const cv::Mat& gray, cv::Mat& displayFrame
 	std::vector<int> charucoIds;
 	m_CharucoDetector->detectBoard(gray, charucoCorners, charucoIds);
 
-	// require a reasonable spread of corners, not just one or two - a couple of stray corners
-	// produce a numerically-collinear or near-degenerate snapshot that RunCalibration()'s
-	// cv::calibrateCamera would silently accept and quietly poison the whole result
+	// require a spread of corners: a few stray ones give a near-degenerate snapshot that
+	// cv::calibrateCamera would accept, poisoning the result
 	bool patternFound = charucoCorners.size() >= 6 && !m_CharucoBoard->checkCharucoCornersCollinear(charucoIds);
 
 	if (patternFound) {

@@ -3,9 +3,7 @@ import { apiClient } from '../api/client';
 import type { components } from '../api/generated';
 
 export class ApiService {
-  // Relative to wherever this page is served from - the C# server always serves its own built
-  // WebUI, so hardcoding localhost:8175 broke it for anyone reaching the server by its real
-  // hostname/IP (e.g. the Orange Pi over the network) rather than from a dev machine.
+  // Relative to the page origin, so it works when the server is reached by hostname or IP.
   private baseUrl = `${window.location.origin}/api`;
 
   // Source Controller routes
@@ -21,7 +19,7 @@ export class ApiService {
   }
 
   async renameSource(id: number, name: string): Promise<void> {
-    // Note: The route parameter name in SourceController appears to be SinkID (might be a copy-paste error)
+    // Note: the route parameter in SourceController is named SinkID
     const response = await fetch(`${this.baseUrl}/source/rename?SourceID=${id}&newName=${encodeURIComponent(name)}`, { method: 'PATCH' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
@@ -54,8 +52,7 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
-  // Resolution/fps and exposure/gain control (CameraSourceController.cs) - backend-complete
-  // since ROADMAP.md Phase 3b/B3, but never had a client method or any UI until now.
+  // Resolution/fps and exposure/gain control (CameraSourceController.cs)
   async getCameraModes(id: number): Promise<CameraMode[]> {
     const response = await fetch(`${this.baseUrl}/cameraSource/${id}/modes`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -68,9 +65,8 @@ export class ApiService {
     return response.json();
   }
 
-  // Returns whether the underlying ioctl/API call succeeded - NOT whether the device honoured
-  // it exactly (both V4L2 and Media Foundation silently substitute the nearest mode). Re-GET
-  // getCameraCurrentMode afterwards and check IsNative to see what was actually applied.
+  // Returns whether the API call succeeded, not whether the device honoured it exactly (the nearest
+  // mode may be substituted); re-check getCameraCurrentMode and IsNative.
   async setCameraMode(id: number, mode: CameraMode): Promise<boolean> {
     const response = await fetch(`${this.baseUrl}/cameraSource/${id}/mode`, {
       method: 'PATCH',
@@ -81,9 +77,8 @@ export class ApiService {
     return response.json();
   }
 
-  // exposureAbsolute is in the backend's own native units (V4L2: 100us steps). Call
-  // setCameraAutoExposure(id, false) first - most UVC hardware ignores a manual exposure value
-  // while auto-exposure is still on.
+  // exposureAbsolute is in the backend's native units (V4L2: 100us steps); disable auto-exposure
+  // first, as most UVC hardware ignores manual exposure otherwise.
   async setCameraExposure(id: number, exposureAbsolute: number): Promise<boolean> {
     const response = await fetch(`${this.baseUrl}/cameraSource/${id}/exposure?exposureAbsolute=${exposureAbsolute}`, { method: 'PATCH' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -109,10 +104,8 @@ export class ApiService {
     return response.json();
   }
 
-  // Splits one camera source's frame into a fixed crop, published as its own independent
-  // source - the side-by-side/top-bottom stereo building block
-  // (StereoCalibrationWizardPage.tsx's "one camera or two?" first step). Brand new call site,
-  // routed straight through the typed client.
+  // Splits one camera source's frame into a fixed crop published as an independent source (used
+  // for side-by-side/top-bottom stereo).
   async createRoiSource(id: number, x: number, y: number, width: number, height: number): Promise<number> {
     const { data, error } = await apiClient.POST('/cameraSource/{id}/roi', {
       params: { path: { id }, query: { x, y, width, height } },
@@ -121,47 +114,32 @@ export class ApiService {
     return data;
   }
 
-  // ROADMAP.md Phase 8/E5: surfaces a stale/missing calibration after a resolution change -
-  // consumed as a warning badge by Inspector.tsx/PipelineNode.tsx.
-  //
-  // ROADMAP.md Phase 8/E6's first migrated call site: routed through the OpenAPI-generated
-  // typed client (src/api/client.ts, from src/api/generated.ts - regenerate with `npm run
-  // generate-api`) instead of a hand-written fetch, proving the pattern works end to end against
-  // the real server before the rest of this file's ~40 other endpoints migrate the same way,
-  // incrementally, not in one big-bang rewrite.
+  // Reports a stale/missing calibration after a resolution change (shown as a warning badge by
+  // Inspector/PipelineNode). Uses the OpenAPI-generated typed client (src/api/client.ts).
   async getCalibrationStatus(id: number): Promise<CalibrationStatus> {
     const { data, error } = await apiClient.GET('/cameraSource/{id}/calibrationStatus', {
       params: { path: { id } },
     });
     if (error) throw new Error('Failed to fetch calibration status');
-    // cast, not a direct return: the generated schema models C#'s nullable int? fields as
-    // optional (`?: number`, i.e. possibly-undefined) rather than `number | null` - a real gap
-    // between what Server/OpenApi/OpenApiGenerator.cs's reflection-based schema says and what
-    // System.Text.Json actually serializes a null int? as (a literal JSON null, confirmed against
-    // a live response), not something to paper over silently at every migrated call site.
+    // cast: the generated schema models nullable int? as optional, but the server serialises null
     return data as CalibrationStatus;
   }
 
-  // GET: every calibration result ever saved to disk, across all cameras (CalibrationManager.cs)
-  // - had no webui client method at all until the LeftRail's Calibrations section needed one.
+  // GET: every calibration result saved to disk, across all cameras (CalibrationManager.cs)
   async getSavedCalibrations(): Promise<components['schemas']['StoredCalibrationDto'][]> {
     const { data, error } = await apiClient.GET('/cameraCalibrationSink/savedResults');
     if (error) throw new Error('Failed to fetch saved calibrations');
     return data ?? [];
   }
 
-  // GET: the server's own recent diagnostic log lines (LogController.cs) - for the LeftRail's
-  // Logs section.
+  // GET: the server's recent diagnostic log lines (LogController.cs)
   async getLogTail(lines: number = 200): Promise<string[]> {
     const { data, error } = await apiClient.GET('/log/tail', { params: { query: { lines } } });
     if (error) throw new Error('Failed to fetch server log');
     return data ?? [];
   }
 
-  // Graph Profile Controller routes (/api/graphProfile/*) - ROADMAP.md Phase 8/E6: save/restore
-  // the WHOLE node graph under a name, distinct from the existing per-source PipelineProfile
-  // (see Server/GraphProfile.cs's own comment). Brand new endpoints, so these go straight
-  // through the typed client from day one rather than needing their own later migration.
+  // Graph Profile Controller routes (/api/graphProfile/*): save/restore the whole node graph by name
   async listGraphProfiles(): Promise<string[]> {
     const { data, error } = await apiClient.GET('/graphProfile/list');
     if (error) throw new Error('Failed to list graph profiles');
@@ -173,8 +151,7 @@ export class ApiService {
     if (error) throw new Error('Failed to save graph profile');
   }
 
-  // Tears down the currently-live graph and reconstructs the named one in its place - see
-  // GraphProfile.cs's own comment. Irreversible unless the current graph was saved first.
+  // Tears down the live graph and rebuilds the named one; irreversible unless the current graph was saved.
   async activateGraphProfile(name: string): Promise<void> {
     const { error } = await apiClient.POST('/graphProfile/activate', { params: { query: { name } } });
     if (error) throw new Error('Failed to activate graph profile');
@@ -253,8 +230,7 @@ export class ApiService {
     return response.json();
   }
 
-  // Create an AprilTag sink with an explicit CPU/Vulkan backend and tag size - no calibration
-  // data yet (see createApriltagSinkFromCalibrator for that). backend: 0 = CPU, 1 = Vulkan.
+  // Create an AprilTag sink with an explicit CPU/Vulkan backend (0/1) and tag size, without calibration data.
   async createApriltagSinkWithBackend(name: string, tagSize: number, backend: number, frameWidth = 0, frameHeight = 0): Promise<number> {
     const params = new URLSearchParams({ name, tagSize: String(tagSize), backend: String(backend), frameWidth: String(frameWidth), frameHeight: String(frameHeight) });
     const response = await fetch(`${this.baseUrl}/apriltagSink/createWithBackend?${params.toString()}`, { method: 'POST' });
@@ -262,27 +238,22 @@ export class ApiService {
     return response.json();
   }
 
-  // Which backend a sink actually ended up running - may differ from what was requested if
-  // Vulkan was asked for and no usable device was found (falls back to CPU)
+  // Backend a sink is actually running; Vulkan falls back to CPU if no usable device is found.
   async getApriltagBackendName(sinkId: number): Promise<string> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/backend?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
 
-  // Same as getApriltagBackendName, as the real 0/1 enum rather than a display string - lets the
-  // Inspector's "Backend" dropdown pre-select the sink's actual current backend.
+  // Same as getApriltagBackendName, as the 0/1 enum rather than a display string.
   async getApriltagBackendKind(sinkId: number): Promise<number> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/backendKind?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
 
-  // Switches an EXISTING sink between CPU/Vulkan in place, preserving its id/tag size/
-  // calibration/bindings - the sink's own "Backend" control, not the Pipeline Profiles one
-  // (createApriltagProfile's options.backend only helps if you set up a profile in advance).
-  // nthreads/quadDecimate/refineEdges are optional - omit them to carry forward the sink's
-  // current tuning (see SinkManager.SetApriltagBackend's own comment) rather than resetting it.
+  // Switches an existing sink between CPU/Vulkan in place, preserving id/tag size/calibration/bindings.
+  // Omitted nthreads/quadDecimate/refineEdges carry forward the sink's current tuning.
   async setApriltagBackend(sinkId: number, backend: number, nthreads?: number, quadDecimate?: number, refineEdges?: boolean): Promise<void> {
     let url = `${this.baseUrl}/apriltagSink/backend?sinkId=${sinkId}&backend=${backend}`;
     if (nthreads !== undefined) url += `&nthreads=${nthreads}`;
@@ -292,9 +263,8 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
-  // Current threads/quad_decimate/refine_edges tuning actually in effect for a sink. On Vulkan,
-  // quadDecimate is the integer the GPU pipeline really runs (it must divide the frame size, so
-  // it can differ from what was requested).
+  // Current threads/quad_decimate/refine_edges in effect; on Vulkan quadDecimate is the integer the
+  // GPU pipeline actually runs.
   async getApriltagTuning(sinkId: number): Promise<{ threads: number; quadDecimate: number; quadDecimateSupported: boolean; refineEdges: boolean }> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/tuning?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -302,8 +272,7 @@ export class ApiService {
     return { threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges };
   }
 
-  // Camera Calibration Sink Controller routes (default 6x9 checkerboard, 25mm squares - see
-  // CreateWithBoard for a custom board, not exposed in the WebUI yet)
+  // Camera Calibration Sink Controller routes (default 6x9 checkerboard, 25mm squares)
   async createCameraCalibrationSink(name: string): Promise<number> {
     const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/create?name=${encodeURIComponent(name)}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -317,8 +286,8 @@ export class ApiService {
     return response.json();
   }
 
-  // ROADMAP.md Phase 8d: the camera calibration wizard's own capture/run/result loop - see
-  // CameraCalibrationSinkController.cs. Mirrors the stereo equivalents below field-for-field.
+  // Camera calibration wizard capture/run/result loop (CameraCalibrationSinkController.cs); mirrors
+  // the stereo equivalents below.
   async saveCameraCalibrationDetection(sinkId: number): Promise<boolean> {
     const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/saveDetection`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -348,8 +317,7 @@ export class ApiService {
     return response.json();
   }
 
-  // the live coverage heatmap's own data source (ROADMAP.md Phase 8a/8d) - every saved
-  // snapshot's/pair's detected corner points. `eye` only matters for the stereo endpoint.
+  // Data for the coverage heatmap: every saved snapshot/pair's detected corners; `eye` applies only to stereo.
   async getCameraCalibrationCoverage(sinkId: number): Promise<CalibrationCoverage> {
     const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/coverage`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -369,16 +337,14 @@ export class ApiService {
     return response.json();
   }
 
-  // Which backend an existing sink is actually running (ONNX Runtime vs RKNN/NPU) - read-only,
-  // decided once at creation from the model's own file format (see Model.provider's comment).
+  // Backend an existing sink runs (ONNX Runtime vs RKNN), fixed by the model's file format; read-only.
   async getObjectDetectionSinkBackend(sinkId: number): Promise<string> {
     const response = await fetch(`${this.baseUrl}/objectDetectionSink/backend?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
 
-  // Model Controller routes (uploaded YOLOv8/YOLOv11 models - ONNX Runtime or RKNN/NPU export -
-  // consumed by object detection sinks)
+  // Model Controller routes (uploaded YOLOv8/YOLOv11 models, ONNX or RKNN)
   async getAllModels(): Promise<Model[]> {
     const response = await fetch(`${this.baseUrl}/model/getAll`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -428,11 +394,6 @@ export class ApiService {
     return response.json();
   }
 
-  // ROADMAP.md Phase 8e: this used to double-JSON.parse() the response, matching what
-  // NetworkTablesSinkController.GetStatus returned before the Phase 8a DTO cleanup - it's
-  // returned a real typed NetworkTablesStatusDto since then (a plain object, not a JSON-encoded
-  // string), so the extra parse was left silently broken (throwing on an already-parsed object)
-  // until Phase 8e's match view became the first thing to actually call this.
   async getNetworkTablesStatus(sinkId: number): Promise<NetworkTablesStatus> {
     const response = await fetch(`${this.baseUrl}/networkTablesSink/status?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -447,10 +408,8 @@ export class ApiService {
     return response.json();
   }
 
-  // Blocks briefly server-side for ICE gathering (non-trickle on LumenVision's side). Returned as a
-  // raw text/plain body, not JSON - SDP is full of literal \r\n line endings that EmbedIO's
-  // default string auto-serialization does not escape, which makes response.json() fail with
-  // "Bad control character in string literal" (confirmed the hard way).
+  // Blocks briefly for server-side ICE gathering. Returned as raw text/plain because SDP contains
+  // literal \r\n that breaks response.json().
   async getWebRTCOffer(sinkId: number): Promise<string> {
     const response = await fetch(`${this.baseUrl}/webrtcSink/offer?sinkId=${sinkId}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -472,21 +431,14 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
-  // same fix as getNetworkTablesStatus above - WebRTCSinkController.GetStatus also returns a
-  // real WebRtcStatusDto since Phase 8a, not a double-JSON-encoded string. Nothing currently
-  // calls this (the Inspector reads WebRTC running state off the /ws/state snapshot instead),
-  // but it's a real bug regardless if left as-is for whenever something does.
   async getWebRTCSinkStatus(sinkId: number): Promise<{ Connected: boolean; IceState: number; GatheringComplete: boolean }> {
     const response = await fetch(`${this.baseUrl}/webrtcSink/status?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
 
-  // MJPEG Sink Controller routes. Not a general-purpose alternative to WebRTC - StreamView.tsx
-  // is the only caller, and only reaches these when a WebRTC preview has already failed (see its
-  // own comment). Bind/toggle afterwards the same way WebRTC sinks do (PATCH /sink/bind, PATCH
-  // /sink/toggle) - MjpegSinkController.Create only creates the sink, same division of labour as
-  // createWebRTCSink above.
+  // MJPEG Sink Controller routes; used only as a fallback when a WebRTC preview fails. Bind/toggle
+  // via PATCH /sink/bind and /sink/toggle.
   async createMjpegSink(name: string, jpegQuality = 80): Promise<number> {
     const params = new URLSearchParams({ name, jpegQuality: String(jpegQuality) });
     const response = await fetch(`${this.baseUrl}/mjpegSink/create?${params.toString()}`, { method: 'POST' });
@@ -494,18 +446,15 @@ export class ApiService {
     return response.json();
   }
 
-  // MjpegStreamModule.cs is mounted at "/stream/mjpeg" directly (Program.cs), NOT under "/api" -
-  // it's a raw multipart HTTP response, not a WebApiController action, so it doesn't share
-  // baseUrl with every other route in this file.
+  // mounted at "/stream/mjpeg" (not under "/api"): a raw multipart HTTP response, so it does not use baseUrl
   getMjpegStreamUrl(sinkId: number): string {
     return `${window.location.origin}/stream/mjpeg?SinkID=${sinkId}`;
   }
 
-  // Record Sink Controller routes - segmented MP4 recording with a JSON-Lines telemetry sidecar
-  // per segment (see RecordSink.h's own comment). dstFolder/encoderName left undefined default
-  // to a name-derived folder/libx264 server-side, same as createWebRTCSink's encoderName pattern.
-  // Start/stop recording on every source at once (SinkManager.SetAllRecording - the same code
-  // robot code triggers over NT). Returns how many RecordSinks are now running.
+  // Record Sink Controller routes: segmented MP4 recording with a JSON-Lines telemetry sidecar per
+  // segment. Undefined dstFolder/encoderName use server defaults.
+  // Start/stop recording on every source at once (SinkManager.SetAllRecording).
+  // Returns how many RecordSinks are running.
   async setAllRecording(enabled: boolean): Promise<number> {
     const response = await fetch(`${this.baseUrl}/recordSink/all?enabled=${enabled}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -532,14 +481,12 @@ export class ApiService {
     return response.json();
   }
 
-  // opened directly by the browser (an <a href> / window.open target), not fetch()'d - the
-  // response is a real file download (Content-Disposition: attachment), not JSON.
+  // opened directly by the browser (<a href>/window.open); the response is a file download, not JSON
   getRecordSinkDownloadUrl(sinkId: number, fileName: string): string {
     return `${this.baseUrl}/recordSink/${sinkId}/download?${new URLSearchParams({ file: fileName })}`;
   }
 
-  // the old (deleted) RecordSink stub's own second aspirational comment, now real: use an
-  // already-recorded segment as a VideoFileSource directly, no re-upload.
+  // use an already-recorded segment as a VideoFileSource without re-uploading
   async promoteRecordSinkSegment(sinkId: number, fileName: string, name?: string): Promise<number> {
     const params = new URLSearchParams({ file: fileName });
     if (name) params.set('name', name);
@@ -555,15 +502,14 @@ export class ApiService {
     return response.json();
   }
 
-  // Stereo Calibration Sink Controller routes (phase 10 - see STEREO_IMPLEMENTATION_PLAN.md)
+  // Stereo Calibration Sink Controller routes
   async createStereoCalibrationSink(name: string): Promise<number> {
     const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/create?name=${encodeURIComponent(name)}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
 
-  // ChArUco is not supported for stereo yet (StereoCalibrator.h) - boardType is always the
-  // checkerboard value (0) from this WebUI.
+  // ChArUco is unsupported for stereo (StereoCalibrator.h), so boardType is always 0 (checkerboard)
   async createStereoCalibrationSinkWithBoard(name: string, rows: number, cols: number, squareSizeMeters: number): Promise<number> {
     const params = new URLSearchParams({ name, boardType: '0', rows: String(rows), cols: String(cols), squareSizeMeters: String(squareSizeMeters) });
     const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/createWithBoard?${params.toString()}`, { method: 'POST' });
@@ -571,9 +517,8 @@ export class ApiService {
     return response.json();
   }
 
-  // binds the explicit left/right camera sources for a stereo sink (StereoCalibrationSink or
-  // StereoDepthSink) - the ordinary bindSinkToSource doesn't apply here, since getting
-  // left/right backwards silently flips the sign of every disparity.
+  // Binds explicit left/right sources for a stereo sink (StereoCalibrationSink or StereoDepthSink);
+  // swapping them flips the sign of every disparity.
   async bindStereoSources(sinkId: number, leftSourceId: number, rightSourceId: number): Promise<void> {
     const params = new URLSearchParams({ leftSourceId: String(leftSourceId), rightSourceId: String(rightSourceId) });
     const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/bind?${params.toString()}`, { method: 'PATCH' });
@@ -603,9 +548,8 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
-  // runs cv::stereoCalibrate + cv::stereoRectify over every saved pair. Check the returned
-  // epipolarRms - gate real use at < 0.5px (STEREO_IMPLEMENTATION_PLAN.md ss10.2); stereoRms
-  // alone does not predict codec-stereo density/validity the way epipolarRms does.
+  // runs cv::stereoCalibrate + cv::stereoRectify over every saved pair; gate real use on the
+  // returned epipolarRms (< 0.5px), as stereoRms alone does not predict validity.
   async runStereoCalibration(sinkId: number): Promise<StereoCalibrationResult> {
     const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/run`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -649,10 +593,8 @@ export class ApiService {
     return response.json();
   }
 
-  // Depth Fusion Sink Controller routes - fuses a detector's boxes with a StereoDepthSink's
-  // depth grid (STEREO_IMPLEMENTATION_PLAN.md ss10.4). Bind the detector with the ordinary
-  // bindSinkToSource (it must itself be bound to the StereoDepthSink's rectified-left frame
-  // output, not a raw camera); attach the depth source separately.
+  // Depth Fusion Sink Controller routes: fuses a detector's boxes with a StereoDepthSink's depth grid.
+  // Bind the detector (to the depth sink's rectified-left output) with bindSinkToSource, then attach the depth source.
   async createDepthFusionSink(name: string): Promise<number> {
     const response = await fetch(`${this.baseUrl}/depthFusionSink/create?name=${encodeURIComponent(name)}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -683,7 +625,7 @@ export class ApiService {
     return response.json();
   }
 
-  // Enhanced utility methods for better data aggregation
+  // Data aggregation helpers
   async getAllSources(): Promise<any[]> {
     try {
       // Get sources from all specific endpoints
@@ -734,7 +676,7 @@ export class ApiService {
       return response.json();
   }
 
-  // Improved file upload methods with better handling
+  // File upload methods
   async uploadVideoFiles(files: FileList, fps: number = 30): Promise<{
     success: boolean;
     sourceIds: number[];
@@ -777,7 +719,7 @@ export class ApiService {
     }
   }
 
-  // Enhanced file validation
+  // File validation
   validateVideoFile(file: File): { valid: boolean; message: string } {
     const validVideoTypes = ['video/mp4', 'video/avi', 'video/mov', 'video/wmv', 'video/mkv', 'video/webm'];
     const maxSize = 500 * 1024 * 1024; // 500MB
@@ -820,7 +762,7 @@ export class ApiService {
     return { valid: true, message: 'Valid image file' };
   }
 
-  // Legacy compatibility methods
+  // Compatibility methods
   async getSource(id: number): Promise<any> {
     const sources = await this.getAllSources();
     return sources.find(s => (s.Id || s.id) === id) || null;
@@ -848,13 +790,8 @@ export class ApiService {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
-  // the sink's latest result (Manager::GetSinkResult, already a JSON document) - its shape
-  // varies per sink type (AprilTag detections vs. object-detection boxes vs. ...), so unlike
-  // NetworkTablesSink/WebRTCSink's own fixed-shape status there's no one DTO to type this as;
-  // SinkController writes the response body directly rather than letting it go through
-  // EmbedIO's default string serializer, which does not escape embedded quotes correctly (see
-  // that controller's own comment - confirmed the hard way, this endpoint went unexercised by
-  // the webui until Phase 8c actually started calling it).
+  // the sink's latest result as JSON (Manager::GetSinkResult); its shape varies per sink type, and the
+  // controller writes the body directly because the default serialiser mis-escapes quotes
   async getSinkResult(sinkId: number): Promise<unknown> {
     const response = await fetch(`${this.baseUrl}/sink/getResult?SinkID=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -882,7 +819,7 @@ export class ApiService {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
-  // Capabilities Controller routes (/api/capabilities/*) - ROADMAP.md Phase 8a/8c
+  // Capabilities Controller routes (/api/capabilities/*)
   async getNodeTypeCapabilities(): Promise<NodeTypesResponse> {
     const response = await fetch(`${this.baseUrl}/capabilities/nodeTypes`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -895,9 +832,8 @@ export class ApiService {
     return response.json();
   }
 
-  // Pipeline Profile Controller routes (/api/source/profiles*) - ROADMAP.md Phase 7/8c. A
-  // profile belongs to a camera SOURCE (not a sink) - activating one tears down and rebuilds
-  // whatever detection sink is currently bound to that source. See PipelineProfileController.cs.
+  // Pipeline Profile Controller routes (/api/source/profiles*): a profile belongs to a camera source;
+  // activating one rebuilds the bound detection sink (PipelineProfileController.cs).
   async getProfiles(sourceId: number): Promise<PipelineProfile[]> {
     const response = await fetch(`${this.baseUrl}/source/profiles?sourceId=${sourceId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

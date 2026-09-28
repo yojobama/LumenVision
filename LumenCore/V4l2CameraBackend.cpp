@@ -31,26 +31,21 @@
 
 namespace {
 	constexpr int BUFFER_COUNT = 4;
-	// bounded well above any real frame interval (even 5fps is 200ms) so Grab() never mistakes a
-	// slow-but-alive camera for a hung one, while still returning promptly - see ICameraBackend's
-	// own comment on why this bound matters for ISource::Toggle(false)/shutdown.
+	// bounded well above any real frame interval so Grab() never mistakes a slow camera for a hung one, yet returns
+	// promptly for ISource::Toggle(false)/shutdown
 	constexpr int POLL_TIMEOUT_MS = 1000;
 
 	int XIoctl(int fd, unsigned long request, void* arg)
 	{
 		int ret;
-		// EINTR is routine (a signal interrupting the syscall, not a real failure) - retry rather
-		// than surfacing it as an ioctl error to the caller.
+		// EINTR is routine (a signal interrupting the syscall); retry rather than reporting an ioctl error
 		do {
 			ret = ioctl(fd, request, arg);
 		} while (ret == -1 && errno == EINTR);
 		return ret;
 	}
 
-	// only formats Grab() can actually turn into pixels - anything else is left out of
-	// EnumerateModes entirely rather than mislabelled (every unknown fourcc used to be reported as
-	// MJPEG, so a raw-mono camera's native modes showed up as MJPEG and SetMode then asked the
-	// driver for a format it doesn't have)
+	// only formats Grab() can turn into pixels; anything else is left out of EnumerateModes rather than mislabelled
 	std::optional<FrameFormat> FourCcToFrameFormat(uint32_t fourcc)
 	{
 		switch (fourcc) {
@@ -97,9 +92,8 @@ namespace {
 		}
 	}
 
-	// Sizes offered for a STEPWISE/CONTINUOUS frame-size range (V4L2 raw-sensor drivers report
-	// one range, not a discrete list - an Arducam MIPI OV9281 is the typical case). Common
-	// capture resolutions, plus the range's own maximum (the sensor's full native size).
+	// Sizes offered for a STEPWISE/CONTINUOUS frame-size range (raw-sensor drivers report one range, not a list):
+	// common resolutions plus the range's maximum.
 	constexpr std::pair<uint32_t, uint32_t> kCommonFrameSizes[] = {
 		{320, 240}, {640, 400}, {640, 480}, {800, 600}, {1280, 720},
 		{1280, 800}, {1600, 1200}, {1920, 1080}, {1920, 1200},
@@ -125,9 +119,7 @@ bool V4l2CameraBackend::Open(const std::string& devicePath)
 {
 	Close();
 
-	// O_NONBLOCK matters here even though Grab() itself polls with a timeout before DQBUF - a
-	// blocking fd would make VIDIOC_DQBUF itself block indefinitely if a spurious poll() wakeup
-	// ever raced an empty queue, defeating the whole point of the poll-first bound.
+	// O_NONBLOCK keeps VIDIOC_DQBUF from blocking indefinitely if a spurious poll() wakeup races an empty queue
 	m_Fd = open(devicePath.c_str(), O_RDWR | O_NONBLOCK);
 	if (m_Fd < 0) return false;
 
@@ -142,13 +134,8 @@ bool V4l2CameraBackend::Open(const std::string& devicePath)
 
 	m_DevicePath = devicePath;
 
-	// A sane default so a caller that never calls SetMode() still gets frames - MJPEG at a modest
-	// resolution is close to universally supported by real UVC hardware (confirmed on the bench
-	// Lenovo camera: MJPG, discrete sizes, 5-30fps). A camera that doesn't offer MJPEG at all (a
-	// raw mono sensor like an Arducam MIPI OV9281: Y10/Y10P/GREY only) gets its own first
-	// advertised mode instead - drivers list their preferred format first. ApplyFormat leaves
-	// width/height at whatever the driver's own default was if this particular request fails,
-	// rather than failing Open() outright over it.
+	// Default so callers that never call SetMode() still get frames: MJPEG at a modest resolution, else the camera's first
+	// advertised mode (raw mono sensors). If the request fails, ApplyFormat keeps the driver's default size and Open() still succeeds.
 	std::vector<CameraMode> modes = EnumerateModes();
 	bool hasMjpeg = false;
 	for (const CameraMode& mode : modes) hasMjpeg |= mode.pixelFormat == FrameFormat::MJPEG;
@@ -247,11 +234,8 @@ void V4l2CameraBackend::StopStreaming()
 	m_Buffers.clear();
 	m_Streaming = false;
 
-	// REQBUFS(count=0) releases the kernel's own buffer allocation - the V4L2 spec (confirmed the
-	// hard way, on the real bench camera: VIDIOC_S_FMT failed with EBUSY every time SetMode() ran
-	// after an initial Open()) rejects VIDIOC_S_FMT while ANY buffers are still allocated, even
-	// with streaming already off. Only meaningful if m_Fd is still open - StopStreaming() is also
-	// called from Close(), by which point the fd may already be gone.
+	// REQBUFS(count=0) releases the kernel's buffer allocation: VIDIOC_S_FMT fails with EBUSY while any buffers are
+	// allocated, even with streaming off. Only meaningful if m_Fd is still open (also called from Close()).
 	if (m_Fd >= 0) {
 		v4l2_requestbuffers req{};
 		req.count = 0;
@@ -277,13 +261,8 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 	buf.memory = V4L2_MEMORY_MMAP;
 	if (XIoctl(m_Fd, VIDIOC_DQBUF, &buf) < 0) return result;
 
-	// Drain to the newest frame: DQBUF always returns the OLDEST queued buffer, so if this cycle
-	// (or a prior stall - a slow downstream sink, a scheduling hiccup) fell behind, up to
-	// BUFFER_COUNT-1 stale frames can already be queued. Requeue the one just dequeued straight
-	// back (without processing it - it's already stale) and take the next one instead, repeating
-	// until the driver has nothing left ready - the classic low-latency V4L2 pattern
-	// (docs/PERFORMANCE_ANALYSIS.md's own §5). Only the final, newest buffer is
-	// decoded/timestamped/published.
+	// Drain to the newest frame: DQBUF returns the oldest queued buffer, so requeue each stale one and dequeue again
+	// until the driver has nothing ready; only the final buffer is decoded/timestamped/published.
 	for (;;) {
 		pollfd peek{};
 		peek.fd = m_Fd;
@@ -297,17 +276,8 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		buf = next;
 	}
 
-	// Stamped from buf.timestamp (the driver's own CLOCK_MONOTONIC capture instant - the moment
-	// the sensor actually produced this frame) when the driver populates it, converted to the
-	// same wall-clock epoch SourceResult::NowUs() uses elsewhere via a one-time offset (glibc's
-	// std::chrono::steady_clock IS CLOCK_MONOTONIC on Linux, the only platform this file builds
-	// on, so this needs no extra syscall per frame beyond what steady_clock::now() already is).
-	// Previously stamped from NowUs() taken here, in userspace, right after DQBUF returns - close
-	// to "the moment the driver made this frame available" but NOT the same as when the sensor
-	// actually captured it, understating latencyMs whenever a frame had been sitting queued
-	// (matching stereo pairing's own skew-gate need for a genuine capture instant, not a publish
-	// one). A driver that never populates buf.timestamp (all zero) falls back to the old
-	// behaviour unchanged.
+	// Stamped from buf.timestamp (driver's CLOCK_MONOTONIC capture instant) when populated, converted to the NowUs() epoch via a
+	// one-time offset (steady_clock is CLOCK_MONOTONIC on Linux); a zero timestamp falls back to NowUs() taken after DQBUF.
 	if (buf.timestamp.tv_sec != 0 || buf.timestamp.tv_usec != 0) {
 		if (!m_MonotonicToWallOffsetUs.has_value()) {
 			int64_t monotonicNowUs = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -326,18 +296,11 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 	uint32_t fourcc = currentFmt.fmt.pix.pixelformat;
 
 	const uint8_t* data = static_cast<const uint8_t*>(m_Buffers[buf.index].start);
-	// bytesused is mandatory for capture per spec, but a 0 from a sloppy driver shouldn't drop
-	// every frame - fall back to the whole mapped buffer
+	// bytesused is mandatory per spec, but a 0 from a sloppy driver falls back to the whole mapped buffer
 	size_t bytesUsed = buf.bytesused > 0 ? buf.bytesused : m_Buffers[buf.index].length;
 
-	// Every branch below targets a FramePool buffer sized to the negotiated mode's own
-	// width/height - CV_8UC3 BGR for colour formats, CV_8UC1 GRAY8 for mono ones - and
-	// requests it BEFORE the decode/convert/copy call so that call's own Mat::create() fast path
-	// (already-right-shape => write in place, no allocation) actually fires. Acquire()ing after
-	// the fact - into an already-decoded temporary - would just move the allocation, not remove
-	// it. If a real frame ever comes back a different size than the negotiated mode (a malformed
-	// JPEG, in practice), Mat::create() falls back to a normal one-off allocation for that frame
-	// only - safe, just not pooled that cycle.
+	// Every branch writes into a FramePool buffer sized to the negotiated mode (CV_8UC3 BGR, CV_8UC1 for mono), acquired before
+	// decoding so Mat::create() writes in place; a frame of a different size gets a one-off unpooled allocation.
 	int width = currentFmt.fmt.pix.width, height = currentFmt.fmt.pix.height;
 	// bytesperline can exceed width * bytes-per-pixel (row padding, common on MIPI/ISP drivers);
 	// 0 means "not reported", i.e. tightly packed
@@ -356,25 +319,13 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 	};
 	if (fourcc == V4L2_PIX_FMT_MJPEG || fourcc == V4L2_PIX_FMT_JPEG) {
 		cv::Mat jpegView(1, static_cast<int>(bytesUsed), CV_8UC1, const_cast<uint8_t*>(data));
-		// imdecode's 3-arg overload reuses *dst in place when it's already the right size/type
-		// (its own doc comment: "can save the image reallocations when called repeatedly for
-		// images of the same size") - exactly the fast path Acquire()ing at the negotiated mode's
-		// own size is meant to hit every frame. Its return value, not the pre-set dst, is the
-		// authoritative decoded Mat (a genuine size mismatch reallocates a fresh one instead -
-		// result.poolOwner then just outlives an unused buffer harmlessly, see this function's
-		// own comment above).
+		// imdecode's 3-arg overload reuses *dst in place when already the right size/type; its return value is the authoritative Mat.
 		//
-		// preferGray decodes straight to grayscale instead of BGR when nothing downstream needs
-		// colour this cycle (see ICameraBackend::Grab's own comment) - IMREAD_GRAYSCALE skips
-		// chroma upsampling and colour-space conversion inside libjpeg-turbo entirely, not just
-		// the separate BGR->GRAY cv::cvtColor Frame::AsGray() would otherwise pay downstream
-		// (docs/PERFORMANCE_ANALYSIS.md's own §1/§2 - measured ~40% less decode work, plus it
-		// removes the second conversion completely rather than just moving it).
+		// preferGray decodes straight to grayscale (IMREAD_GRAYSCALE skips chroma upsampling and colour conversion in
+		// libjpeg-turbo) when nothing downstream needs colour (see ICameraBackend::Grab).
 		//
-		// Acquire happens before either decode path, same as every other branch - MppJpegDecoder
-		// never touches FramePool itself (see its own header comment), it only ever writes into
-		// an already-sized dst, so the software cv::imdecode fallback below can reuse the exact
-		// same pool-owned buffer if the hardware attempt fails.
+		// Acquire happens before either decode path: MppJpegDecoder never touches FramePool, so the software fallback
+		// reuses the same pool-owned buffer if hardware decode fails.
 		if (preferGray) {
 			result.frame = FramePool::Instance().Acquire(height, width, CV_8UC1, result.poolOwner);
 			result.format = FrameFormat::GRAY8;
@@ -383,10 +334,8 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		}
 
 #ifdef LUMEN_WITH_MPP_JPEG
-		// hardware decode via the RK3588's own JPEG VPU tried first - real measurements put this
-		// at ~2-3ms/1080p-frame vs ~12ms software (docs/PERFORMANCE_ANALYSIS.md's own §1). Falls
-		// through to the software path below on ANY failure (no JPEG VPU on this board, an
-		// unsupported chroma layout, a decode error) - see MppJpegDecoder's own contract.
+		// hardware decode via the RK3588's JPEG VPU first; falls through to the software path below on any failure
+		// (see MppJpegDecoder's contract)
 		if (m_MppJpegDecoder.Decode(data, bytesUsed, width, height, preferGray, result.frame)) {
 			result.success = true;
 		} else
@@ -427,7 +376,7 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 			result.success = true;
 		}
 	} else if (fourcc == V4L2_PIX_FMT_GREY) {
-		// passed through as GRAY8, not expanded to BGR - see CameraGrabResult::format
+		// passed through as GRAY8, not expanded to BGR
 		unpackMono(static_cast<size_t>(width), PixelUnpack::Gray8Copy);
 	} else if (fourcc == V4L2_PIX_FMT_Y10) {
 		unpackMono(PixelUnpack::MinStrideY10(width), PixelUnpack::Y10ToGray8);
@@ -460,7 +409,7 @@ std::vector<CameraMode> V4l2CameraBackend::EnumerateModes()
 		if (XIoctl(m_Fd, VIDIOC_ENUM_FMT, &fmtDesc) < 0) break;
 
 		std::optional<FrameFormat> format = FourCcToFrameFormat(fmtDesc.pixelformat);
-		if (!format.has_value()) continue; // nothing Grab() could decode - see FourCcToFrameFormat
+		if (!format.has_value()) continue; // nothing Grab() could decode
 
 		auto addModesForSize = [&](uint32_t width, uint32_t height) {
 			for (unsigned int ivalIndex = 0; ; ivalIndex++) {
@@ -487,9 +436,7 @@ std::vector<CameraMode> V4l2CameraBackend::EnumerateModes()
 					continue;
 				}
 
-				// STEPWISE/CONTINUOUS interval range (reported once, at index 0): offer its
-				// fastest rate - the one a vision pipeline wants - plus 30fps when the range
-				// covers it, rather than every representable interval
+				// STEPWISE/CONTINUOUS interval range (reported once, at index 0): offer its fastest rate plus 30fps when covered
 				const v4l2_fract& fastest = frmIval.stepwise.min;
 				const v4l2_fract& slowest = frmIval.stepwise.max;
 				double maxFps = fastest.numerator > 0 ? static_cast<double>(fastest.denominator) / fastest.numerator : 0.0;
@@ -513,10 +460,8 @@ std::vector<CameraMode> V4l2CameraBackend::EnumerateModes()
 				continue;
 			}
 
-			// STEPWISE/CONTINUOUS (reported once, at index 0) - raw-sensor drivers such as an
-			// Arducam MIPI module describe their sizes as one range, never a discrete list.
-			// Offer the common resolutions the range admits, plus its maximum (the sensor's full
-			// native size, e.g. 1280x800 on an OV9281).
+			// STEPWISE/CONTINUOUS (reported once, at index 0): offer the common resolutions the range admits, plus its
+			// maximum (the sensor's full native size)
 			const v4l2_frmsize_stepwise& range = frmSize.stepwise;
 			for (const auto& [width, height] : kCommonFrameSizes) {
 				if (FitsStepwise(range, width, height) && !(width == range.max_width && height == range.max_height)) {
@@ -567,8 +512,7 @@ CameraMode V4l2CameraBackend::GetCurrentMode() const
 
 	mode.width = fmt.fmt.pix.width;
 	mode.height = fmt.fmt.pix.height;
-	// a current format Grab() can't decode is only possible if something outside this process
-	// set it - report it as MJPEG, the historical placeholder, rather than failing the query
+	// a current format Grab() can't decode can only be set outside this process; report it as MJPEG rather than failing the query
 	mode.pixelFormat = FourCcToFrameFormat(fmt.fmt.pix.pixelformat).value_or(FrameFormat::MJPEG);
 
 	v4l2_streamparm parm{};

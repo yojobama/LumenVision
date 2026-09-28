@@ -1,13 +1,9 @@
 #pragma once
 
-// Pixel formats a Frame can carry, or a CameraMode can advertise. Kept intentionally small - only
-// what a real producer actually emits, not every format a camera theoretically could. MJPEG/YUYV
-// and the raw mono formats (Y10 onwards) exist here for CameraMode reporting only: V4l2CameraBackend
-// decodes/unpacks them at capture time (to BGR24 and GRAY8 respectively), so no Frame is ever
-// tagged with one.
+// Pixel formats a Frame can carry or a CameraMode can advertise. MJPEG/YUYV and the raw mono formats (Y10 onwards) are for
+// CameraMode reporting only: V4l2CameraBackend decodes/unpacks them at capture (to BGR24 and GRAY8), so no Frame carries one.
 //
-// Ordinals are part of the wire contract (the REST API and webui's PIXEL_FORMAT_NAMES carry them
-// as plain numbers) - append new values, never reorder.
+// Ordinals are part of the wire contract (REST API and webui PIXEL_FORMAT_NAMES): append new values, never reorder.
 enum class FrameFormat {
 	BGR24,
 	RGB24,
@@ -15,8 +11,7 @@ enum class FrameFormat {
 	NV12,
 	YUYV,
 	MJPEG,
-	// raw mono sensor formats (global-shutter FRC cameras like the Arducam OV9281) - see
-	// PixelUnpack.h for each one's exact layout
+	// raw mono sensor formats (e.g. Arducam OV9281); see PixelUnpack.h for layouts
 	Y10,
 	Y16,
 	Y10P,

@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/VideoFileFrameSource.h"
+#include "../LumenCore/VideoFileFrameSource.h"
 
 class VideoFileFrameSourceTest : public UnitTestBase {
 public:

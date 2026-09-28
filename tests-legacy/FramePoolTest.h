@@ -1,10 +1,10 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/FramePool.h"
-#include "../FRCVLib/Frame.h"
-#include "../FRCVLib/FrameSpec.h"
+#include "../LumenCore/FramePool.h"
+#include "../LumenCore/Frame.h"
+#include "../LumenCore/FrameSpec.h"
 
-class FramePoolTest : public UnitTestBase // <-- public inheritance is required
+class FramePoolTest : public UnitTestBase // public inheritance required
 {
 public:
     FramePoolTest();

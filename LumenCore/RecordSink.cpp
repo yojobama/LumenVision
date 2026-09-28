@@ -6,8 +6,7 @@
 #include <cstdio>
 
 namespace {
-	// zero-padded so a plain filename sort IS chronological order - ListSegments()/
-	// EnforceRetention() both rely on this rather than re-parsing a timestamp out of the name.
+	// zero-padded so a filename sort is chronological; ListSegments()/EnforceRetention() rely on it
 	std::string SegmentBaseName(int index)
 	{
 		char buf[32];
@@ -15,10 +14,7 @@ namespace {
 		return buf;
 	}
 
-	// basic sanitization for a filename that ultimately reaches std::filesystem::remove() -
-	// Server/RecordSinkController.cs must do its own equivalent check before ever calling
-	// DeleteSegment (a caller-supplied string reaching this far shouldn't be trusted twice, but
-	// this is the one function that actually deletes a file, so it checks too).
+	// basic sanitisation for a filename reaching std::filesystem::remove(); this is the function that deletes, so it checks too
 	bool IsSafeSegmentFilename(const std::string& filename)
 	{
 		if (filename.empty()) return false;
@@ -45,7 +41,7 @@ RecordSink::RecordSink(std::shared_ptr<Logger> logger, std::string id, RecordSin
 RecordSink::~RecordSink()
 {
 	std::lock_guard<std::mutex> lock(m_Mutex);
-	CloseCurrentSegment(); // also shuts the encoder down - see its own comment
+	CloseCurrentSegment(); // also shuts the encoder down
 }
 
 std::vector<std::string> RecordSink::ListSegments() const
@@ -58,8 +54,7 @@ std::vector<std::string> RecordSink::ListSegments() const
 		if (entry.path().extension() != ".mp4") continue;
 		names.push_back(entry.path().filename().string());
 	}
-	// newest first - SegmentBaseName's zero-padding makes a plain string sort chronological,
-	// descending gives newest-first without parsing anything back out of the name.
+	// newest first: a descending sort of the zero-padded names
 	std::sort(names.rbegin(), names.rend());
 	return names;
 }
@@ -74,8 +69,7 @@ bool RecordSink::DeleteSegment(const std::string& filename)
 	std::filesystem::path videoPath = std::filesystem::path(m_Config.dstFolder) / filename;
 	std::error_code ec;
 	bool removed = std::filesystem::remove(videoPath, ec) && !ec;
-	// best-effort - the sidecar not existing (or failing to delete) shouldn't make DeleteSegment
-	// itself report failure once the actual video file is gone.
+	// best-effort: a missing or undeletable sidecar does not make DeleteSegment report failure
 	std::filesystem::path sidecarPath = videoPath;
 	sidecarPath.replace_extension(".jsonl");
 	std::filesystem::remove(sidecarPath, ec);
@@ -93,18 +87,14 @@ void RecordSink::EnforceRetention()
 		if (!entry.is_regular_file() || entry.path().extension() != ".mp4") continue;
 		segments.push_back({ entry.path().filename().string(), entry.file_size(ec) });
 	}
-	// oldest first, so eviction below removes the oldest segment first - the reverse order
-	// ListSegments() itself returns.
+	// oldest first, so eviction removes the oldest segment first (reverse of ListSegments())
 	std::sort(segments.begin(), segments.end(), [](const SegmentInfo& a, const SegmentInfo& b) { return a.filename < b.filename; });
 
-	// totalSize covers every segment, including the current one - the folder-size cap is a real
-	// disk-usage bound, not just a bound on what's evictable.
+	// totalSize covers every segment, including the current one, so the folder-size cap bounds real disk usage
 	uintmax_t totalSize = 0;
 	for (const auto& s : segments) totalSize += s.size;
 
-	// never evict the segment currently being written - it's always the newest by construction
-	// (StartNewSegment already advanced m_SegmentIndex before this runs), so everything except
-	// the last entry after the ascending sort above is eligible, nothing more.
+	// never evict the segment being written: it is the last entry after the ascending sort
 	size_t evictableCount = segments.empty() ? 0 : segments.size() - 1;
 
 	size_t index = 0;
@@ -144,27 +134,16 @@ bool RecordSink::EnsureEncoderInitialized(int width, int height)
 	m_CodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
 	m_CodecContext->bit_rate = static_cast<int64_t>(m_Config.bitrateKbps) * 1000;
 	m_CodecContext->gop_size = m_Config.fps * 2;
-	// no B-frames, deliberately: this project's own MP4 muxing has to get DTS/PTS reordering
-	// right if it allows them, which is real additional correctness surface for a first pass -
-	// see RecordSink.h's own comment. Costs some compression efficiency versus a from-scratch
-	// tuned encoder, not correctness.
+	// no B-frames, so MP4 muxing needs no DTS/PTS reordering
 	m_CodecContext->max_b_frames = 0;
-	// MP4 always wants SPS/PPS in the stream's own extradata (the avcC box), not repeated in
-	// front of every keyframe the way a raw/RTP stream wants them - WebRTCSink never needs this
-	// flag since it never muxes a container at all.
+	// MP4 wants SPS/PPS in extradata (the avcC box), not repeated before every keyframe
 	m_CodecContext->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-	// "medium" (libx264's own default preset) rather than WebRTCSink's "ultrafast"/"zerolatency" -
-	// this is written once and re-watched/edited many times, not a live low-latency stream, so
-	// spending more CPU per frame for meaningfully better compression is the right tradeoff here.
+	// "medium" preset: compression matters more than latency for recorded footage
 	av_opt_set(m_CodecContext->priv_data, "preset", "medium", 0);
 
 	int openResult = avcodec_open2(m_CodecContext, codec, nullptr);
 	if (openResult < 0) {
-		// av_strerror, not just the bare negative code - "The encoder timebase is not set"
-		// (fps=0 reaching here, confirmed the hard way - see RecordSinkController.Create's own
-		// comment for the actual EmbedIO binding bug that caused it) would otherwise have shown
-		// up as nothing more than a bare "-22", not enough to diagnose without adding print
-		// statements by hand.
+		// av_strerror rather than the bare negative code, so failures are diagnosable
 		char errBuf[256] = {};
 		av_strerror(openResult, errBuf, sizeof(errBuf));
 		if (m_Logger) m_Logger->EnterLog(LogLevel::Error, "RecordSink: avcodec_open2 failed for " + m_Config.encoderName + ": " + errBuf + " (code " + std::to_string(openResult) + ")");
@@ -241,12 +220,8 @@ void RecordSink::StartNewSegment(int width, int height)
 void RecordSink::CloseCurrentSegment()
 {
 	if (m_FormatContext) {
-		// flush the encoder's own internal buffering before finalizing the container - libx264
-		// can hold frames in its own rate-control lookahead even with max_b_frames=0, and
-		// without an explicit flush (send a null frame, then drain every remaining packet)
-		// whatever frames were still inside the encoder when a segment rotated were silently
-		// lost - confirmed the hard way: a fresh segment's own telemetry sidecar (one line per
-		// real camera frame) had far more entries than the video's own encoded frame count.
+		// flush the encoder before finalising the container (send a null frame, drain every remaining packet):
+		// libx264 holds frames in its lookahead even with max_b_frames=0
 		avcodec_send_frame(m_CodecContext, nullptr);
 		AVPacket* packet = av_packet_alloc();
 		while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
@@ -266,15 +241,8 @@ void RecordSink::CloseCurrentSegment()
 	if (m_TelemetrySidecar.is_open()) {
 		m_TelemetrySidecar.close();
 	}
-	// Each segment is its own standalone MP4 with its own PTS timeline starting at 0 (see
-	// StartNewSegment's m_FrameCounter reset) - EnsureEncoderInitialized's own "already
-	// initialized at this size, skip" fast path exists to avoid needless per-frame churn WITHIN
-	// a segment, but reusing that SAME encoder instance ACROSS a segment boundary fed it PTS
-	// values going backwards relative to what it had already internally accumulated. Confirmed
-	// the hard way: this was worse than the missing flush above, not just additive - a second
-	// segment that reused the first one's still-live encoder lost the large majority of its
-	// frames, not just whatever was left in the lookahead buffer. Tearing the encoder down here
-	// means StartNewSegment's EnsureEncoderInitialized call always creates a genuinely fresh one.
+	// Each segment is a standalone MP4 with PTS starting at 0, so the encoder is torn down here and
+	// StartNewSegment creates a fresh one (a reused encoder would see PTS going backwards).
 	ShutdownEncoder();
 }
 
@@ -310,9 +278,7 @@ void RecordSink::EncodeAndWrite(const cv::Mat& bgrFrame, const SourceResult& res
 			{"producedTimeUs", result.producedTimeUs},
 			{"json", result.json.has_value() ? result.json.value() : nlohmann::json(nullptr)},
 		};
-		// flushed every line, not buffered - this sidecar is meant to be tailable/inspectable
-		// while a recording is still in progress, and the per-line cost is trivial next to the
-		// H.264 encode this already did above.
+		// flushed every line so the sidecar can be tailed while recording
 		m_TelemetrySidecar << record.dump() << "\n";
 		m_TelemetrySidecar.flush();
 	}
@@ -330,8 +296,7 @@ void RecordSink::Process(const std::vector<SourceResult>& results)
 
 void RecordSink::OnStopped()
 {
-	// ISink::Toggle(false) already joined the processing thread before calling this - Process()
-	// cannot be running concurrently, so this is safe without racing EncodeAndWrite's own writes.
+	// ISink::Toggle(false) has already joined the processing thread, so Process() cannot be running concurrently
 	std::lock_guard<std::mutex> lock(m_Mutex);
 	CloseCurrentSegment();
 }

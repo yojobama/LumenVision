@@ -20,8 +20,7 @@ namespace Server
             sinks = new List<Sink>();
         }
 
-        // Direct pass-through to the native, per-sink result JSON (fixed to actually work back
-        // in phase 2 - it used to return nullptr/GetStatus()'s hardcoded "").
+        // Returns the native per-sink result JSON.
         public string GetResult(int sinkId) => ManagerWrapper.Instance.GetSinkResult(sinkId);
         public string GetAllResults() => ManagerWrapper.Instance.GetAllSinkResults();
 
@@ -35,7 +34,7 @@ namespace Server
                 }
             }
 
-            return null; // or throw an exception if preferred
+            return null;
         }
 
         public int[] getAllSinkIds()
@@ -61,7 +60,7 @@ namespace Server
                 if (sink.Id == sinkId)
                 {
                     sink.Name = dstName;
-                    DB.Instance.Save(); // Save changes to the database
+                    DB.Instance.Save();
                     break;
                 }
             }
@@ -71,39 +70,29 @@ namespace Server
         {
             ManagerWrapper.Instance.DeleteSink(sinkId);
             sinks.RemoveAll(sink => sink.Id == sinkId);
-            DB.Instance.Save(); // Save changes to the database
+            DB.Instance.Save();
         }
 
         public int AddSink(string name, string type, int? id = null)
         {
-            // Normalize type to avoid case / typo issues
+            // Normalise the type name so matching is case-insensitive
             type = (type ?? string.Empty).Trim().ToLowerInvariant();
 
             if (id.HasValue)
             {
                 switch (type)
                 {
-                    // "apriltagsink" is what DB.Load() actually passes (SinkType.ApriltagSink.
-                    // ToString(), lowercased) - it was missing here entirely (the "ApriltagSink"
-                    // label above never matches anything post-ToLowerInvariant()), which meant
-                    // every plain ApriltagSink silently failed to come back after a restart -
-                    // confirmed the hard way while verifying ROADMAP.md Phase 7's pipeline
-                    // profiles, which reconstruct correctly regardless since ActivateProfile
-                    // creates its own sink directly rather than going through this switch, but a
-                    // profile-less ApriltagSink had no such path. "apriltag"/"apritlag" kept for
-                    // whatever REST callers already pass the short form.
+                    // "apriltagsink" is what DB.Load() passes (lower-cased SinkType.ApriltagSink);
+                    // "apriltag" and "apritlag" are accepted short forms.
                     case "apriltagsink":
                     case "apriltag":
-                    case "apritlag": // backward-compatibility for misspelling
+                    case "apritlag": 
                         id = ManagerWrapper.Instance.CreateApriltagDetector(id.Value);
                         sinks.Add(new Sink(id.Value, name, SinkType.ApriltagSink));
                         break;
                     case "objectdetectionsink":
                     case "ObjectDetectionSink":
-                        // unreachable in practice: the no-model CreateObjectDetectionSink overload
-                        // always throws (see its own comment) - a real ObjectDetectionSink can
-                        // only come from AddObjectDetectionSink/CreateOrReplaceDetectionSinkForProfile,
-                        // which resolve the provider from the model itself, not a hardcoded one.
+                        // Unreachable in practice: the no-model CreateObjectDetectionSink overload always throws.
                         id = ManagerWrapper.Instance.CreateObjectDetectionSink(ObjectDetectionProvider.ONNX, id.Value);
                         sinks.Add(new Sink(id.Value, name, SinkType.ObjectDetectionSink));
                         break;
@@ -120,11 +109,8 @@ namespace Server
                         id = ManagerWrapper.Instance.CreateDepthFusionNode(id.Value);
                         sinks.Add(new Sink(id.Value, name, SinkType.DepthFusionSink));
                         break;
-                    // StereoDepthSink is deliberately NOT restorable through this generic path -
-                    // same gap as WebRTCSink/NetworkTablesSink above: it needs a backend,
-                    // calibration result and depth range that this signature has no room for.
-                    // DB.Load() re-creating it as a no-op (id stays unset) matches those sinks'
-                    // existing behavior rather than introducing a new one.
+                    // StereoDepthSink is not restorable here: it needs a backend, calibration result and depth range
+                    // this signature cannot carry, so DB.Load() re-creates it as a no-op (id stays unset).
                 }
                 return id.GetValueOrDefault(-1);
             }
@@ -157,14 +143,12 @@ namespace Server
                         break;
                 }
 
-                DB.Instance.Save(); // Save changes to the database
+                DB.Instance.Save();
                 return id.GetValueOrDefault(-1);
             }
         }
 
-        // creates a CameraCalibrationSink with an explicit board configuration (checkerboard or
-        // ChArUco); AddSink(name, "cameracalibrationsink") still exists for the default 6x9/25mm
-        // checkerboard
+        // creates a CameraCalibrationSink with an explicit board configuration (checkerboard or ChArUco)
         public int AddCameraCalibrationSinkWithBoard(string name, CalibrationBoardType boardType, int rows, int cols,
             float squareSizeMeters, float markerSizeMeters = 0.018f, int arucoDictionaryId = 10)
         {
@@ -180,15 +164,13 @@ namespace Server
             return ManagerWrapper.Instance.GetCameraCalibrationResult(calibratorSinkId);
         }
 
-        // saves the checkerboard corners detected in a CameraCalibrationSink's latest frame, to be
-        // used later when computing the calibration result
+        // saves the checkerboard corners detected in the latest frame for the later calibration
         public bool SaveCameraCalibrationBoardDetection(int calibratorSinkId)
         {
             return ManagerWrapper.Instance.SaveCameraCalibrationBoardDetection(calibratorSinkId);
         }
 
-        // explicitly runs cv::calibrateCamera over every snapshot saved so far - the UI decides
-        // when this happens rather than it running implicitly on every result fetch
+        // runs cv::calibrateCamera over every saved snapshot
         public CameraCalibrationResult RunCameraCalibration(int calibratorSinkId)
         {
             var result = ManagerWrapper.Instance.RunCameraCalibration(calibratorSinkId);
@@ -215,11 +197,8 @@ namespace Server
             return id;
         }
 
-        // creates an ApriltagSink with an explicit backend selection (CPU or Vulkan) and no
-        // calibration data - use AddApriltagSinkFromCalibrator, or bind+calibrate afterwards,
-        // to get real-world pose. frameWidth/frameHeight are only a hint (0 is fine): a Vulkan
-        // detector sizes itself from its first real frame. nthreads/quadDecimate <= 0 mean "the
-        // backend's default"; see ApriltagTuning (LumenCore/IApriltagBackend.h).
+        // creates an ApriltagSink with an explicit backend (CPU or Vulkan) and no calibration data.
+        // frameWidth/frameHeight are a hint (0 is fine); nthreads/quadDecimate <= 0 mean the backend default (see ApriltagTuning).
         public int AddApriltagSinkWithBackend(string name, double tagSize, ApriltagBackendKind backend, int frameWidth, int frameHeight,
             int nthreads = 0, float quadDecimate = 0.0f, bool refineEdges = true)
         {
@@ -230,8 +209,7 @@ namespace Server
             return id;
         }
 
-        // the persisted record for an ApriltagSink, carrying the REQUESTED configuration so
-        // RestoreApriltagSink can recreate it identically after a restart (see Sink.ApriltagTagSize)
+        // the persisted record for an ApriltagSink, carrying the requested configuration for RestoreApriltagSink
         private static Sink NewApriltagSinkRecord(int id, string name, double tagSize, ApriltagBackendKind backend,
             int nthreads, float quadDecimate, bool refineEdges) =>
             new Sink(id, name, SinkType.ApriltagSink)
@@ -243,10 +221,7 @@ namespace Server
                 ApriltagRefineEdges = refineEdges,
             };
 
-        // DB.Load()'s restore path for an ApriltagSink saved with its configuration (see
-        // Sink.ApriltagTagSize) - recreates the detector at the same id with the same tag size,
-        // requested backend and tuning, instead of the generic AddSink path's default CPU
-        // detector. Sinks saved before these fields existed still go through AddSink.
+        // DB.Load() restore path: recreates the ApriltagSink at the same id with its saved tag size, backend and tuning
         public int RestoreApriltagSink(Sink persisted)
         {
             double tagSize = persisted.ApriltagTagSize ?? 0.1651;
@@ -260,33 +235,14 @@ namespace Server
             return id;
         }
 
-        // reports which backend an ApriltagSink actually ended up running - may differ from
-        // what was requested if Vulkan was asked for and no usable device was found
+        // reports the backend an ApriltagSink actually runs; may differ from the request if no usable Vulkan device was found
         public string GetApriltagBackendName(int sinkId)
         {
             return ManagerWrapper.Instance.GetApriltagDetectorBackendName(sinkId);
         }
 
-        // Switches an EXISTING ApriltagSink between CPU/Vulkan in place - ApriltagDetector::
-        // m_Backend has no setter (SWIG never exposed one, and the underlying backend object
-        // genuinely can't be swapped without reconstructing the detector - CpuApriltagBackend/
-        // VkApriltagBackend allocate their own detector state at construction), so this does the
-        // same tear-down/rebuild-preserving-id SourceManager.ActivateProfile already does for a
-        // Pipeline Profile's detector, but for a plain-created sink with no profile involved:
-        // reads the current tag size/calibration/driver mode/bindings back out via the new
-        // ApriltagDetector getters, deletes the sink, recreates it at the SAME id with the new
-        // backend, then re-establishes every binding that existed before. Previously the only
-        // way to change backend was to delete the sink and manually recreate every binding by
-        // hand - this is what the Inspector's own "Backend" control (on the sink itself, not
-        // just Pipeline Profiles) calls.
-        //
-        // nthreads/quadDecimate/refineEdges are genuinely user-adjustable (not hardcoded - see
-        // ApriltagTuning): when omitted, this carries forward the sink's CURRENT values (the
-        // requested ones persisted on the Sink record, else read back from the live detector
-        // before tearing it down) so a plain backend switch from the Inspector's "Backend"
-        // dropdown doesn't silently reset tuning the user already dialled in. Frame size is
-        // passed as 0x0 deliberately: a Vulkan detector sizes itself from its first real frame
-        // (previously this 0x0 silently turned every CPU->Vulkan switch into CPU).
+        // Switches an existing ApriltagSink between CPU/Vulkan by rebuilding it at the same id and re-establishing its bindings.
+        // nthreads/quadDecimate/refineEdges default to the sink's current values; frame size is 0x0 so a Vulkan detector sizes itself from its first frame.
         public void SetApriltagBackend(int sinkId, ApriltagBackendKind backend, int? nthreads = null, float? quadDecimate = null,
             bool? refineEdges = null)
         {
@@ -301,8 +257,7 @@ namespace Server
             int? upstreamSourceId = sink.Source?.Id;
             List<int> downstreamSinkIds = GetSinksBoundToSource(sinkId);
             string name = sink.Name;
-            // prefer the persisted REQUEST over the live read-back: a Vulkan detector reports its
-            // resolved integer decimation, and a sink that fell back to CPU reports CPU's values
+            // prefer the persisted request over the live read-back (which reports resolved or CPU-fallback values)
             int effectiveThreads = nthreads ?? sink.ApriltagThreads ?? ManagerWrapper.Instance.GetApriltagDetectorThreads(sinkId);
             float effectiveQuadDecimate = quadDecimate ?? sink.ApriltagQuadDecimate ?? ManagerWrapper.Instance.GetApriltagDetectorQuadDecimate(sinkId);
             bool effectiveRefineEdges = refineEdges ?? sink.ApriltagRefineEdges ?? ManagerWrapper.Instance.GetApriltagDetectorRefineEdges(sinkId);
@@ -321,10 +276,8 @@ namespace Server
             DB.Instance.Save();
         }
 
-        // creates a WebRTCSink; bind it (BindSourceToSink) to any single frame-producing node -
-        // a raw camera, or a detector's annotated output - to stream that stage. encoderName
-        // defaults to null (resolved to GetPreferredWebRTCEncoder() below), not a hardcoded
-        // "libx264" - see WebRTCSinkController.Create's own comment for why.
+        // creates a WebRTCSink; bind it to a frame-producing node to stream that stage.
+        // encoderName defaults to GetPreferredWebRTCEncoder().
         public int AddWebRTCSink(string name, int bitrateKbps = 4000, int fps = 30, string? encoderName = null)
         {
             int id = ManagerWrapper.Instance.CreateWebRTCSink(bitrateKbps, fps, encoderName ?? ManagerWrapper.Instance.GetPreferredWebRTCEncoder());
@@ -333,8 +286,7 @@ namespace Server
             return id;
         }
 
-        // ROADMAP.md Phase 8/E7: fallback preview stream simpler than WebRTCSink - see
-        // MjpegSink.h's own comment. jpegQuality is cv::IMWRITE_JPEG_QUALITY's own 0-100 scale.
+        // creates an MjpegSink (fallback preview stream); jpegQuality uses cv::IMWRITE_JPEG_QUALITY's 0-100 scale
         public int AddMjpegSink(string name, int jpegQuality = 80)
         {
             int id = ManagerWrapper.Instance.CreateMjpegSink(jpegQuality);
@@ -345,25 +297,14 @@ namespace Server
 
         public string GetMjpegFrameBase64(int sinkId) => ManagerWrapper.Instance.GetMjpegFrameBase64(sinkId);
 
-        // creates a RecordSink; bind it (BindSourceToSink) to any single frame-producing node -
-        // a raw camera, or a detector's annotated output - to record that stage to segmented MP4
-        // files plus a JSON-Lines telemetry sidecar per segment (see RecordSink.h's own comment).
-        // dstFolder is relative to the server's own working directory, matching ImageFileSource/
-        // VideoFileSource's "images/"/"videos/" convention - defaults to a name-derived folder
-        // under "recordings/" (not an id-derived one: the native id doesn't exist until AFTER
-        // CreateRecordSink runs, and the sink's own name is already known before that call).
+        // creates a RecordSink; bind it to a frame-producing node to record segmented MP4 files plus a JSON-Lines telemetry sidecar.
+        // dstFolder is relative to the working directory; defaults to a name-derived folder under "recordings/".
         public int AddRecordSink(string name, string? dstFolder = null, string? encoderName = null,
             int bitrateKbps = 8000, int fps = 30, int segmentSeconds = 300,
             long maxFolderSizeBytes = 0, int maxFileCount = 0)
         {
             string resolvedFolder = dstFolder ?? System.IO.Path.Combine("recordings", SanitizeFolderName(name));
-            // GetPreferredWebRTCEncoder() probes real hardware encoder availability (h264_rkmpp
-            // vs libx264) - despite its name it's not WebRTC-specific, it's just "the best H264
-            // encoder this ffmpeg build actually has" (same call WebRTCSinkController.cs already
-            // makes). Recording used to hardcode "libx264" unconditionally, so a match recording
-            // ran full software x264 even on boards with a working hardware encoder - confirmed
-            // live on the board: recording competed with vkapriltag detection for the same 4 A76
-            // cores (docs/PERFORMANCE_ANALYSIS.md's own §6 contention theory).
+            // GetPreferredWebRTCEncoder() returns the best H264 encoder this ffmpeg build has (h264_rkmpp or libx264); it is not WebRTC-specific.
             string resolvedEncoder = encoderName ?? ManagerWrapper.Instance.GetPreferredWebRTCEncoder();
             int id = ManagerWrapper.Instance.CreateRecordSink(resolvedFolder, resolvedEncoder, bitrateKbps, fps, segmentSeconds, maxFolderSizeBytes, maxFileCount);
             sinks.Add(new Sink(id, name, SinkType.RecordSink)
@@ -379,9 +320,7 @@ namespace Server
             return id;
         }
 
-        // a RecordSink's own dstFolder is a real filesystem path (see AddRecordSink's own
-        // comment) - a sink name is free-text from a REST caller, so this strips anything that
-        // isn't alphanumeric/dash/underscore before it becomes part of one.
+        // dstFolder is a filesystem path, so strip everything except alphanumerics, dash and underscore from the free-text name.
         private static string SanitizeFolderName(string name)
         {
             var sanitized = new System.Text.StringBuilder();
@@ -392,22 +331,11 @@ namespace Server
             return sanitized.Length > 0 ? sanitized.ToString() : "sink";
         }
 
-        // DB.Load()'s restore path - see its own comment on why RecordSink needs a dedicated
-        // restore call rather than going through AddSink's generic (name, type, id) switch: that
-        // signature has no room for RecordSink's own config (dstFolder/encoder/segment/retention),
-        // which must survive a restart for a recording actually to resume.
+        // DB.Load() restore path: RecordSink's config (dstFolder/encoder/segment/retention) does not fit AddSink's signature
         private readonly object _recordAllLock = new();
 
-        // "Record every camera" / "stop all recordings" - the one implementation behind both the
-        // webui's Match View button (POST /api/recordSink/all) and the robot's NT request
-        // (<root>/config/recording, applied by NetworkTablesControlService). Moved here from
-        // MatchPage.tsx, where it used to live in the browser only - robot code had no way to
-        // reach it. Starting: every source gets a RecordSink bound DIRECTLY to it (raw footage for
-        // match review, not a detector's annotated output), reusing an existing one if it already
-        // has one, else creating "<source name>-match". Stopping: every running RecordSink stops
-        // (finalizing its current segment - see RecordSink::OnStopped). Idempotent desired-state,
-        // and serialized: the NT poller and a REST call racing must not both create a sink for the
-        // same source. Returns how many RecordSinks are now running.
+        // Starts a RecordSink bound directly to every source (reusing an existing one, else creating "<source name>-match"), or stops all running RecordSinks.
+        // Idempotent and serialised so the NT poller and REST calls cannot create duplicates. Returns the number of running RecordSinks.
         public int SetAllRecording(bool enabled)
         {
             lock (_recordAllLock)
@@ -468,9 +396,7 @@ namespace Server
             return id;
         }
 
-        // filenames only, newest first - Server/Controllers/sinks/RecordSinkController.cs
-        // resolves these against this sink's own RecordDstFolder for download/promote/delete,
-        // never a caller-supplied path.
+        // filenames only, newest first; resolved against this sink's RecordDstFolder, never a caller-supplied path
         public List<string> GetRecordSinkSegments(int sinkId) =>
             ManagerWrapper.Instance.GetRecordSinkSegments(sinkId).ToList();
         public bool DeleteRecordSinkSegment(int sinkId, string filename) =>
@@ -483,10 +409,7 @@ namespace Server
         public bool IsWebRTCSinkConnected(int sinkId) => ManagerWrapper.Instance.IsWebRTCSinkConnected(sinkId);
         public string GetWebRTCSinkStatus(int sinkId) => ManagerWrapper.Instance.GetWebRTCSinkStatus(sinkId);
 
-        // creates an ObjectDetectionSink running a previously uploaded model. The provider
-        // (ONNX Runtime vs RKNN/NPU) is whatever ModelManager.AddModel decided from the
-        // uploaded file's own extension at upload time, not chosen here - there's no "same
-        // model, different backend" the way ApriltagDetector's CPU/Vulkan switch works.
+        // creates an ObjectDetectionSink running an uploaded model; the provider is fixed by ModelManager.AddModel from the file extension
         public int AddObjectDetectionSink(string name, int modelId)
         {
             var model = ModelManager.Instance.GetModel(modelId);
@@ -500,19 +423,11 @@ namespace Server
             return id;
         }
 
-        // which backend an existing ObjectDetectionSink is actually running - see
-        // ObjectDetectionSink::GetBackendName's own comment for why this is read-only.
+        // which backend an existing ObjectDetectionSink runs (read-only)
         public string GetObjectDetectionSinkBackendName(int sinkId) => ManagerWrapper.Instance.GetObjectDetectionSinkBackendName(sinkId);
 
-        // ROADMAP.md Phase 7 (pipeline profiles): (re)creates the one detection sink a
-        // PipelineProfile describes, applying every setting that has no live mutator on the
-        // native side (tag size, calibration, backend selection, model choice) at construction
-        // time and everything else (field layout, driver mode) via its own setter immediately
-        // after. When explicitId is set, creates at that exact id via the Manager overloads that
-        // accept one explicitly - used by SourceManager.ActivateProfile to preserve a source's
-        // ActiveDetectionSinkId across a profile switch, so nothing downstream needs rebinding
-        // by id (see that method's own comment on why bindings still need re-establishing even
-        // so - deleting the old sink at that id unbinds them natively regardless).
+        // (re)creates the detection sink a PipelineProfile describes: construction-time settings at creation, the rest via setters.
+        // explicitId creates it at that exact id (used by SourceManager.ActivateProfile).
         public int CreateOrReplaceDetectionSinkForProfile(string name, PipelineProfile profile, int? explicitId)
         {
             int id;
@@ -561,10 +476,7 @@ namespace Server
             return id;
         }
 
-        // every sink currently bound (as its source) to sourceId - used by
-        // SourceManager.ActivateProfile to find the downstream sinks (WebRTC preview,
-        // NetworkTablesSink, etc.) that were reading a detection sink's output before it gets
-        // torn down and recreated, so they can be rebound afterwards.
+        // every sink bound (as its source) to sourceId; used by SourceManager.ActivateProfile to rebind downstream sinks
         public List<int> GetSinksBoundToSource(int sourceId)
         {
             return sinks.Where(s => s.Source != null && s.Source.Id == sourceId).Select(s => s.Id).ToList();
@@ -600,7 +512,7 @@ namespace Server
             return ManagerWrapper.Instance.GetNetworkTablesSinkStatus(sinkId);
         }
 
-        // --- Stereo depth (phase 10) - see STEREO_IMPLEMENTATION_PLAN.md ---
+        // --- Stereo depth ---
 
         public int AddStereoCalibrationSink(string name)
         {
@@ -610,10 +522,7 @@ namespace Server
             return id;
         }
 
-        // explicit board config - default is a 6x9 checkerboard, 25mm squares, matching
-        // CreateStereoCalibrator()'s own native default (ChArUco isn't supported for stereo -
-        // see StereoCalibrator.h - so unlike CameraCalibrator there's no marker size/dictionary
-        // parameter here)
+        // explicit board config; defaults to a 6x9 checkerboard with 25mm squares (ChArUco is not supported for stereo)
         public int AddStereoCalibrationSinkWithBoard(string name, CalibrationBoardType boardType, int rows, int cols, float squareSizeMeters)
         {
             int id = ManagerWrapper.Instance.CreateStereoCalibrator(boardType, rows, cols, squareSizeMeters);
@@ -622,10 +531,7 @@ namespace Server
             return id;
         }
 
-        // binds the explicit left/right roles of a stereo sink (StereoCalibrationSink or
-        // StereoDepthSink) - ordinary BindSourceToSink is bind-order only and has no left/right
-        // notion at all, so getting the two backwards would silently flip the sign of every
-        // disparity (see BindStereoSources' own comment in Manager.h/IStereoRoleReceiver.h).
+        // binds the explicit left/right roles of a stereo sink; BindSourceToSink is bind-order only, and swapping them flips the disparity sign
         public void BindStereoSourcesToSink(int sinkId, int leftSourceId, int rightSourceId)
         {
             var sink = sinks.FirstOrDefault(s => s.Id == sinkId);
@@ -635,8 +541,7 @@ namespace Server
             {
                 Source? s = SourceManager.Instance.GetSourceById(sourceId);
                 if (s == null) {
-                    // dual-role sink acting as its own source - see BindSourceToSink's own
-                    // DualRoleSinkTypes comment
+                    // dual-role sink acting as its own source (see BindSourceToSink)
                     var sourceSink = sinks.FirstOrDefault(sk => sk.Id == sourceId && DualRoleSinkTypes.Contains(sk.Type));
                     if (sourceSink != null) s = new Source(sourceSink.Id, sourceSink.Name, SourceType.SinkOutput);
                 }
@@ -653,8 +558,7 @@ namespace Server
             sink.Source = left;
             sink.Source2 = right;
 
-            // same reasoning as BindSourceToSink: only a "real" SourceManager-tracked source has
-            // its own enable/disable lifecycle to kick off here
+            // only a SourceManager-tracked source has an enable/disable lifecycle to start here
             if (SourceManager.Instance.GetSourceById(leftSourceId) != null) SourceManager.Instance.EnableSourceById(leftSourceId);
             if (SourceManager.Instance.GetSourceById(rightSourceId) != null) SourceManager.Instance.EnableSourceById(rightSourceId);
 
@@ -673,9 +577,8 @@ namespace Server
         public void ClearStereoCalibrationPairs(int calibratorSinkId) =>
             ManagerWrapper.Instance.ClearStereoCalibrationPairs(calibratorSinkId);
 
-        // explicitly runs cv::stereoCalibrate + cv::stereoRectify over every pair saved so far,
-        // and persists the result (keyed by both cameras' device paths + resolution) if the
-        // sink is bound to two real camera sources.
+        // runs cv::stereoCalibrate + cv::stereoRectify over every saved pair and persists the result
+        // (keyed by both cameras' device paths + resolution) if the sink is bound to two real camera sources.
         public StereoCalibrationResult RunStereoCalibration(int calibratorSinkId)
         {
             var result = ManagerWrapper.Instance.RunStereoCalibration(calibratorSinkId);
@@ -686,9 +589,8 @@ namespace Server
         public StereoCalibrationResult GetStereoCalibrationResult(int calibratorSinkId) =>
             ManagerWrapper.Instance.GetStereoCalibrationResult(calibratorSinkId);
 
-        // creates a StereoDepthNode bound to nothing yet - bind its left/right sources with
-        // BindStereoSourcesToSink afterwards. `calibration` is normally the result of
-        // RunStereoCalibration/GetStereoCalibrationResult on a StereoCalibrationSink.
+        // creates a StereoDepthNode with nothing bound; bind its left/right sources with BindStereoSourcesToSink.
+        // `calibration` is normally the result of RunStereoCalibration/GetStereoCalibrationResult.
         public int AddStereoDepthSink(string name, StereoDepthBackendKind backend, StereoCalibrationResult calibration,
             double minDepthMeters, double maxDepthMeters, int maxSkewUs, StereoFrameOutput frameOutput)
         {
@@ -702,10 +604,8 @@ namespace Server
         public double GetStereoDepthValidFraction(int sinkId) => ManagerWrapper.Instance.GetStereoDepthValidFraction(sinkId);
         public double GetStereoDepthMedianDepthMeters(int sinkId) => ManagerWrapper.Instance.GetStereoDepthMedianDepthMeters(sinkId);
 
-        // creates a DepthFusionNode - bind the detector (ObjectDetectionSink/ApriltagSink) with
-        // the ordinary BindSourceToSink (it must itself be bound to the StereoDepthSink's own
-        // rectified-left frame output, not a raw camera - see DepthFusionNode.h), then attach
-        // the depth source separately via AttachDepthFusionSource.
+        // creates a DepthFusionNode; bind the detector with BindSourceToSink (it must consume the StereoDepthSink's rectified-left output),
+        // then attach the depth source with AttachDepthFusionSource.
         public int AddDepthFusionSink(string name)
         {
             int id = ManagerWrapper.Instance.CreateDepthFusionNode();
@@ -714,9 +614,7 @@ namespace Server
             return id;
         }
 
-        // attaches the StereoDepthSink a DepthFusionNode reads its depth grid from directly -
-        // not a normal bind (see DepthFusionNode.h: the full depth grid is never serialized
-        // through SourceResult/JSON, so this is a distinct, direct C++ reference).
+        // attaches the StereoDepthSink whose depth grid a DepthFusionNode reads through a direct C++ reference (not serialised via SourceResult)
         public void AttachDepthFusionSource(int fusionSinkId, int stereoDepthSinkId)
         {
             bool ok = ManagerWrapper.Instance.SetDepthFusionDepthNode(fusionSinkId, stereoDepthSinkId);
@@ -765,8 +663,6 @@ namespace Server
                     SourceManager.Instance.DisableSourceById(source.Id);
                 }
             }
-            // Logic to stop a sink by its ID
-            // This could involve finding the sink in the sinks list and stopping it.
         }
 
         // start sink by id
@@ -808,19 +704,14 @@ namespace Server
                 {
                     ManagerWrapper.Instance.UnbindSourceFromSink(sinkId);
                     sink.Source = null; // Unbind the source
-                    DB.Instance.Save(); // Save changes to the database
+                    DB.Instance.Save();
                     break;
                 }
             }
         }
 
-        // ApriltagSink, ObjectDetectionSink and CameraCalibrationSink are dual-role: natively
-        // registered as both a sink AND a source (see the m_Sources.emplace calls alongside
-        // m_Sinks.emplace in Manager.cpp's CreateApriltagDetector/CreateObjectDetectionSink/
-        // CreateCameraCalibrator), so their own id is a perfectly valid bind target for e.g. a
-        // WebRTCSink wanting to preview a detector's annotated output. SourceManager's C# source
-        // list never tracked these though - only real camera/video/image sources - so binding to
-        // one used to look up a null Source here and NullReferenceException on the line below.
+        // ApriltagSink, ObjectDetectionSink and CameraCalibrationSink are dual-role (natively both sink and source), so their id is a valid bind target,
+        // but SourceManager's C# source list does not track them, so the source lookup yields null.
         private static readonly HashSet<SinkType> DualRoleSinkTypes = new HashSet<SinkType> {
             SinkType.ApriltagSink, SinkType.ObjectDetectionSink, SinkType.CameraCalibrationSink,
             SinkType.StereoCalibrationSink, SinkType.StereoDepthSink, SinkType.DepthFusionSink
@@ -843,11 +734,9 @@ namespace Server
 
                     sink.Source = source;
                     ManagerWrapper.Instance.BindSourceToSink(sourceId, sinkId);
-                    // Only a "real" SourceManager-tracked source has its own enable/disable
-                    // lifecycle to kick off here - a dual-role sink's underlying node is already
-                    // started/stopped via its own Enabled toggle (EnableSinkById), not this one.
+                    // Only a SourceManager-tracked source has an enable/disable lifecycle here; a dual-role sink is toggled via EnableSinkById.
                     if (isRealSource) SourceManager.Instance.EnableSourceById(source.Id);
-                    DB.Instance.Save(); // Save changes to the database
+                    DB.Instance.Save();
                     break;
                 }
             }

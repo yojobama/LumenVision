@@ -7,13 +7,8 @@ import type { RecordSegment } from '../types';
 
 const api = new ApiService();
 
-// Every RecordSink's segments in one place - the Inspector's own "Recording" section (per-node,
-// see Inspector.tsx) is where a recording actually gets started/stopped, but segments accumulate
-// across many sinks/sessions over time, and re-selecting each camera node one at a time in the
-// graph just to find "that clip from yesterday's scrimmage" doesn't scale. Driven by the same
-// /ws/state snapshot every other live view already uses (see MatchPage's own comment on why),
-// plus a per-sink REST fetch for the actual segment listing (not something the WS snapshot
-// carries - segment files aren't part of pipeline topology).
+// Every RecordSink's segments in one place: snapshot from /ws/state, segment listing per sink
+// via REST.
 export const RecordingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error' | 'info') => void }> = ({ onToast }) => {
   const { snapshot, connected } = useStateSocket();
   const [segmentsBySink, setSegmentsBySink] = useState<Record<number, RecordSegment[]>>({});
@@ -35,8 +30,7 @@ export const RecordingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'err
 
   useEffect(() => {
     refresh();
-    // re-fetch whenever the set of RecordSinks changes (one created/deleted) or any of their
-    // running states flip (a segment finalizes on stop, a new one appears on start).
+    // re-fetch when the RecordSinks or their running states change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordSinkIds, recordSinks.map(s => s.IsRunning).join(',')]);
 

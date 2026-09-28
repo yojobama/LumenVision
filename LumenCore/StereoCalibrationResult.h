@@ -3,15 +3,11 @@
 #include "CameraCalibrationResult.h"
 #include <vector>
 
-// SWIG-safe, same discipline as CameraCalibrationResult.h: plain doubles and vector<double>, no
-// cv:: types. StereoCalibrator.h (which produces this) pulls in
-// <opencv2/objdetect/charuco_detector.hpp> and must never reach swig.i, but this result type is
-// exactly the kind of thing the WebUI/NT4/downstream nodes need in hand, so it lives in its own
-// header the way CameraCalibrationResult already does.
+// SWIG-safe like CameraCalibrationResult.h: plain doubles and vector<double>, no cv:: types
+// (StereoCalibrator.h must not reach swig.i).
 class StereoCalibrationResult {
 public:
-	// per-eye intrinsics + distortion, from cv::stereoCalibrate (or two prior CameraCalibrator
-	// runs, if CALIB_FIX_INTRINSIC was used - see StereoCalibrator::RunCalibration)
+	// per-eye intrinsics + distortion, from cv::stereoCalibrate (or two prior CameraCalibrator runs with CALIB_FIX_INTRINSIC)
 	CameraCalibrationResult left;
 	CameraCalibrationResult right;
 
@@ -32,9 +28,8 @@ public:
 	std::vector<double> Q;
 
 	double stereoRms = 0.0;       // cv::stereoCalibrate's own return value
-	// mean |y_left - y_right| over the saved corner sets, pushed through the rectification maps -
-	// the number that actually predicts codec-stereo density/validity (it gates blocks on |dy|),
-	// NOT stereoRms. Gate real use at < 0.5px; see STEREO_IMPLEMENTATION_PLAN.md ss10.2.
+	// mean |y_left - y_right| over the saved corner sets after rectification; predicts codec-stereo validity better
+	// than stereoRms (blocks are gated on |dy|). Gate real use at < 0.5px.
 	double epipolarRms = 0.0;
 	double baselineMeters = 0.0;  // norm(T)
 	double rectifiedFx = 0.0;     // P1[0] - the focal length codec-stereo's disparity->depth math needs
@@ -43,11 +38,8 @@ public:
 	int imageWidth = 0;
 	int imageHeight = 0;
 
-	// cv::stereoRectify's validPixROI1/2 - the sub-rectangle of the (alpha=0, already-cropped-
-	// to-valid) rectified image that's actually guaranteed pixel-valid. StereoDepthNode crops to
-	// the intersection of these (then rounds down to its backend's block size) rather than the
-	// full rectified frame, so a motion-vector backend never gets to match against a black or
-	// otherwise meaningless border - see STEREO_IMPLEMENTATION_PLAN.md ss10.3.
+	// cv::stereoRectify's validPixROI1/2: the sub-rectangle of the rectified image that is pixel-valid;
+	// StereoDepthNode crops to their intersection
 	int roiLeftX = 0, roiLeftY = 0, roiLeftW = 0, roiLeftH = 0;
 	int roiRightX = 0, roiRightY = 0, roiRightW = 0, roiRightH = 0;
 

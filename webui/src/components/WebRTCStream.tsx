@@ -22,14 +22,8 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  // a ref, not useState: the effect below closes over this value only once, at mount, so a
-  // peerConnection stored via setState would forever read back as the initial `null` inside the
-  // cleanup closure - confirmed the hard way, this meant unmounting (e.g. closing Inspector's
-  // side panel) never actually closed the RTCPeerConnection at all. The zombie connection kept
-  // negotiating/timing out in the background and its onconnectionstatechange handler - still a
-  // live closure referencing this component's onError - fired minutes later, well after the
-  // component was gone, tripping StreamView's WebRTC-failed fallback and spawning a brand new
-  // MjpegSink that nothing then ever cleaned up either.
+  // a ref, not state: the mount-time effect's cleanup closure would otherwise read a stale null
+  // and never close the peer connection
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const api = new ApiService();
 
@@ -45,12 +39,7 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
     try {
       setConnectionState('connecting');
 
-      // No public STUN server by default - this stream is between the browser and a coprocessor
-      // on the same LAN (a pit/venue network), which doesn't need NAT traversal, and "fully
-      // offline, venue WiFi is hostile" (ROADMAP.md Phase 8) rules out depending on reaching the
-      // public internet for every preview to connect. iceServers stays empty rather than
-      // hardcoded to a specific public server; a future settings-driven override can populate it
-      // for the rare cross-network setup that genuinely needs one.
+      // No STUN server: the browser and coprocessor share a LAN, so no NAT traversal is needed.
       const config: RTCConfiguration = { iceServers: [] };
 
       const pc = new RTCPeerConnection(config);
@@ -70,16 +59,8 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
         }
       };
 
-      // WebRTCSink uses non-trickle ICE on LumenVision's side (see WebRTCSinkController) - it gathers
-      // its own candidates internally before ever returning an offer. The browser's candidates
-      // still trickle one at a time here, starting as soon as setLocalDescription() is called
-      // below - which is BEFORE the answer has been POSTed to the server. Sending a candidate
-      // ahead of the answer isn't just late, it crashes the whole server process: libdatachannel
-      // throws if a remote candidate arrives before the remote description is set, and that
-      // exception was crossing the P/Invoke boundary uncaught (confirmed the hard way - fixed
-      // server-side too in WebRTCSink::AddIceCandidate, but there's no reason to rely on that as
-      // the only guard). Buffer every candidate here and only flush them once the answer POST
-      // has actually completed.
+      // The server uses non-trickle ICE, and libdatachannel throws if a remote candidate arrives
+      // before the answer, so buffer candidates and flush them after the answer POST completes.
       let answerSent = false;
       const pendingCandidates: RTCIceCandidate[] = [];
       pc.onicecandidate = async (event) => {
@@ -95,8 +76,7 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
         }
       };
 
-      // getWebRTCOffer blocks briefly server-side for its own ICE gathering, then returns a
-      // plain SDP string (not a JSON envelope) - see WebRTCSinkController.CreateOffer.
+      // getWebRTCOffer returns a plain SDP string (not JSON) after server-side ICE gathering
       const offerSdp = await api.getWebRTCOffer(sinkId);
       await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
       const answer = await pc.createAnswer();
@@ -118,9 +98,7 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
   };
 
   const stopStream = () => {
-    // No server-side "stop" endpoint exists for a WebRTCSink (see WebRTCSinkController) -
-    // closing the local RTCPeerConnection is all a viewer needs to do; the sink itself keeps
-    // running until its own toggle/delete is used.
+    // No server-side stop endpoint exists; closing the local peer connection is sufficient.
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     onStop();

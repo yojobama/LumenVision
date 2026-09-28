@@ -3,9 +3,8 @@
   Builds and deploys LumenVision to the Orange Pi.
 
 .DESCRIPTION
-  Run this FROM WINDOWS after Visual Studio has already built LumenCore for ARM64 (Release, via
-  the Remote_GCC toolset - F5/Build on that configuration puts libLumenCore.so on the Pi already,
-  under RemoteRootDir/LumenCore/bin/ARM64/Release/ by default). This script:
+  Run from Windows after libLumenCore.so has been built for ARM64 on the Pi (Visual Studio
+  Remote_GCC build). This script:
     1. Publishes Server self-contained for linux-arm64 (so the Pi needs no .NET install at all)
     2. Builds the WebUI (webui) and folds it into the publish output's wwwroot
     3. Copies both, plus the already-built libLumenCore.so, to /opt/lumenvision on the Pi
@@ -16,15 +15,13 @@
 .PARAMETER PiUser
   SSH user on the Pi.
 .PARAMETER RemoteRootDir
-  Must match LumenCore/Local.props' RemoteRootDir for the ARM64 platform - where Visual Studio's
-  Remote_GCC toolset put the built libLumenCore.so.
+  Directory on the Pi that holds the remote build (LumenCore/bin/ARM64/<config>/libLumenCore.so).
 .PARAMETER SkipWebUI
   Skip building/deploying the WebUI (useful when only the server changed).
 .PARAMETER PurgeOldInstall
-  Archive an existing /opt/lumenvision (to /opt/lumenvision.bak-<date>) before deploying, instead
-  of deploying on top of it. Off by default: a normal deploy only overwrites the published
-  server/WebUI output, never calibrations.json/stereoCalibrations.json/data.json, which also
-  live in that directory.
+  Archive an existing /opt/lumenvision to /opt/lumenvision.bak-<date> before deploying. By
+  default a deploy only overwrites the published output, keeping calibrations.json,
+  stereoCalibrations.json and data.json.
 
 .EXAMPLE
   ./scripts/deploy.ps1 -PiHost 192.168.55.139 -PiUser photon
@@ -84,14 +81,6 @@ if ($PurgeOldInstall) {
     Write-Host "==> Archiving existing $remoteDeployDir" -ForegroundColor Cyan
     Invoke-Remote "test -d $remoteDeployDir && sudo mv $remoteDeployDir ${remoteDeployDir}.bak-`$(date +%F) || true"
 }
-
-# Renaming the systemd unit (frcv.service -> lumenvision.service) without also disabling and
-# removing the OLD one would leave it enabled with Restart=always, still holding the web port (8175 then, 5800 now), on
-# any Pi that was ever deployed to under the old name - the new unit would then start alongside
-# it (or fail to bind the port) with no obvious cause. Idempotent: safe to run against a Pi that
-# never had the old unit installed at all (each command's failure is swallowed by `|| true`).
-Write-Host "==> Removing any old frcv.service (renamed to lumenvision.service)" -ForegroundColor Cyan
-Invoke-Remote "sudo systemctl disable --now frcv >/dev/null 2>&1 || true; sudo rm -f /etc/systemd/system/frcv.service; sudo systemctl daemon-reload; sudo systemctl reset-failed frcv >/dev/null 2>&1 || true"
 
 Write-Host "==> Copying published server to $PiUser@$PiHost`:$remoteDeployDir" -ForegroundColor Cyan
 Invoke-Remote "sudo mkdir -p $remoteDeployDir && sudo chown ${PiUser}:${PiUser} $remoteDeployDir"

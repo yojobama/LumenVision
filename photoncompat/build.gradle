@@ -1,35 +1,18 @@
-// org.lumenvision:photoncompat-java - the NT4 client library robot code uses to read a
-// LumenVision coprocessor's AprilTag/object-detection results (org.lumenvision.photoncompat.*).
-// Published as a real FRC vendor library (see photoncompat/vendordep-template.json) rather than
-// living as plain source inside robot/, so a team consuming LumenVision doesn't need this repo
-// checked out at all - they add photoncompat.json to their own project's vendordeps/ the same
-// way they'd add PhotonLib.
-//
-// Deliberately a plain "java-library" module, NOT a GradleRIO project - it depends only on
-// WPILib's own published Maven artifacts (wpimath/ntcore/wpiutil), reachable from any ordinary
-// Gradle repository declaration, so it needs none of GradleRIO's RoboRIO-deploy-target machinery
-// (see robot/build.gradle for that side of this repo). robot/ itself consumes this module the
-// same way any other FRC team's project would: via robot/vendordeps/photoncompat.json, not a
-// same-Gradle-project source dependency - real end-to-end proof the published artifact actually
-// resolves and works, not just a compile-time convenience.
+// org.lumenvision:photoncompat-java - NT4 client library robot code uses to read a LumenVision
+// coprocessor's AprilTag/object-detection results. A plain java-library module (not GradleRIO),
+// published as an FRC vendor library (photoncompat/vendordep-template.json); robot/ consumes it via
+// robot/vendordeps/photoncompat.json.
 plugins {
     id "java-library"
     id "maven-publish"
 }
 
 group = "org.lumenvision"
-// Real releases set this via `-PphotoncompatVersion=X.Y.Z` (the CI release workflow, driven by
-// the pushed tag - see .github/workflows/release.yml). A local/manual build without that
-// property gets an unmistakably-not-a-release placeholder rather than silently defaulting to
-// something that could be confused for a real version.
+// Set with `-PphotoncompatVersion=X.Y.Z` in release builds; local builds get a placeholder
 version = project.hasProperty("photoncompatVersion") ? project.photoncompatVersion : "0.0.0-local"
 
-// Baked into the jar as a classpath resource so LumenVersionCheck can compare it, at runtime,
-// against the coprocessor's own ".version" NT4 topic (NetworkTablesSink.cpp) - the same
-// mismatch-detection idea photonlib's own PhotonCamera already does against PhotonVision's
-// backend version. src/main/resources/photoncompat-version.properties is a TEMPLATE (literally
-// contains the text "${version}"), not the real file - processResources' expand() below is what
-// substitutes this build's actual `version` into it before it lands in the built jar.
+// Baked into the jar so LumenVersionCheck can compare it with the coprocessor's ".version" NT4 topic;
+// the resource file is a template whose ${version} is expanded here
 processResources {
     filesMatching("photoncompat-version.properties") {
         expand(version: project.version.toString())
@@ -47,49 +30,25 @@ repositories {
     maven { url = "https://frcmaven.wpi.edu/artifactory/release/" }
 }
 
-// Must track robot/build.gradle's own GradleRIO version (robot/.wpilib/wpilib_preferences.json's
-// projectYear) - there's no single shared source of truth between a GradleRIO-plugin project and
-// a plain java-library one, so this is kept in step by hand across both season upgrades.
+// Must match the GradleRIO version in robot/.wpilib/wpilib_preferences.json
 ext.wpilibVersion = "2026.2.1"
 
 dependencies {
-    // WPILib's own published POMs are intentionally bare (no transitive dependency info -
-    // confirmed against the real installed 2026.2.1 maven cache: wpimath-java's .pom declares
-    // no <dependencies> at all). GradleRIO's wpi.java.deps.wpilib() helper works around this by
-    // adding each artifact explicitly rather than relying on POM resolution; this plain
-    // java-library module (which doesn't have that helper available) does the same by hand.
-    //
-    // api, not implementation: photoncompat's own public API returns WPIMath geometry types
-    // (Pose2d/Pose3d/Transform2d/Transform3d/...) and NetworkTables types directly (see
-    // LumenUtils/LumenCamera/LumenTrackedTarget) - a consumer needs these on ITS OWN compile
-    // classpath too, which only `api` (not `implementation`) propagates transitively.
+    // WPILib's published POMs declare no dependencies, so each artifact is listed explicitly.
+    // api: the public API exposes WPIMath geometry and NetworkTables types to consumers.
     api "edu.wpi.first.wpimath:wpimath-java:${wpilibVersion}"
     api "edu.wpi.first.ntcore:ntcore-java:${wpilibVersion}"
     implementation "edu.wpi.first.wpiutil:wpiutil-java:${wpilibVersion}"
-    // DriverStation.reportWarning - the ".version" mismatch check (LumenVersionCheck) reports
-    // through it, matching how photonlib's own PhotonCamera reports a backend version mismatch.
-    // implementation, not api: consumers see this only as a warning that shows up on the driver
-    // station, never as a type in photoncompat's own public method signatures.
+    // DriverStation.reportWarning is used by LumenVersionCheck; implementation since it is not in the public API
     implementation "edu.wpi.first.wpilibj:wpilibj-java:${wpilibVersion}"
-    // wpimath's own compiled classes (Pose3d and friends) reference edu.wpi.first.units.measure
-    // types even though photoncompat's own source never imports them directly - javac still
-    // needs them resolvable, confirmed the hard way (compile failed without this).
+    // wpimath classes reference edu.wpi.first.units.measure types, which javac must resolve
     implementation "edu.wpi.first.wpiunits:wpiunits-java:${wpilibVersion}"
     implementation "org.ejml:ejml-simple:0.44.0"
-    // wpimath's Jackson-annotated classes need this resolvable at runtime, not just compile time
-    // (struct/protobuf schema reflection) - same "wpimath's own bare POM doesn't declare it"
-    // reasoning as everything else in this block. jackson-core/-databind, not just -annotations:
-    // RuntimeLoader (used by ntcore's own JNI loader, NetworkTablesJNI's static initializer)
-    // needs com.fasterxml.jackson.core.type.TypeReference from jackson-core specifically -
-    // confirmed the hard way (NoClassDefFoundError touching any real NT4 API, ntcore-java's own
-    // pure-Java entry point, the moment a test actually constructed a NetworkTableInstance rather
-    // than just compiling against its types).
+    // Needed at runtime by wpimath (Jackson annotations) and by ntcore's RuntimeLoader (jackson-core TypeReference)
     implementation "com.fasterxml.jackson.core:jackson-annotations:2.19.2"
     implementation "com.fasterxml.jackson.core:jackson-core:2.19.2"
     implementation "com.fasterxml.jackson.core:jackson-databind:2.19.2"
-    // Translation2d/Translation3d's static initializers build a QuickBuffers protobuf schema for
-    // NT4 struct serialization - confirmed the hard way (NoClassDefFoundError at class-init time,
-    // not just on first real use, so this is unconditionally required, not an optional feature).
+    // Translation2d/Translation3d static initialisers build a QuickBuffers protobuf schema
     implementation "us.hebi.quickbuf:quickbuf-runtime:1.4"
 
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.1"
@@ -108,9 +67,7 @@ publishing {
         }
     }
     repositories {
-        // CI copies this directory's contents into the gh-pages branch after a release build -
-        // see .github/workflows/release.yml. Not a real remote publish target; kept local so a
-        // plain `./gradlew photoncompat:publish` run (CI or manual) never needs credentials.
+        // Local repository; CI copies it into gh-pages (see .github/workflows/release.yml)
         maven {
             name = "local"
             url = layout.buildDirectory.dir("maven-repo")

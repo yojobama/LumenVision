@@ -9,9 +9,8 @@ using namespace apriltag_vulkan;
 
 uint32_t VkApriltagBackend::ResolveDecimation(float requested, int frameWidth, int frameHeight)
 {
-	// <= 0: DetectorConfig's own default (2, this pipeline's original fixed behaviour). The GPU
-	// pipeline only does integer "one representative pixel per NxN block" decimation - no
-	// upstream-style 1.5x blend path - so a fractional request rounds.
+	// <= 0: DetectorConfig's default (2). The GPU pipeline only supports integer decimation (one representative
+	// pixel per NxN block), so a fractional request rounds.
 	long d = requested > 0.0f ? std::lround(requested) : 2;
 	if (d < 1) d = 1;
 	while (d > 1 && (frameWidth % d != 0 || frameHeight % d != 0)) d--;
@@ -30,9 +29,8 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	m_Family = tag36h11_create();
 	m_Detector = apriltag_detector_create();
 	apriltag_detector_add_family(m_Detector, m_Family);
-	// set explicitly, never left to apriltag_detector_create(): it defaults refine_edges to TRUE
-	// (apriltag.c), while TagDecoder's own header describes it as defaulting to false - trusting
-	// either would make this knob's effect depend on which one is right.
+	// set explicitly rather than left to apriltag_detector_create(), whose refine_edges default (TRUE) differs from
+	// TagDecoder's documented default (false)
 	m_Detector->refine_edges = tuning.refineEdges;
 
 	m_Decimation = ResolveDecimation(tuning.quadDecimate, frameWidth, frameHeight);
@@ -46,24 +44,14 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	config.tag_width = static_cast<uint32_t>(m_Family->width_at_border);
 	config.reversed_border = m_Family->reversed_border;
 	config.normal_border = !m_Family->reversed_border;
-	// DetectorConfig's own default (0) resolves to std::thread::hardware_concurrency() inside the
-	// library - every core on this 4xA76+4xA55 chip, including the 4 slow A55s, for a workload
-	// that's GPU-bound with a genuinely small CPU tail (the library's own measurements: ~1.3ms at
-	// 1280x800 - docs/PERFORMANCE_ANALYSIS.md's own §4). Defaulting to a fixed 4 instead avoids
-	// spawning threads onto the A55 cluster at all (this project doesn't pin vkapriltag's own
-	// worker pool to specific cores - a separate, deferred concern - just avoids asking for more
-	// threads than the workload can use). QuadDecode's pool is sized once at construction (see
-	// its own header comment - no live resize), so changing this requires rebuilding the backend,
-	// same as switching CPU<->Vulkan already does. Still fully overridable per sink via
-	// ApriltagTuning.nthreads (REST/webui), same as before.
+	// 4 threads by default rather than hardware_concurrency() (GPU-bound with a small CPU tail); QuadDecode's pool is
+	// fixed at construction, so changing this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
 	config.cpu_threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
 
 	m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, config);
 	m_QuadDecode = std::make_unique<QuadDecode>(config);
-	// TagDecoder must be told the SAME decimation the GPU pass used: refine_edges derives its
-	// per-edge search radius from it (TagDecoder sets td->quad_decimate on our behalf). kExact is
-	// bit-identical to upstream's refine_edges, just without the libm modf() call - and
-	// APRILTAG_VK_REFINE can still override it at runtime for benchmarking.
+	// TagDecoder must be told the same decimation as the GPU pass: refine_edges derives its per-edge search radius from it.
+	// kExact matches upstream's refine_edges without libm modf(); APRILTAG_VK_REFINE overrides it at runtime.
 	m_TagDecoder = std::make_unique<TagDecoder>(m_Detector, m_Decimation, config.cpu_threads,
 		RefineEdgesMethod::kExact);
 }

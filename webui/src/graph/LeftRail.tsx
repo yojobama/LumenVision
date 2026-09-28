@@ -12,10 +12,8 @@ const api = new ApiService();
 
 type SectionKey = 'profiles' | 'cameras' | 'models' | 'calibrations' | 'logs';
 
-// ROADMAP.md Phase 8/E6: left navigation rail for the graph page - Profiles · Cameras · Models
-// · Calibrations · Logs · Settings. Each data section fetches lazily on first expand rather than
-// all six polling continuously whether visible or not; Settings is a plain route link since it
-// already has its own full page.
+// Left navigation rail: Profiles, Cameras, Models, Calibrations, Logs, Settings. Data sections
+// fetch lazily on first expand; Settings links to its own page.
 export const LeftRail: React.FC<{ snapshot: StateSnapshot | null; onToast: (m: string, t: 'success' | 'error' | 'info') => void }> = ({ snapshot, onToast }) => {
   const [open, setOpen] = React.useState<SectionKey | null>('cameras');
 

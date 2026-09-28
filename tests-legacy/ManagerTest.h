@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/Manager.h"
+#include "../LumenCore/Manager.h"
 
 class ManagerTest : public UnitTestBase {
 public:

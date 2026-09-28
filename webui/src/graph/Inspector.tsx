@@ -14,10 +14,8 @@ const PIXEL_FORMAT_NAMES = ['BGR24', 'RGB24', 'GRAY8', 'NV12', 'YUYV', 'MJPEG', 
 const modeLabel = (m: CameraMode) => `${m.Width}x${m.Height} @ ${m.Fps}fps (${PIXEL_FORMAT_NAMES[m.PixelFormat] ?? m.PixelFormat})`;
 const modeKey = (m: CameraMode) => `${m.Width}x${m.Height}x${m.Fps}x${m.PixelFormat}`;
 
-// ROADMAP.md Phase 8c: right-hand inspector on node selection - live parameters, a live
-// preview (reusing StreamView.tsx's WebRTC-with-MJPEG-fallback logic as-is), the node's latest result JSON,
-// and FPS/latency/backend already shown on the node card itself. Node creation/connection stay
-// on the canvas (GraphPage); this panel is for configuring and observing a node once it exists.
+// Right-hand inspector for the selected node: live parameters, preview, latest result JSON and
+// controls. Node creation and connection happen on the canvas.
 export const Inspector: React.FC<{
   node: PipelineNode;
   onClose: () => void;
@@ -34,9 +32,7 @@ export const Inspector: React.FC<{
   const [promotingSegment, setPromotingSegment] = useState<string | null>(null);
   const [newProfileName, setNewProfileName] = useState('');
   const [newProfileTagSize, setNewProfileTagSize] = useState(0.1651);
-  // 0 = CPU (apriltag), 1 = Vulkan (vkapriltag) - matches AddSinkModal's own convention. Used
-  // both for the profile-creation dropdown below and the sink's own "Backend" control further
-  // down (SinkManager.SetApriltagBackend rebuilds the sink in place to apply it).
+  // 0 = CPU (apriltag), 1 = Vulkan (vkapriltag)
   const [newProfileBackend, setNewProfileBackend] = useState(0);
   const [cameraModes, setCameraModes] = useState<CameraMode[]>([]);
   const [currentMode, setCurrentMode] = useState<CameraMode | null>(null);
@@ -47,10 +43,8 @@ export const Inspector: React.FC<{
   const [cameraControls, setCameraControls] = useState<CameraControls | null>(null);
   const [sinkBackend, setSinkBackend] = useState<number | null>(null);
   const [switchingBackend, setSwitchingBackend] = useState(false);
-  // threads/quadDecimate/refineEdges are genuinely user-adjustable (see ApriltagTuning in
-  // LumenCore/IApriltagBackend.h). Both backends support all three now - Vulkan's decimation is
-  // an integer that has to divide the frame size, so the server reports back the value it
-  // actually runs.
+  // threads/quadDecimate/refineEdges are user-adjustable; Vulkan decimation is an integer that must
+  // divide the frame size, so the server reports the value it actually runs.
   const [threadsValue, setThreadsValue] = useState(0);
   const [quadDecimateValue, setQuadDecimateValue] = useState(0);
   const [quadDecimateSupported, setQuadDecimateSupported] = useState(true);
@@ -70,18 +64,11 @@ export const Inspector: React.FC<{
   const source = kind === 'source' ? (raw as WsSource) : null;
   const sink = kind === 'sink' ? (raw as WsSink) : null;
   const isCamera = source != null && source.Type === 0;
-  // Live Preview binds a WebRTCSink to whichever node is currently selected - a raw Source (to
-  // preview a camera before any detector is attached to it) or a Sink's own output, exactly like
-  // BottomStrip's thumbnails and model.ts's webrtcSink/nt4Sink/mjpegSink badge lookups already
-  // treat both uniformly. Previously hardcoded to `sink` only, so a Source node's Inspector never
-  // even rendered the Live Preview section.
+  // Live Preview binds a WebRTCSink to the selected node, whether a Source or a Sink output.
   const previewTarget = sink ?? source;
 
-  // Modes/current mode aren't in the /ws/state snapshot (they're a live device query, not
-  // pipeline state), so this needs its own fetch - only for camera sources, only once per
-  // selected node rather than on every WS tick. Calibration status (ROADMAP.md Phase 8/E5)
-  // rides along on the same fetch - it's the exact same "not part of pipeline state, only a
-  // camera source has one" shape.
+  // Modes, controls and calibration status are not in the /ws/state snapshot, so fetch them once
+  // per selected camera source.
   useEffect(() => {
     if (!isCamera || !source) return;
     let cancelled = false;
@@ -93,8 +80,7 @@ export const Inspector: React.FC<{
         setCalibrationStatus(calibration);
       })
       .catch(() => { if (!cancelled) onToast('Failed to load camera modes', 'error'); });
-    // separate from the batch above: an older server without /controls must not take the mode
-    // picker down with it - the inputs just stay unbounded then
+    // separate from the batch above so a server without /controls still shows the mode picker
     api.getCameraControls(source.Id)
       .then(controls => {
         if (cancelled) return;
@@ -114,8 +100,7 @@ export const Inspector: React.FC<{
       const applied = await api.getCameraCurrentMode(source.Id);
       setCurrentMode(applied);
       onToast(applied.IsNative ? 'Mode applied' : 'Camera substituted the nearest supported mode', applied.IsNative ? 'success' : 'info');
-      // the exact moment a stale calibration can newly appear (or clear) - re-check right away
-      // rather than waiting for this node to be reselected.
+      // re-check calibration staleness immediately
       api.getCalibrationStatus(source.Id).then(setCalibrationStatus).catch(() => {});
     } catch {
       onToast('Failed to set camera mode', 'error');
@@ -157,8 +142,7 @@ export const Inspector: React.FC<{
   const isObjectDetectionSink = sink != null && node.data.typeName === 'ObjectDetectionSink';
   const [detectionBackendName, setDetectionBackendName] = useState<string | null>(null);
 
-  // read-only - see ObjectDetectionSinkController.GetBackend's own comment for why there's no
-  // switcher here the way ApriltagSink has one.
+  // read-only: no backend switcher for object detection
   useEffect(() => {
     if (!isObjectDetectionSink || !sink) return;
     let cancelled = false;
@@ -169,8 +153,7 @@ export const Inspector: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id, isObjectDetectionSink]);
 
-  // Same reasoning as the camera modes fetch above - the sink's actual running backend/tuning
-  // isn't in the /ws/state snapshot, so this needs its own one-shot fetch per selected node.
+  // sink backend/tuning is not in the snapshot, so fetch it once per selected node
   useEffect(() => {
     if (!isApriltagSink || !sink) return;
     let cancelled = false;
@@ -190,13 +173,8 @@ export const Inspector: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id, isApriltagSink]);
 
-  // Rebuilds the detector in place (SinkManager.SetApriltagBackend) - preserves id/tag size/
-  // calibration/bindings, but the underlying native object is genuinely destroyed and recreated
-  // (ApriltagDetector::m_Backend has no setter), so an open Live Preview may show a brief black
-  // frame while its binding to the new detector re-establishes on the next /ws/state tick.
-  // Carries the current threads/quadDecimate/refineEdges values forward explicitly so switching
-  // backend doesn't reset tuning the user already dialled in (a fractional decimation carried
-  // into Vulkan is rounded server-side to an integer the frame size divides by).
+  // Rebuilds the detector in place, preserving id/tag size/calibration/bindings, so an open preview
+  // may briefly go black. Carries the current tuning forward.
   const switchBackend = async (backend: number) => {
     if (!sink) return;
     setSwitchingBackend(true);
@@ -211,9 +189,7 @@ export const Inspector: React.FC<{
     }
   };
 
-  // Applies threads/quadDecimate/refineEdges without changing backend - same rebuild-in-place
-  // mechanism. Re-reads the tuning afterwards: on Vulkan the decimation actually used can differ
-  // from the one requested (it must divide the frame size), and the user should see which.
+  // Applies tuning without changing backend, then re-reads it (Vulkan may round decimation).
   const applyTuning = async () => {
     if (!sink || sinkBackend === null) return;
     setApplyingTuning(true);
@@ -277,8 +253,7 @@ export const Inspector: React.FC<{
     }
   };
 
-  // same shape as togglePreview - a RecordSink is just another terminal sink bound to whichever
-  // node is currently selected (previewTarget already treats source/sink nodes uniformly).
+  // a RecordSink bound to the selected node, like the preview sink
   const toggleRecording = async () => {
     if (!previewTarget) return;
     try {
@@ -303,9 +278,7 @@ export const Inspector: React.FC<{
     }
   };
 
-  // re-fetch whenever recording starts/stops (a new segment appears the moment it starts, and
-  // the in-progress one is only guaranteed finalized/playable once it stops - see RecordSink's
-  // own OnStopped comment) or a different node gets selected.
+  // re-fetch when recording starts/stops (segment finalised on stop) or the node changes
   useEffect(() => {
     refreshSegments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -453,12 +426,9 @@ export const Inspector: React.FC<{
               <ToggleSwitch enabled={autoExposure} onChange={changeAutoExposure} />
             </div>
 
-            {/* a fixed short exposure is what actually makes AprilTag detection reliable on a
-                moving robot (motion blur otherwise smears the tag edges) - this is the whole
-                point of exposing manual exposure control here, not just a nice-to-have. */}
+            {/* a short fixed exposure keeps AprilTag detection reliable by limiting motion blur */}
             <div className={autoExposure ? 'opacity-50 pointer-events-none' : ''}>
-              {/* units are the camera's own (100us steps on UVC webcams, sensor lines on e.g. an
-                  Arducam MIPI module) - so show the device's real range rather than a fixed unit */}
+              {/* units are camera-specific, so show the device's real range */}
               <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
                 Exposure{cameraControls?.Exposure.Supported
                   ? ` (${cameraControls.Exposure.Minimum}-${cameraControls.Exposure.Maximum}, default ${cameraControls.Exposure.Default})`
@@ -503,9 +473,7 @@ export const Inspector: React.FC<{
               <ToggleSwitch enabled={isRunning ?? false} onChange={toggleEnabled} />
             </div>
 
-            {/* directly on the sink, not just buried in Pipeline Profiles - SetApriltagBackend
-                rebuilds the detector in place (same id/tag size/calibration/bindings), so this
-                works on any ApriltagSink whether or not it was ever set up via a profile. */}
+            {/* sets the backend directly on the sink (rebuilds the detector in place) */}
             {isApriltagSink && (
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Backend</label>
@@ -521,11 +489,8 @@ export const Inspector: React.FC<{
               </div>
             )}
 
-            {/* genuinely adjustable, not hardcoded - see ApriltagTuning. All three apply to both
-                backends: Threads is libapriltag's nthreads / vkapriltag's cpu_threads; Vulkan's
-                decimation is integer-only (and must divide the frame size - the server rounds and
-                reports back what it actually runs); Refine Edges is libapriltag's refine_edges,
-                which vkapriltag reimplements bit-identically. */}
+            {/* Threads maps to libapriltag nthreads / vkapriltag cpu_threads; Vulkan decimation is integer-only
+                and must divide the frame size; Refine Edges is identical on both backends. */}
             {isApriltagSink && (
               <div className="space-y-2">
                 <div>
@@ -553,9 +518,7 @@ export const Inspector: React.FC<{
               </div>
             )}
 
-            {/* read-only - RKNN vs ONNX Runtime is decided once from the uploaded model's own
-                file format (Model.provider), not a live switch the way ApriltagSink's backend
-                dropdown is - see ObjectDetectionSinkController.GetBackend's own comment. */}
+            {/* read-only: backend is fixed by the uploaded model's file format */}
             {isObjectDetectionSink && (
               <div className="flex items-center justify-between">
                 <span className="text-xs text-gray-700 dark:text-gray-300">Backend</span>
@@ -563,9 +526,7 @@ export const Inspector: React.FC<{
               </div>
             )}
 
-            {/* ROADMAP.md Phase 8d: the only entry point into the calibration wizards - a
-                CameraCalibrationSink/StereoCalibrationSink had no dedicated UI at all before
-                this, only raw REST calls. */}
+            {/* entry point into the calibration wizards */}
             {(node.data.typeName === 'CameraCalibrationSink' || node.data.typeName === 'StereoCalibrationSink') && (
               <button
                 onClick={() => navigate(node.data.typeName === 'StereoCalibrationSink' ? `/calibrate/stereo/${sink.Id}` : `/calibrate/${sink.Id}`)}
@@ -591,11 +552,7 @@ export const Inspector: React.FC<{
           </>
         )}
 
-        {/* Live Preview binds a WebRTCSink to whatever node is selected - moved out of the
-            sink-only block above: a raw Source (a camera before any detector is attached) is
-            just as valid a preview target, and previewTarget/togglePreview already treat both
-            uniformly (see their own comments). Previously this only rendered for sink nodes, so
-            a Source's Inspector had no way to start a preview at all. */}
+        {/* Live Preview binds a WebRTCSink to whichever node is selected (Source or Sink) */}
         {previewTarget && (
           <div>
             <div className="flex items-center justify-between">
@@ -610,10 +567,7 @@ export const Inspector: React.FC<{
           </div>
         )}
 
-        {/* Recording: segmented MP4 + a JSON-Lines telemetry sidecar per segment (see
-            RecordSink.h's own comment) - both for post-match analysis and for footage a team
-            downloads to feature in videos. Same previewTarget-driven uniform source/sink
-            treatment as Live Preview above. */}
+        {/* Recording: segmented MP4 plus a JSON-Lines telemetry sidecar per segment */}
         {previewTarget && (
           <div>
             <div className="flex items-center justify-between">

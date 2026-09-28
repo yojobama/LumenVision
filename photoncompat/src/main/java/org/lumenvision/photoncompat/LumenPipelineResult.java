@@ -31,21 +31,16 @@ public class LumenPipelineResult {
     }
 
     /**
-     * The moment this result was published, in the same local clock domain NT4 already
-     * reconciles client/server time into (NetworkTableEntry's own timestamp - see LumenCamera's
-     * own comment on why that, rather than a value read out of the JSON/NT payload itself, is
-     * what a robot program should feed to a pose estimator's addVisionMeasurement).
+     * The moment this result was published, in the local clock domain (the NT4 entry timestamp);
+     * feed this to a pose estimator's addVisionMeasurement.
      */
     public double getTimestampSeconds() {
         return timestampSeconds;
     }
 
     /**
-     * The coprocessor's own multi-tag PnP result for this same snapshot, if one was published -
-     * see {@link LumenCamera#getMultiTagResult()} for when this is empty. Read as part of the
-     * same NT4 poll {@link #getTargets()}/{@link #getTimestampSeconds()} came from, rather than a
-     * caller doing its own separate read, so {@link LumenPoseEstimator} sees one coherent frame
-     * rather than two independently-timed ones.
+     * The coprocessor's multi-tag PnP result for this snapshot, if published (see {@link
+     * LumenCamera#getMultiTagResult()}); read in the same NT4 poll as the targets.
      */
     public Optional<LumenMultiTagResult> getMultiTagResult() {
         return multiTagResult;

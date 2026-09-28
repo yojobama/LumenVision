@@ -22,7 +22,7 @@ void SystemMonitor::StopMonitoring()
 {
     m_ThreadWantedAlive = false;
     if (m_MonitorThread.joinable()) {
-        m_MonitorThread.join(); // Wait for the thread to finish
+        m_MonitorThread.join();
 	}
 }
 
@@ -30,7 +30,6 @@ void SystemMonitor::m_MonitorThreadLoop()
 {
     while (m_ThreadWantedAlive)
     {
-        // Monitor system resources
         {
             std::lock_guard<std::mutex> guard(m_CPUUsageMutex);
             m_cpuUsage = m_GetCPUUsage(m_ReadCPUData(), m_ReadCPUData());
@@ -47,7 +46,6 @@ void SystemMonitor::m_MonitorThreadLoop()
             std::lock_guard<std::mutex> guard(m_RAMUsageMutex);
             m_ramUsage = m_ReadMemoryData().get_memory_usage();
         }
-		// sleep for the specified timeout
 		std::this_thread::sleep_for(std::chrono::milliseconds(m_TimeoutMilliseconds));
     }
 }
@@ -78,10 +76,8 @@ CPU_STATS SystemMonitor::m_ReadCPUData()
     return result;
 }
 #else
-// LUMEN_TODO(windows-system-monitor): /proc/stat has no Windows equivalent - a real
-// implementation belongs on GetSystemTimes(). Stubbed at zero rather than left unbuilt, since
-// SystemMonitor isn't gated behind a LUMEN_WITH_* flag (unlike NT4/WebRTC/etc - see Manager.cpp)
-// and the REST endpoints that read it must still return something on every platform.
+// LUMEN_TODO(windows-system-monitor): /proc/stat has no Windows equivalent; a real implementation belongs on
+// GetSystemTimes(). Stubbed at zero so the REST endpoints that read it still return something on every platform.
 CPU_STATS SystemMonitor::m_ReadCPUData()
 {
     return CPU_STATS{};
@@ -108,14 +104,12 @@ float SystemMonitor::m_GetCPUUsage(const CPU_STATS& first, const CPU_STATS& seco
     const int active_diff = second.get_total_active() - first.get_total_active();
     const int idle_diff = second.get_total_idle() - first.get_total_idle();
 
-    // Ensure non-negative differences
     const float active_time = static_cast<float>(std::max(active_diff, 0));
     const float idle_time = static_cast<float>(std::max(idle_diff, 0));
     const float total_time = active_time + idle_time;
 
-    // Avoid division by zero
     if (total_time == 0.0f) {
-        return 0.0f; // Return 0% usage if no time has passed
+        return 0.0f;
     }
 
     return active_time / total_time;
@@ -137,9 +131,8 @@ float SystemMonitor::m_GetDiskUsage(const std::string& disk)
     return result;
 }
 #else
-// LUMEN_TODO(windows-system-monitor): statvfs has no Windows equivalent - a real implementation
-// belongs on GetDiskFreeSpaceExW(). See m_ReadCPUData for why this is stubbed rather than
-// left unbuilt.
+// LUMEN_TODO(windows-system-monitor): statvfs has no Windows equivalent; a real implementation belongs on
+// GetDiskFreeSpaceExW(). Stubbed like m_ReadCPUData.
 float SystemMonitor::m_GetDiskUsage(const std::string&)
 {
     return 0.0f;
@@ -151,7 +144,7 @@ int SystemMonitor::m_FindThermalZoneIndex()
 #ifdef __linux__
     int result = 0;
     bool stop = false;
-    // 20 must stop anyway
+    // scan at most 20 thermal zones
     for (int i = 0; !stop && i < 20; ++i) {
         std::ifstream thermal_file("/sys/class/thermal/thermal_zone" + std::to_string(i) + "/type");
 
@@ -182,7 +175,7 @@ int SystemMonitor::m_FindThermalZoneIndex()
 int SystemMonitor::m_GetThermalZoneTemperature(int index)
 {
     int result = -1;
-    // TODO: fix
+    // thermal read disabled
     /*std::ifstream thermal_file("/sys/class/thermal/thermal_zone" + std::to_string(index) + "/temp");
 
     if (thermal_file.good())
@@ -225,9 +218,8 @@ MEMORY_STATS SystemMonitor::m_ReadMemoryData()
     return result;
 }
 #else
-// LUMEN_TODO(windows-system-monitor): /proc/meminfo has no Windows equivalent - a real
-// implementation belongs on GlobalMemoryStatusEx(). total_memory=1 avoids a get_memory_usage()
-// divide-by-zero (see SystemMonitor.h) while still reporting 0% used.
+// LUMEN_TODO(windows-system-monitor): /proc/meminfo has no Windows equivalent; a real implementation belongs on
+// GlobalMemoryStatusEx(). total_memory=1 avoids a divide-by-zero in get_memory_usage() while reporting 0% used.
 MEMORY_STATS SystemMonitor::m_ReadMemoryData()
 {
     MEMORY_STATS result{};
@@ -243,7 +235,7 @@ MEMORY_STATS SystemMonitor::m_ReadMemoryData()
 int SystemMonitor::GetRAMUsage()
 {
     std::lock_guard<std::mutex> guard(m_RAMUsageMutex);
-	return static_cast<int>(m_ramUsage * 1000); // Convert to megabytes
+	return static_cast<int>(m_ramUsage * 1000);
 }
 
 int SystemMonitor::GetCPUTemperature()

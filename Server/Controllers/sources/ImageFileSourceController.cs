@@ -47,15 +47,7 @@ namespace Server.Controllers.sources
                     {
                         await file.CopyToAsync(output, HttpContext.RequestAborted);
                     }
-                    // native cv::imread (initializeImageFileSource -> ImageFileSource's own
-                    // constructor) must run AFTER the FileStream above is closed, not inside its
-                    // `using` block - System.IO.File.Create's default FileShare.None holds an exclusive
-                    // lock on Windows until disposed, and a second handle (OpenCV's own fopen/
-                    // CreateFile call) trying to read the SAME file while that lock is still held
-                    // fails outright there ("can't open/read file: check file path/integrity").
-                    // Confirmed the hard way running this natively on Windows for the first time -
-                    // Linux's own file semantics have no such exclusivity, which is exactly why
-                    // this went unnoticed through every WSL/Linux run this project has had so far.
+                    // Native cv::imread must run after the FileStream is closed: on Windows its exclusive lock blocks a second reader.
                     created.Add(SourceManager.Instance.initializeImageFileSource(savedPath, Path.GetFileNameWithoutExtension(fileName)));
                 }
             }
@@ -63,9 +55,5 @@ namespace Server.Controllers.sources
         }
 
         
-        // ---------------------------------------
-        // add all sorts of things like exposure and stuff that may matter to some people
-        // (look at photonvision for examples, they more or less mastered this craft)
-        // ---------------------------------------
     }
 }

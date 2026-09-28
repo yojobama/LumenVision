@@ -3,28 +3,18 @@ import { Cpu, Thermometer, Gauge, Radio, Video } from 'lucide-react';
 import type { StateSnapshot } from '../types';
 import { StreamView } from '../components/StreamView';
 
-// ROADMAP.md Phase 8/E6: bottom strip - preview thumbnails for every currently-running WebRTC
-// sink, plus an aggregate device/NT4 status bar. Everything here is derived from the SAME
-// /ws/state snapshot GraphPage already holds (useStateSocket) - no extra polling of its own,
-// including for NT4: this shows how many NetworkTablesSink nodes are currently toggled on, not
-// each one's live connection status (that needs a per-sink REST call this bar deliberately
-// doesn't make on every tick - see NetworkTablesSink's own status endpoint for that detail,
-// already surfaced per-node in Inspector.tsx).
+// Preview thumbnails for running WebRTC sinks plus an aggregate device/NT4 status bar, derived
+// from the /ws/state snapshot. NT4 shows the count of enabled sinks, not per-sink connection state.
 export const BottomStrip: React.FC<{ snapshot: StateSnapshot | null; excludeSinkId?: number | null }> = ({ snapshot, excludeSinkId }) => {
   if (!snapshot) return null;
 
-  // see GraphPage.tsx's own comment on inspectorPreviewSinkId: this sink already has its own,
-  // dedicated StreamView open in the Inspector - showing it here too would negotiate a SECOND,
-  // competing WebRTC connection against a sink that can only hold one.
+  // skipped: Inspector already shows this sink, and a WebRTC sink holds only one connection
   const webrtcSinks = snapshot.Sinks.filter(s => s.Sink.Type === 5 && s.IsRunning && s.Sink.Id !== excludeSinkId);
   const nt4SinksRunning = snapshot.Sinks.filter(s => s.Sink.Type === 4 && s.IsRunning).length;
   const aggregateFps = Object.values(snapshot.NodeStats).reduce((sum, n) => sum + n.Fps, 0);
 
   return (
-    // Normal flow, not absolute/bottom-0 - GraphPage.tsx now lays this out as a flex-column
-    // sibling below the canvas instead of an overlay on top of it (see its own comment: an
-    // overlay here used to sit directly on top of React Flow's own Controls/MiniMap panels,
-    // which render bottom-anchored WITHIN the canvas and had no way to be reached underneath).
+    // normal flow (not an overlay), so it never covers the canvas's Controls/MiniMap
     <div className="flex-shrink-0 bg-white/95 dark:bg-gray-800/95 border-t border-gray-200 dark:border-gray-700 backdrop-blur-sm">
       <div className="flex items-center gap-4 px-3 py-1.5 text-xs text-gray-600 dark:text-gray-300 border-b border-gray-100 dark:border-gray-700">
         <span className="flex items-center gap-1" title="CPU usage"><Cpu className="w-3.5 h-3.5" />{snapshot.Device.CpuUsagePercent.toFixed(0)}%</span>

@@ -4,17 +4,11 @@
 #include <string>
 #include <vector>
 
-// Both YOLOv8 and YOLOv11 export (via `ultralytics export format=onnx`) the same anchor-free
-// head shape: [1, 4+numClasses, numAnchors], box already decoded to (cx, cy, w, h) in the
-// model's input pixel space, no separate objectness channel. The two are functionally
-// interchangeable to this decoder; the enum exists because it is the thing a user actually
-// selects (in the model upload dropdown) and is preserved through the manifest for validation
-// and in case a real head difference needs handling later, not because the math differs today.
+// YOLOv8 and YOLOv11 (ultralytics ONNX export) share the same anchor-free head: [1, 4+numClasses, numAnchors], boxes decoded
+// to (cx, cy, w, h) in model input pixels, no objectness channel. The enum is what the user selects and the manifest stores.
 //
-// Deliberately a plain (unscoped) enum, not `enum class`: SWIG (verified with the version this
-// project uses) wraps a plain C++ enum as a real C# enum, but silently falls back to an opaque
-// SWIGTYPE_p_* handle for a scoped enum passed by value - which then fails at the P/Invoke
-// boundary. ObjectDetectionProvider in Manager.h already relies on the same plain-enum behavior.
+// Plain (unscoped) enum: SWIG wraps a scoped enum passed by value as an opaque handle, which fails at the P/Invoke
+// boundary. ObjectDetectionProvider in Manager.h relies on the same behaviour.
 enum YoloVariant {
 	YOLOv8,
 	YOLOv11

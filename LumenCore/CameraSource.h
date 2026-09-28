@@ -19,9 +19,7 @@ public:
 	std::string getDeviceName();
 	void changeDeviceName(std::string newName);
 
-	// Pass-throughs to whichever ICameraBackend this source actually opened (V4L2 on Linux,
-	// OpenCV everywhere else - see the .cpp) - Manager's own camera-mode/exposure methods delegate
-	// here rather than reaching into m_Backend directly, since that member is private to this class.
+	// Pass-throughs to the ICameraBackend this source opened (V4L2 on Linux, OpenCV elsewhere); m_Backend is private.
 	std::vector<CameraMode> GetAvailableModes();
 	CameraMode GetCurrentMode();
 	bool SetMode(const CameraMode& mode);

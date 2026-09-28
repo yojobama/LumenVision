@@ -7,7 +7,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-// Data structure to hold the latest resource data
 public class SystemResourceInfo
 {
     public double CpuUsagePercent { get; set; }
@@ -50,7 +49,6 @@ public class LinuxResourceMonitor
     private const string MemInfoPath = "/proc/meminfo";
     private const int MonitorIntervalMs = 2000; // Update data every 2 seconds
 
-    // Private constructor to enforce Singleton pattern
     private LinuxResourceMonitor() { }
 
     // --- Control Methods ---
@@ -123,21 +121,17 @@ public class LinuxResourceMonitor
             {
                 var newInfo = new SystemResourceInfo();
                 
-                // 1. CPU Usage Calculation
                 newInfo.CpuUsagePercent = await CalculateCpuUsageAsync();
                 
-                // 2. Memory
                 var (total, used, free) = GetMemoryUtilization();
                 newInfo.TotalMemoryMB = total;
                 newInfo.UsedMemoryMB = used;
                 newInfo.FreeMemoryMB = free;
 
-                // 3. Storage (Root only)
                 newInfo.RootDiskUsage = GetRootStorageUtilization();
                 
                 newInfo.LastUpdateTime = DateTime.Now;
 
-                // Update the shared data structure thread-safely
                 lock (_lock)
                 {
                     _latestInfo = newInfo;
@@ -148,7 +142,6 @@ public class LinuxResourceMonitor
                 Console.WriteLine($"Error during monitoring: {ex.Message}");
             }
 
-            // Wait for the next sampling period or cancel
             await Task.Delay(MonitorIntervalMs, cancellationToken);
         }
     }
@@ -262,7 +255,6 @@ public class LinuxResourceMonitor
 
                 double usedPercent = (double)usedSpace / totalSize * 100.0;
 
-                // Convert bytes to Gigabytes for clean reporting
                 const long BytesInGB = 1024 * 1024 * 1024;
 
                 return new DiskInfo
@@ -281,23 +273,19 @@ public class LinuxResourceMonitor
     }
 }
 
-// --- Example Usage ---
 
 public class ExampleProgram
 {
     public static async Task Main(string[] args)
     {
-        // Access the singleton instance
         var monitor = LinuxResourceMonitor.Instance;
 
-        // 1. Start the monitoring thread
         monitor.StartMonitoring();
 
         // Give the monitor time to stabilize (especially for CPU reading)
         Console.WriteLine("Giving the monitoring thread 3 seconds to collect initial data...");
         await Task.Delay(3000); 
 
-        // 2. Access the data periodically
         Console.WriteLine("\n--- Real-Time Monitoring Loop (Check for 10 seconds) ---");
         for (int i = 0; i < 5; i++)
         {
@@ -308,7 +296,6 @@ public class ExampleProgram
             Console.WriteLine($"CPU Usage: {info.CpuUsagePercent:F2}%");
             Console.WriteLine($"RAM Used/Total: {info.UsedMemoryMB:F0} MB / {info.TotalMemoryMB:F0} MB");
             
-            // Root Disk Info
             var disk = info.RootDiskUsage;
             Console.WriteLine($"Root Disk ({disk.MountPoint}): {disk.UsedPercent:F2}% Used ({disk.UsedSpaceGB:N0} GB / {disk.TotalSizeGB:N0} GB)");
 
@@ -316,7 +303,6 @@ public class ExampleProgram
         }
         Console.WriteLine("--------------------------------------------------\n");
 
-        // 3. Restart the monitor (optional)
         Console.WriteLine("Restarting monitor...");
         monitor.RestartMonitoring();
         await Task.Delay(3000); 
@@ -325,7 +311,6 @@ public class ExampleProgram
         Console.WriteLine($"\n[Restart Check] New Update Time: {finalInfo.LastUpdateTime:HH:mm:ss}");
         Console.WriteLine($"New CPU Reading: {finalInfo.CpuUsagePercent:F2}%");
         
-        // 4. Stop the monitoring thread
         monitor.StopMonitoring();
     }
 }

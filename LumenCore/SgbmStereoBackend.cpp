@@ -3,9 +3,7 @@
 SgbmStereoBackend::SgbmStereoBackend(int blockW, int blockH, int minDisparity, int numDisparities)
 	: m_BlockW(blockW), m_BlockH(blockH), m_MinDisparity(minDisparity), m_NumDisparities(numDisparities)
 {
-	// numDisparities rounded up to a multiple of 16 rather than thrown - a config that derived
-	// this from a depth range (StereoDepthNode) has no reason to land on a round-16 number, and
-	// silently rounding is friendlier than rejecting a perfectly reasonable min/max depth pair.
+	// numDisparities is rounded up to a multiple of 16 rather than rejected
 	if (m_NumDisparities % 16 != 0) m_NumDisparities += 16 - (m_NumDisparities % 16);
 	if (m_NumDisparities < 16) m_NumDisparities = 16;
 

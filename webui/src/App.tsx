@@ -31,14 +31,9 @@ import type { SystemStats, Settings as SettingsType } from './types';
 import { Toast } from './components/Toast';
 import { useAppData } from './hooks/useAppData';
 
-/***************************
- * Dark Mode Hook
- ***************************/
 const useDarkMode = () => {
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
-    // ROADMAP.md Phase 8b: dark by default (a change from the original light-first default) -
-    // an operator who has already set an explicit preference keeps it either way.
     return saved ? JSON.parse(saved) : true;
   });
 
@@ -54,9 +49,6 @@ const useDarkMode = () => {
   return [darkMode, setDarkMode] as const;
 }
 
-/****************
- * Header & Nav
- ****************/
 const Header: React.FC<{
   systemStats: SystemStats;
   darkMode: boolean;
@@ -141,34 +133,17 @@ const Navigation: React.FC<{ streamingCount: number }> = ({ streamingCount }) =>
   </nav>
 );
 
-/*******************
- * Main App
- *******************/
 function App() {
   const navigate = useNavigate();
   const [darkMode, setDarkMode] = useDarkMode();
   const [settings, setSettingsState] = useState<SettingsType>(() => {
     try {
-      // one-time migration from the old FRCV-branded key: rewrite rootTable only when it's
-      // still exactly the old default ('FRCV') - an operator who deliberately set a real team
-      // root table must not have it silently overwritten, but a browser that's never been
-      // touched (still on the old default) should land on the new default, not stay pinned to
-      // 'FRCV' forever just because a faithful read-through preserved it.
-      const legacy = localStorage.getItem('frcvSettings');
-      if (legacy) {
-        const parsed = JSON.parse(legacy);
-        if (parsed?.nt4?.rootTable === 'FRCV') parsed.nt4.rootTable = 'lumenvision';
-        localStorage.setItem('lumenSettings', JSON.stringify(parsed));
-        localStorage.removeItem('frcvSettings');
-        return { ...parsed, serverUrl: window.location.origin };
-      }
       const saved = localStorage.getItem('lumenSettings');
       if (saved) return { ...JSON.parse(saved), serverUrl: window.location.origin };
     } catch { /* ignore malformed/unavailable localStorage, fall through to defaults */ }
     return { serverUrl: window.location.origin, nt4: { mode: 'team', rootTable: 'lumenvision' } };
   });
-  // NT4 connection details are worth remembering across reloads (they're per-robot, not
-  // per-session) - persisted the same way darkMode already is.
+  // Persist NT4 connection details across reloads.
   const setSettings = (next: SettingsType) => {
     setSettingsState(next);
     try { localStorage.setItem('lumenSettings', JSON.stringify(next)); } catch { /* ignore */ }

@@ -5,8 +5,7 @@ import org.lumenvision.photoncompat.LumenPipelineResult;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/** Thin {@link LumenPipelineResult} wrapper - see {@link PhotonCamera}'s own class comment for
- * why this package exists. */
+/** Thin {@link LumenPipelineResult} wrapper for drop-in migration. */
 public class PhotonPipelineResult {
     private final LumenPipelineResult lumenResult;
 

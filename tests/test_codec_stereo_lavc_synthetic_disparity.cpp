@@ -2,16 +2,12 @@
 #include "CodecStereoBackend.h"
 #include <opencv2/opencv.hpp>
 
-// Golden-corpus coverage for codec-stereo's software (LAVC) motion-vector path - the RKMPP
-// hardware path already has this exact test shape in test_codec_stereo_rkmpp_hitl.cpp; this is
-// its non-hardware sibling. libavcodec's software motion estimation needs no RK3588 VPU, so this
-// runs everywhere ffmpeg is available (already a WSL/CI dependency) - no [hitl] label needed.
+// codec-stereo software (LAVC) motion-vector disparity against a known synthetic shift.
 TEST_CASE("codec-stereo's lavc_sw backend recovers a known synthetic disparity", "[stereo][lavc]") {
 	const int W = 640, H = 384;
 	const int SHIFT = 16; // known synthetic horizontal disparity, in pixels
 
-	// random noise texture - motion estimation needs real texture to find correspondences; a
-	// flat/solid image gives every block a meaningless zero-cost "match" everywhere.
+	// Random noise: motion estimation needs texture to find correspondences.
 	cv::Mat base(H, W + SHIFT, CV_8UC1);
 	cv::randu(base, 0, 255);
 	cv::Mat left = base(cv::Rect(SHIFT, 0, W, H)).clone();
@@ -44,8 +40,7 @@ TEST_CASE("codec-stereo's lavc_sw backend recovers a known synthetic disparity",
 	}
 	REQUIRE(validCount > static_cast<int>(disparity.size()) / 2); // most blocks should resolve on pure texture
 	double meanDisparity = sum / validCount;
-	// within 2px of the known synthetic shift - motion search is block-quantized, not exact
-	// (same tolerance as the RKMPP sibling test).
+	// Within 2px of the known shift; motion search is block-quantised.
 	REQUIRE(meanDisparity > SHIFT - 2);
 	REQUIRE(meanDisparity < SHIFT + 2);
 }

@@ -12,13 +12,8 @@
 #include <optional>
 #include <mutex>
 
-// ISource+ISink, maxSources=2 (left/right cameras, or any pair of frame-producing nodes -
-// StereoDepthNode doesn't care whether "left"/"right" are raw cameras or something upstream of
-// them). Rectifies each paired frame with maps built once from a StereoCalibrationResult, hands
-// the rectified pair to an IStereoDepthBackend, and converts the resulting block-grid disparity
-// to depth. See STEREO_IMPLEMENTATION_PLAN.md ss10.3 for the full design rationale (disparity
-// window derivation, sign-convention self-check, why cropping beats padding, etc.) - the
-// comments below note only the specific "why", not a restatement of that document.
+// ISource+ISink, maxSources=2 (left/right frame-producing nodes). Rectifies each paired frame using maps from a
+// StereoCalibrationResult, runs an IStereoDepthBackend on the pair and converts the block-grid disparity to depth.
 class StereoDepthNode : public ISink, public ISource, public IStereoRoleReceiver
 {
 public:
@@ -33,29 +28,23 @@ public:
 
 	std::string GetBackendName() const;
 
-	// summary stats from the most recently processed pair - cols*rows floats is far too much to
-	// push through NT4/REST every frame (1080p/16x16 is 8160 floats), so this is what
-	// GetSinkResult's JSON actually carries; see ss10.3 "Outputs".
+	// summary stats from the most recent pair; carried by GetSinkResult's JSON since the full cols*rows grid is too
+	// large to push over NT4/REST every frame
 	double GetLastValidFraction() const;
 	double GetLastMedianDepthMeters() const;
 
-	// direct in-process access to the full block-grid depth map for DepthFusionNode - never
-	// serialized through SourceResult/JSON (see the "Outputs" note above for why), so this is a
-	// plain C++ call, not something reachable over REST/NT4. Returns false if no pair has been
-	// processed yet. outDepth is cols*rows meters, 0.0f for invalid cells (matching Process()'s
-	// own convention - see StereoDepthNode.cpp).
+	// in-process access to the full block-grid depth map (not serialised via SourceResult/JSON); returns false if no
+	// pair has been processed. outDepth is cols*rows metres, 0.0f for invalid cells
 	bool GetLastDepthGrid(std::vector<float>& outDepth, int& cols, int& rows, int& blockW, int& blockH) const;
-	// calibration this node is using - DepthFusionNode needs rectifiedFx/Cx/Cy to turn a
-	// detection's pixel-space bbox center into real-world X/Y alongside the fused distance.
+	// calibration this node is using (DepthFusionNode needs rectifiedFx/Cx/Cy)
 	StereoCalibrationResult GetCalibration() const { return m_Calibration; }
 
 private:
 	void Process(const std::vector<SourceResult>& results) override;
 	void EnsureRectifyMaps(const cv::Size& sourceSize);
 	void EnsureBackend(int croppedW, int croppedH);
-	// synthesizes a known 16px shift from a real captured frame and checks which sign the
-	// backend recovers it as - see ss10.3 "Sign convention". Runs once, on the first successful
-	// pair; logs which way it resolved rather than silently trusting the config default.
+	// synthesises a known 16px shift from a real captured frame and checks which sign the backend recovers;
+	// runs once, on the first successful pair, and logs the result
 	void RunSignSelfCheckIfNeeded(const cv::Mat& rectLeftGray);
 
 	std::shared_ptr<Logger> m_Logger;
@@ -68,8 +57,7 @@ private:
 	std::string m_LeftSourceId, m_RightSourceId;
 	std::optional<StereoPairer> m_Pairer;
 
-	// rectification maps, built once (or rebuilt if the source resolution changes - a
-	// calibration is only valid at the exact resolution it was computed at)
+	// rectification maps, built once and rebuilt if the source resolution changes (a calibration is only valid at its own resolution)
 	cv::Mat m_MapLx, m_MapLy, m_MapRx, m_MapRy;
 	cv::Size m_RectifiedSourceSize;
 	int m_CropW = 0, m_CropH = 0;

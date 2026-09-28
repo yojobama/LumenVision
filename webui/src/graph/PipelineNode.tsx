@@ -22,13 +22,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   combine: Combine,
 };
 
-// ROADMAP.md Phase 8/E5: polls /cameraSource/{id}/calibrationStatus on its own, separate from
-// buildGraph's /ws/state-driven tick - calibration status isn't (and doesn't need to be) part of
-// that continuous per-second snapshot, so a camera node fetches its own status independently
-// rather than that payload growing an extra REST round-trip for every source on every tick
-// whether or not a graph is even showing calibration warnings. Renders nothing until a real
-// mismatch is confirmed (no calibration at all is normal for a camera that was never meant to be
-// calibrated, e.g. a driver-camera-only feed - not itself a warning).
+// Polls calibration status per camera node (not part of the /ws/state snapshot); renders
+// nothing unless a mismatch is confirmed.
 const CalibrationWarningBadge: React.FC<{ sourceId: number }> = ({ sourceId }) => {
   const [stale, setStale] = React.useState(false);
 
@@ -55,12 +50,8 @@ const CalibrationWarningBadge: React.FC<{ sourceId: number }> = ({ sourceId }) =
   );
 };
 
-// ROADMAP.md Phase 8c: one generic node renderer for both sources and the graph-shaped sink
-// types, coloured by class (source = blue, sink = green) per the plan's own "nodes coloured by
-// class" wording. Every node gets both handles - which edges are actually valid between them is
-// enforced by isValidConnection in GraphPage, not by which handles exist, since a dual-role sink
-// (a StereoDepthSink feeding a DepthFusionSink's depth input) is legitimately both a target and
-// a source at once.
+// Generic node renderer for sources and graph-shaped sinks, coloured by class. Both handles are
+// always present; isValidConnection in GraphPage decides which edges are valid.
 const PipelineNodeImpl: React.FC<NodeProps<PipelineNodeType>> = ({ data, selected }) => {
   const Icon = ICONS[data.capability?.Icon ?? ''] ?? HelpCircle;
   const isSource = data.kind === 'source';
@@ -120,17 +111,9 @@ const PipelineNodeImpl: React.FC<NodeProps<PipelineNodeType>> = ({ data, selecte
   );
 };
 
-// buildGraph (graph/model.ts) rebuilds the whole nodes array from scratch on every /ws/state
-// tick (~1/sec) - every node gets a brand new `data` object every time, even one whose displayed
-// values haven't actually changed (an idle/disabled sink, a source sitting at a steady fps).
-// Without this, React Flow re-renders every node's full DOM subtree every tick regardless -
-// this is what made the graph feel laggy with more than a handful of nodes on screen. The
-// comparator checks the same fields PipelineNode actually renders, at the same precision it
-// displays them at (fps/latency compared as their rendered strings, not raw floats, so
-// imperceptible jitter like 14.98 -> 15.02 - both "15.0" on screen - doesn't force a re-render
-// either). `raw` is deliberately NOT compared: PipelineNode never reads it (only Inspector does,
-// off the live `nodes` state directly, not off this memoized component), so ignoring it here
-// costs nothing and staleness never leaks through to the Inspector.
+// buildGraph creates new `data` objects every /ws/state tick; this comparator checks only the
+// rendered fields (fps/latency as displayed strings) to skip needless re-renders. `raw` is
+// ignored as PipelineNode never reads it.
 function pipelineNodePropsEqual(prev: NodeProps<PipelineNodeType>, next: NodeProps<PipelineNodeType>): boolean {
   if (prev.selected !== next.selected) return false;
   const a = prev.data, b = next.data;

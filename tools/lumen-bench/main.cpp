@@ -1,16 +1,5 @@
-// ROADMAP.md Phase 8/E7: a small standalone timing tool, deliberately NOT going through Server/
-// Manager - it constructs the same backend classes tests/ already exercises for correctness
-// directly, so a benchmark run has none of the REST/native-interop/threading overhead those
-// layers add on top of the actual algorithm work being measured. Prints one markdown table,
-// meant to be pasted straight into a README/PR description.
-//
-// Every backend that needs real RK3588 hardware (NPU for RKNN, VPU for rkmpp_hwenc, GPU compute
-// for Vulkan AprilTag) gracefully reports "skipped" here rather than failing the whole run - the
-// same SKIP()-on-no-hardware contract the ctest suite's own [hitl] tests already use. RKNN is a
-// step further than that: LUMEN_WITH_RKNN is off in every build this tool has actually been
-// compiled with so far (x86_64, no NPU) - this file deliberately does not attempt to write
-// RknnDetectionBackend-calling code sight-unseen with no way to compile-check it. That row (and
-// a real number for it) needs writing AND verifying together, on the Pi.
+// Standalone timing tool that calls the backend classes directly (bypassing Server/Manager) and
+// prints a markdown table. Backends lacking their hardware or build flag are reported as skipped.
 
 #include "CpuApriltagBackend.h"
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
@@ -44,7 +33,7 @@ struct BenchResult {
 
 template<typename Fn>
 BenchResult RunBench(std::string name, Fn&& fn) {
-	fn(); // warm-up - excluded from the timed average (first-call allocations, cache/JIT warmup)
+	fn(); // warm-up run, excluded from the average
 	auto start = std::chrono::steady_clock::now();
 	for (int i = 0; i < ITERATIONS; i++) fn();
 	auto end = std::chrono::steady_clock::now();
@@ -56,10 +45,8 @@ BenchResult Skipped(std::string name, std::string note) {
 	return { std::move(name), 0.0, true, std::move(note) };
 }
 
-// same blocky-texture synthetic stereo pair test_sgbm_synthetic_disparity.cpp uses - coarse
-// random noise upscaled with nearest-neighbour, cropped/shifted for a known disparity. Good
-// enough for timing (the algorithms' cost depends on image size/search range, not on whether the
-// disparity result is actually correct) without needing a checked-in real stereo pair.
+// Synthetic stereo pair: blocky noise cropped/shifted for a known disparity (as in
+// test_sgbm_synthetic_disparity.cpp).
 void MakeSyntheticStereoPair(int width, int height, int shift, cv::Mat& left, cv::Mat& right) {
 	const int texelSize = 8;
 	cv::Mat coarse((height + texelSize - 1) / texelSize, (width + shift + texelSize - 1) / texelSize, CV_8UC1);
@@ -167,7 +154,7 @@ int main() {
 	results.push_back(Skipped("OnnxDetectionBackend", "not compiled in this build (LUMEN_WITH_ONNX off)"));
 #endif
 
-	// RKNN deliberately has no invocation code at all yet - see this file's own top comment.
+	// No RKNN invocation code.
 	results.push_back(Skipped("RknnDetectionBackend", "not yet implemented in lumen-bench - needs writing and verifying together on the Pi (real NPU + RKNN model required)"));
 
 	std::printf("| Backend | Mean time (ms, %d iterations) | Notes |\n", ITERATIONS);

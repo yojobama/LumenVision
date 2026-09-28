@@ -2,28 +2,13 @@
 #include "CodecStereoBackend.h"
 #include <opencv2/opencv.hpp>
 
-// Hardware-in-the-loop coverage for ROADMAP.md Phase 6's other VPU win: codec-stereo's
-// rkmpp_hwenc backend reads the RK3588 hardware H.264 encoder's own motion-vector search as a
-// fast disparity proxy (see StereoDepthBackendKind.h's own comment on why rkmpp_hwenc, not the
-// plain CS_ENABLE_RKMPP backend, is what this project selects). Self-skips anywhere
-// CS_ENABLE_RKMPP_HWENC wasn't compiled in (every machine except the bench Orange Pi once
-// install-deps.sh --with-mpp has run) - CodecStereoBackend's constructor throws if cs_init()
-// can't get the requested backend, which is exactly the failure this test treats as "skip", not
-// "fail": an unavailable optional hardware backend is not a defect on a machine that never had
-// the hardware to begin with.
-//
-// A second skip guard covers the same "no hardware" case one level deeper: on a machine where
-// rockchip_mpp itself was built from source (e.g. a generic aarch64 CI runner, which has no
-// Rockchip SoC at all) construction alone can succeed without touching real hardware, and the
-// actual VPU probe only happens inside Compute() - confirmed the hard way running this in CI,
-// where it failed with "mpp_soc: open /proc/device-tree/compatible error" / "mpp_platform: can
-// not found match soc name" rather than throwing at construction time.
+// codec-stereo rkmpp_hwenc (hardware encoder motion vectors) disparity against a known shift.
+// Self-skips if construction throws or Compute() cannot probe the VPU.
 TEST_CASE("codec-stereo's rkmpp_hwenc backend recovers a known synthetic disparity from real VPU hardware", "[hitl][rkmpp]") {
 	const int W = 640, H = 384; // multiple of 32x16 - rkmpp_hwenc forces that block size regardless of Config
 	const int SHIFT = 16;       // known synthetic horizontal disparity, in pixels
 
-	// random noise texture - motion estimation needs real texture to find correspondences; a
-	// flat/solid image gives every block a meaningless zero-cost "match" everywhere.
+	// Random noise: motion estimation needs texture to find correspondences.
 	cv::Mat base(H, W + SHIFT, CV_8UC1);
 	cv::randu(base, 0, 255);
 	cv::Mat left = base(cv::Rect(SHIFT, 0, W, H)).clone();
@@ -58,7 +43,7 @@ TEST_CASE("codec-stereo's rkmpp_hwenc backend recovers a known synthetic dispari
 	}
 	REQUIRE(validCount > static_cast<int>(disparity.size()) / 2); // most blocks should resolve on pure texture
 	double meanDisparity = sum / validCount;
-	// within 2px of the known synthetic shift - motion search is block-quantized, not exact
+	// Within 2px of the known shift; motion search is block-quantised.
 	REQUIRE(meanDisparity > SHIFT - 2);
 	REQUIRE(meanDisparity < SHIFT + 2);
 }

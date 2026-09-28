@@ -3,7 +3,7 @@
 #include "CpuAffinity.h"
 
 ISource::ISource(std::shared_ptr<Logger> p_Logger, std::string m_ID)
-	: m_ResultLock() // Initialize m_ResultLock
+	: m_ResultLock()
 {
 	this->m_Logger = p_Logger;
 	this->m_ID = m_ID;
@@ -11,7 +11,6 @@ ISource::ISource(std::shared_ptr<Logger> p_Logger, std::string m_ID)
 
 ISource::~ISource()
 {
-	// previously a no-op: the capture thread outlived this object with nothing to stop it.
 	if (m_Thread.joinable()) {
 		m_ShouldTerminate = true;
 		m_Thread.join();
@@ -26,10 +25,7 @@ std::string ISource::GetID()
 void ISource::Toggle(bool threadWantedAlive)
 {
 	if (m_DoNotLoadCaptureThread) return;
-	// idempotent: calling Toggle(true) while already running previously spawned a SECOND
-	// capture thread without stopping the first - the new thread handle overwrote m_Thread, so
-	// the original was never join-able again (leaked, not hung: m_ShouldTerminate is shared,
-	// so it would still observe a later stop request and exit - just never get reaped).
+	// idempotent: a repeated Toggle(true) must not spawn a second capture thread
 	if (threadWantedAlive == m_ToggleState) return;
 
 	if (threadWantedAlive) {
@@ -39,7 +35,7 @@ void ISource::Toggle(bool threadWantedAlive)
 	} else {
 		if (m_Thread.joinable()) {
 			m_ShouldTerminate = true;
-			m_Thread.join(); // Wait for the thread to terminate
+			m_Thread.join();
 			m_ToggleState = false;
 		}
 	}
@@ -94,22 +90,14 @@ bool ISource::HasActiveColorFrameConsumer() const
 void ISource::SetLatestResult(SourceResult result)
 {
 	{
-		std::lock_guard<std::mutex> guard(m_ResultLock); // Use RAII for mutex locking
+		std::lock_guard<std::mutex> guard(m_ResultLock);
 		result.producedTimeUs = SourceResult::NowUs();
-		// a producer that didn't pass an explicit capture timestamp (the two-arg SourceResult
-		// constructor) gets producedTimeUs standing in for captureTimeUs too - see SourceResult.h
+		// a producer without an explicit capture timestamp gets producedTimeUs as captureTimeUs (see SourceResult.h)
 		if (result.captureTimeUs == 0) result.captureTimeUs = result.producedTimeUs;
 		result.frameNumber = m_FrameCount + 1; // matches the m_FrameCount++ below
 		m_LatestResult = result;
-		// m_FrameCount is what ISink::ProcessingThreadLoop actually checks to decide whether a
-		// source has anything new (source->GetCurrentFrameCount() != lastFrameCount) - it needs
-		// to change on every published result, so it belongs here, not in each subclass's own
-		// CaptureFrame(). Confirmed by actually running the pipeline: VideoFileSource remembered
-		// to bump it itself, but CameraFrameSource and ImageFileFrameSource did not, so a
-		// sink bound to either of those NEVER saw a result to process - the wake-up notification
-		// below fired correctly (that part came from the busy-wait fix earlier), but
-		// ProcessingThreadLoop's own frame-count check silently filtered every source out before
-		// Process() could ever be called.
+		// m_FrameCount is what ISink::ProcessingThreadLoop checks to see whether a source has anything new, so it is
+		// bumped here on every published result rather than in each subclass.
 		m_FrameCount++;
 	}
 
@@ -127,13 +115,8 @@ void ISource::SetLatestResult(SourceResult result)
 
 SourceResult ISource::GetLatestResult(bool requireFrame, bool requireJson)
 {
-	std::lock_guard<std::mutex> guard(m_ResultLock); // Use RAII for mutex locking
-	// "at least", not "exactly": a sink declares what it needs, not what the source may also
-	// produce. This used to require an exact match, which silently broke any sink bound to a
-	// dual-producing source (e.g. ApriltagDetector, which always sets both frame and json) if
-	// the sink only asked for one of the two - WebRTCSink (frame-only) bound to a detector's
-	// annotated output being exactly that case, and exactly the "different stages" composition
-	// the WebRTC feature depends on.
+	std::lock_guard<std::mutex> guard(m_ResultLock);
+	// "at least", not "exactly": a sink declares what it needs, not what the source may also produce.
 	if ((!requireJson || m_LatestResult.json.has_value()) && (!requireFrame || m_LatestResult.frame.has_value()))
 		return m_LatestResult;
 	return SourceResult();
@@ -147,9 +130,7 @@ SourceResult ISource::GetLatestResult()
 
 void ISource::SourceThreadProc()
 {
-	// capture + colour conversion is CPU-heavy and latency-sensitive - keep it off the slow
-	// efficiency cores when this is a big.LITTLE SoC (see CpuAffinity's own comment on why this
-	// isn't hardcoded to a specific core index)
+	// capture + colour conversion is CPU-heavy and latency-sensitive: keep off the efficiency cores on big.LITTLE (see CpuAffinity)
 	CpuAffinity::PinCurrentThreadToPerformanceCores();
 	OnCaptureThreadStart();
 	while (!m_ShouldTerminate) {
@@ -160,5 +141,4 @@ void ISource::SourceThreadProc()
 }
 
 void ISource::CaptureFrame() {
-	// this is a default implementation
 }

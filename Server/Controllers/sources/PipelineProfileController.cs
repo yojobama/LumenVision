@@ -8,17 +8,12 @@ using Server.Web;
 
 namespace Server.Controllers.sources
 {
-    // ROADMAP.md Phase 7: pipeline profiles - see Server/PipelineProfile.cs for the design.
-    // A profile belongs to a Source (camera); activating one swaps that source's own detection
-    // sink (ApriltagSink or ObjectDetectionSink) for a fresh instance built from the profile's
-    // settings, leaving every other sink bound to the same source (WebRTC preview, driver mode)
-    // untouched. This is what a robot program's pipelineIndex actually switches.
+    // Pipeline profiles (see PipelineProfile.cs). Activating one replaces the source's detection sink with a fresh
+    // instance built from the profile; other sinks on the same source are untouched.
     internal class PipelineProfileController : ControllerBase
     {
-        // POST: define a new AprilTag-detection profile on a source. calibratorSinkId is
-        // optional - a profile with none gets pose estimation without real-world scale/undistort
-        // until one is attached (matches CreateApriltagDetector's own "empty calibration result"
-        // default). Returns the new profile's index.
+        // POST: define an AprilTag profile on a source; calibratorSinkId is optional (none = pose without real-world
+        // scale/undistort). Returns the new profile's index.
         [HttpPost("source/profiles/apriltag")]
         public Task<int> CreateApriltagProfile([FromQuery] int sourceId, [FromQuery] string name,
             [FromQuery] double tagSize, [FromQuery] int? calibratorSinkId = null,
@@ -32,9 +27,7 @@ namespace Server.Controllers.sources
             return Task.FromResult(index);
         }
 
-        // POST: define a new object-detection profile on a source, reusing a model already
-        // registered via the model-upload endpoint (see ModelManager). Returns the new profile's
-        // index.
+        // POST: define an object-detection profile using a registered model. Returns the new profile's index.
         [HttpPost("source/profiles/objectDetection")]
         public Task<int> CreateObjectDetectionProfile([FromQuery] int sourceId, [FromQuery] string name,
             [FromQuery] int modelId)
@@ -43,10 +36,7 @@ namespace Server.Controllers.sources
             return Task.FromResult(index);
         }
 
-        // POST: upload a WPILib-format AprilTagFieldLayout JSON body onto one profile - see
-        // PipelineProfile.FieldLayoutPath's own comment on why this is keyed by profile, not by
-        // whatever sink id happens to be running it. Returns the number of tags loaded, or -1 if
-        // the body wasn't a valid field layout.
+        // POST: upload a WPILib AprilTagFieldLayout JSON body onto one profile; returns tags loaded, or -1 if invalid.
         [HttpPost("source/profiles/fieldLayout")]
         public async Task<int> SetProfileFieldLayout([FromQuery] int sourceId, [FromQuery] int index)
         {
@@ -74,16 +64,14 @@ namespace Server.Controllers.sources
             return Task.FromResult(SourceManager.Instance.GetProfiles(sourceId));
         }
 
-        // GET: the currently active profile's index, or -1 if none has ever been activated -
-        // this is the coprocessor-side equivalent of PhotonVision's own readable pipelineIndex.
+        // GET: the active profile's index, or -1 if none has been activated
         [HttpGet("source/profiles/active")]
         public Task<int> GetActiveProfile([FromQuery] int sourceId)
         {
             return Task.FromResult(SourceManager.Instance.GetActiveProfileIndex(sourceId));
         }
 
-        // PATCH: switch which profile is running for a source - PhotonVision's setPipelineIndex
-        // equivalent.
+        // PATCH: switch which profile is running for a source.
         [HttpPatch("source/profiles/activate")]
         public Task Activate([FromQuery] int sourceId, [FromQuery] int index)
         {

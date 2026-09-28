@@ -22,24 +22,15 @@ extern "C" {
 struct WebRTCSinkConfig {
 	int bitrateKbps = 4000;
 	int fps = 30;
-	// "libx264" everywhere by default; the Orange Pi build can pass "h264_rkmpp" once that
-	// hardware encoder is confirmed available there (see IMPLEMENTATION_PLAN.md phase 6) -
-	// exposed as a plain string so Manager doesn't need an encoder-name enum for one setting
+	// "libx264" by default; the Orange Pi build can pass "h264_rkmpp". A plain string so Manager needs no encoder-name enum.
 	std::string encoderName = "libx264";
 };
 
-// Terminal sink: binds to any single frame-producing node (raw camera, or a detector's
-// annotated output - "different stages" from the plan falls out for free, since each is just
-// another ISource) and encodes+streams it over WebRTC. Signalling (offer/answer/ICE) is
-// exposed through plain string methods rather than libdatachannel's C++ types, matching
-// NetworkTablesSink's pattern for the same reason: those types must never reach swig.i.
+// Terminal sink: binds to any single frame-producing node (raw camera or a detector's annotated output) and encodes+streams
+// it over WebRTC. Signalling is exposed as plain string methods so libdatachannel types never reach swig.i.
 //
-// Uses non-trickle ICE: CreateOffer() blocks (bounded by a timeout) until this peer's own
-// candidate gathering completes, then returns one complete SDP with every local candidate
-// already embedded. This trades a little offer latency for a REST-friendly signalling flow -
-// no persistent connection is needed on the LumenVision side beyond the C# server's own request
-// lifetime, at the cost of not being usable across a p2p link with asymmetric NAT needing
-// trickle. Fine for this project's use case (client and LumenVision are on the same LAN).
+// Uses non-trickle ICE: CreateOffer() blocks (with a timeout) until local candidate gathering completes, then returns one
+// SDP with every candidate embedded; unsuitable for p2p links with asymmetric NAT that need trickle.
 class WebRTCSink : public ISink {
 public:
 	WebRTCSink(std::shared_ptr<Logger> logger, std::string id, WebRTCSinkConfig config);
@@ -64,11 +55,8 @@ private:
 	std::shared_ptr<Logger> m_Logger;
 	WebRTCSinkConfig m_Config;
 
-	// Guards m_PeerConnection/m_Track/m_SrReporter reassignment - CreateOffer() replaces all
-	// three with a fresh instance for every new negotiation (see InitializePeerConnection's own
-	// comment for why), which races with Process()'s background thread reading m_Track through
-	// EncodeAndSend() unless both sides take this lock before touching the pointers themselves
-	// (their own internals are already thread-safe, courtesy of libdatachannel).
+	// Guards m_PeerConnection/m_Track/m_SrReporter reassignment: CreateOffer() replaces all three per negotiation,
+	// racing with Process()'s thread reading m_Track via EncodeAndSend().
 	mutable std::mutex m_ConnectionMutex;
 	std::shared_ptr<rtc::PeerConnection> m_PeerConnection;
 	std::shared_ptr<rtc::Track> m_Track;
@@ -87,9 +75,7 @@ private:
 
 #ifdef LUMEN_WITH_RGA
 	RgaColorConverter m_RgaConverter;
-	// only warn once per sink lifetime, not once per frame - a persistently-failing RGA path
-	// (unsupported size, driver issue) would otherwise flood the log at whatever fps this sink
-	// runs, drowning out anything else the logger reports.
+	// warn only once per sink lifetime, not per frame, so a persistently failing RGA path does not flood the log
 	bool m_RgaConversionFailureLogged = false;
 #endif
 };

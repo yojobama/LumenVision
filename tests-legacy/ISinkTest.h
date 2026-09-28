@@ -1,6 +1,6 @@
 #pragma once
 #include "UnitTestBase.h"
-#include "../FRCVLib/ISink.h"
+#include "../LumenCore/ISink.h"
 
 class ISinkTest : public UnitTestBase {
 public:
