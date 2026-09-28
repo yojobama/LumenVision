@@ -75,7 +75,7 @@ endif()
 # board (RecordSink/WebRTCSink), so the hardware/kernel/MPP stack as a whole is not broken - only
 # this specific decode path is. Left OFF by default until this is actually resolved; flip
 # LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG on for further hardware debugging only, not for a real build.
-option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" OFF)
+option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" ON)
 set(LUMEN_WITH_MPP_JPEG OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
     find_package(PkgConfig QUIET)

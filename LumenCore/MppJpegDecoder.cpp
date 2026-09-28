@@ -154,11 +154,16 @@ bool MppJpegDecoder::EnsureInitialized()
 	// MppDecCfg fetched, configured and re-applied before ANY decode call, exactly like the real
 	// reference (rockchip-linux/mpp's own test/mpi_dec_test.c) always does - skipping this
 	// entirely (this class's own prior state) leaves the decoder in a state its own first
-	// decode() call cannot handle. "base:split_parse"=1 matches the demo's own default (lets
-	// MPP's internal frame splitter find frame boundaries) - a no-op for a single already-
-	// complete JPEG image, but this is the documented, tested init sequence, not a value chosen
-	// for its own meaning. Necessary but NOT sufficient - see this file's top comment; the crash
-	// this was meant to fix moved past mpp_init but still happens later, inside decode() itself.
+	// decode() call cannot handle. Necessary but NOT sufficient - see this file's top comment;
+	// the crash this was meant to fix moved past mpp_init but still happens later, inside decode()
+	// itself, localized (kernel fault correlation) to right around mpp_dec_decode's own call into
+	// mpp_parser_prepare() - the exact function whose behavior "base:split_parse" controls.
+	// TRYING split_parse=0 here (was 1, matching mpi_dec_test.c's H.264-oriented default): 1 tells
+	// MPP's parser to expect a continuous elementary stream and scan for frame boundaries across
+	// calls (and this code never calls mpp_packet_set_eos, since it does one-shot decode, not
+	// streaming - a mismatch with what split_parse=1 expects). This class always hands MPP exactly
+	// one complete, self-contained JPEG image (SOI...EOI) per call - the case split_parse=0 (no
+	// boundary-scanning, parse the packet directly as one complete frame) is actually for.
 	MppDecCfg cfg = nullptr;
 	if (mpp_dec_cfg_init(&cfg) != MPP_OK) {
 		mpp_destroy(ctx);
@@ -169,7 +174,7 @@ bool MppJpegDecoder::EnsureInitialized()
 		mpp_destroy(ctx);
 		return false;
 	}
-	mpp_dec_cfg_set_u32(cfg, "base:split_parse", 1);
+	mpp_dec_cfg_set_u32(cfg, "base:split_parse", 0);
 	if (api->control(ctx, MPP_DEC_SET_CFG, cfg) != MPP_OK) {
 		mpp_dec_cfg_deinit(cfg);
 		mpp_destroy(ctx);
