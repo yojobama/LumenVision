@@ -157,10 +157,10 @@
           "name": "photoncompat-java-0.0.0-imagetest28-sources.jar",
           "url": "photoncompat-java-0.0.0-imagetest28-sources.jar",
           "size": 20660,
-          "sha512": "6c2f1c7451a6877589a0047fbeded50feef466168d520045ee88dd7ba7e218be038d6324bc070b47fb1cfd681fe35b4a35789842dd487ff3ea58fd43361e02cd",
-          "sha256": "a225cdce4cbf62f4fc28ec6b1f894d8e4048e554aff5e2db405feac3b5e12708",
-          "sha1": "f655b4597352f960ad416dc36a6788c19aba0102",
-          "md5": "41138394f218206c2f639fffb39c7cfd"
+          "sha512": "a7549122ca1646371c7ff68311fa47fb1f07b871a53c72e59308e61d73866cdb4e667aa7f74df999c8eb9e480d54029d510f03a27d80ef2609d33d2e74343d47",
+          "sha256": "fabb6edff65fac9ffc38391fb470315a791ffa502f307824a07979e3ffa05b4a",
+          "sha1": "e853d914b6fb09a53909a449bb2a788efcb5f181",
+          "md5": "d5ee0ec2abe0a895885df1c4995b5d56"
         }
       ]
     }
