@@ -8,15 +8,6 @@
 #include <rockchip/mpp_meta.h>
 #include <rockchip/rk_vdec_cfg.h>
 #include <cstring>
-#include <cstdio>
-#include <chrono>
-
-// TEMPORARY - diagnosing an unexpected latency regression found via a live A/B test (hardware
-// decode measured SLOWER than software cv::imdecode in the real pipeline, despite being
-// pixel-correct in isolation). Logs a per-call timing breakdown to stderr (systemd journal) to
-// find out where the time actually goes. Remove once that's understood.
-#define MPPTIME(var) auto var = std::chrono::steady_clock::now()
-#define MPPMS(a, b) (std::chrono::duration<double, std::milli>((b) - (a)).count())
 
 // Confirmed working on real hardware (Orange Pi 5 Plus, RK3588) - pixel-correct output verified
 // against the software cv::imdecode path via tests/test_mpp_jpeg_decoder_hitl.cpp. An earlier
@@ -148,8 +139,6 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	MppApi* api = static_cast<MppApi*>(m_Api);
 	MppCtx ctx = static_cast<MppCtx>(m_Ctx);
 
-	MPPTIME(tStart);
-
 	// input packet: a real MppBuffer (the JPEG-decode VPU DMAs directly from its input, which a
 	// bare heap pointer can't satisfy), from its own dedicated buffer group since its size - the
 	// JPEG's own byte count - is known upfront.
@@ -171,8 +160,6 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	// larger than this exact frame once the group's own buffer is reused/regrown) - the decoder
 	// must only see this frame's real byte count.
 	mpp_packet_set_length(packet, jpegSize);
-
-	MPPTIME(tInput);
 
 	// output frame: per the advanced interface's contract (see this file's top comment), THIS
 	// class pre-allocates the output MppFrame and its backing MppBuffer from the width/height the
@@ -197,14 +184,9 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 				MppMeta meta = mpp_packet_get_meta(packet);
 				if (meta) mpp_meta_set_frame(meta, KEY_OUTPUT_FRAME, frame);
 
-				MPPTIME(tOutSetup);
-
 				if (api->decode_put_packet(ctx, packet) == MPP_OK) {
-					MPPTIME(tPut);
 					MppFrame frameOut = nullptr;
-					MPP_RET getRet = api->decode_get_frame(ctx, &frameOut);
-					MPPTIME(tGet);
-					if (getRet == MPP_OK && frameOut) {
+					if (api->decode_get_frame(ctx, &frameOut) == MPP_OK && frameOut) {
 						// Only 4:2:0 (NV12) output is handled - see this class's own header
 						// comment. A decode error/discarded frame, or any other reported chroma
 						// layout (4:2:2/NV16 for a 4:2:2 JPEG), falls back to the caller's
@@ -242,11 +224,6 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 								ok = true;
 							}
 						}
-						MPPTIME(tPost);
-						fprintf(stderr, "MPPTIME input=%.2f outsetup=%.2f put=%.2f get=%.2f post=%.2f total=%.2f ms\n",
-							MPPMS(tStart, tInput), MPPMS(tInput, tOutSetup), MPPMS(tOutSetup, tPut),
-							MPPMS(tPut, tGet), MPPMS(tGet, tPost), MPPMS(tStart, tPost));
-						fflush(stderr);
 						// per the advanced interface's contract, frameOut IS frame (the same
 						// preallocated frame attached above via the packet's own metadata) - one
 						// deinit for both, not two, or this double-frees.
