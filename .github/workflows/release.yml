@@ -66,15 +66,6 @@ jobs:
       - name: Test
         run: ctest --preset ci-linux-arm64 --output-on-failure
 
-      # TEMPORARY - retesting MppJpegDecoder's rewrite to the advanced decode_put_packet/
-      # decode_get_frame interface directly on real hardware in isolation from the full Server.
-      # Remove once that round of testing concludes either way.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lumen-core-tests-debug
-          path: out/build/ci-linux-arm64/stage/Release/LumenCoreTests
-          if-no-files-found: error
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"

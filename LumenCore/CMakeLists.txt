@@ -57,17 +57,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 # --- Optional: hardware MJPEG decode via the RK3588's JPEG-decode VPU (rockchip_mpp) ------------
-# Root-caused (see MppJpegDecoder.cpp's own top comment and the mpp-jpeg-decode-crash memory for
-# the full trail): the earlier version of this class called the "simple" synchronous
-# api->decode(ctx, packet, &frame) API, which segfaulted deep inside librockchip_mpp.so's own
-# mpp_dec_decode() on real hardware, reproducibly, across MPP versions and buffer-handling
-# approaches. That was never a tuning problem - rockchip-linux/mpp's OWN reference test never uses
-# that API for MJPEG at all (test/mpi_dec_test.c: `cmd->simple = (cmd->type !=
+# Confirmed working on real hardware (Orange Pi 5 Plus, RK3588) - pixel-correct output verified via
+# tests/test_mpp_jpeg_decoder_hitl.cpp against the software cv::imdecode path (colour channel means
+# within ~1 unit, gray within 0.01). An earlier version of this class called the "simple"
+# synchronous api->decode(ctx, packet, &frame) API, which segfaulted deep inside
+# librockchip_mpp.so's own mpp_dec_decode() on real hardware, reproducibly, across MPP versions and
+# buffer-handling approaches - never a tuning problem: rockchip-linux/mpp's OWN reference test
+# never uses that API for MJPEG at all (test/mpi_dec_test.c: `cmd->simple = (cmd->type !=
 # MPP_VIDEO_CodingMJPEG) ? (1) : (0);`), confirmed directly by a maintainer
 # (https://github.com/rockchip-linux/mpp/issues/586). MppJpegDecoder now uses the "advanced"
 # decode_put_packet()/decode_get_frame() interface instead, with a caller-preallocated output
-# buffer - RE-ENABLED and pending a real-hardware retest to confirm this actually fixes it (see
-# the commit re-enabling this and adding the temporary CI test-artifact step back).
+# buffer - see MppJpegDecoder.cpp's own top comment for the full trail.
 option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" ON)
 set(LUMEN_WITH_MPP_JPEG OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")

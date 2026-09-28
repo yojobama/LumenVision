@@ -26,7 +26,7 @@ Findings:
 
 - **12ms for 1080p MJPEG is consistent with OpenCV built without libjpeg-turbo** (or a non-SIMD build). With libjpeg-turbo on an A76 this should be ~5–8ms. *Verify on-device:* `ldd` / `cv::getBuildInformation()` for `JPEG: libjpeg-turbo`.
 - **The decode is always to BGR**, but the apriltag detector only needs gray. `cv::IMREAD_GRAYSCALE` skips chroma upsampling + colour conversion entirely (~40% less work) — and currently the BGR→gray conversion is paid *again* downstream (§2).
-- **The RK3588 has a hardware JPEG decoder (MPP).** Hardware 1080p MJPEG decode is ~2–3ms. The codebase already integrates RK hardware blocks ([RgaColorConverter.cpp](../LumenCore/RgaColorConverter.cpp) for the WebRTC path) but not MPP decode.
+- **The RK3588 has a hardware JPEG decoder (MPP).** Hardware 1080p MJPEG decode is ~2–3ms. *(Update: implemented and confirmed working on real hardware - see [MppJpegDecoder.cpp](../LumenCore/MppJpegDecoder.cpp), used by `V4l2CameraBackend::Grab()` with a software `cv::imdecode` fallback.)*
 - The decode happens **after** `captureTimeUs` is stamped, so all 12ms count toward `latencyMs` (§5 has a related timestamping issue).
 
 ## 2. Double colour conversion per frame

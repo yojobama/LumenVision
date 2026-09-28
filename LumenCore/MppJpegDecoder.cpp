@@ -7,44 +7,23 @@
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_meta.h>
 #include <rockchip/rk_vdec_cfg.h>
-#include <cstdio>
 #include <cstring>
 
-// PREVIOUSLY NOT WORKING ON REAL HARDWARE, root-caused and fixed - see the git history around
-// "Conclude MPP JPEG hardware decode investigation" and the mpp-jpeg-decode-crash memory for the
-// full trail. Short version: the earlier version of this class called api->decode(ctx, packet,
-// &frame) - the "simple" synchronous decode API - which reliably segfaulted deep inside
-// librockchip_mpp.so's own mpp_dec_decode(), at the identical relative offset across two MPP
-// versions, two buffer-handling approaches, and both values of "base:split_parse". None of that
-// was the real bug: MPP's OWN reference test explicitly never uses the simple decode() API for
-// MJPEG at all (rockchip-linux/mpp's test/mpi_dec_test.c: `cmd->simple = (cmd->type !=
-// MPP_VIDEO_CodingMJPEG) ? (1) : (0);`), and a maintainer confirmed this directly when asked
-// (https://github.com/rockchip-linux/mpp/issues/586: "是的，jpeg 解码走 advanced 接口" - "Yes, JPEG
-// decoding goes through the advanced interface"). This class now uses that "advanced" interface
-// instead: decode_put_packet()+decode_get_frame(), with the OUTPUT frame buffer pre-allocated by
-// this class itself (from the width/height the caller already knows) and attached to the packet
-// via its own metadata BEFORE decoding - no info-change negotiation round trip at all, unlike the
-// simple API's contract other codecs use.
+// Confirmed working on real hardware (Orange Pi 5 Plus, RK3588) - pixel-correct output verified
+// against the software cv::imdecode path via tests/test_mpp_jpeg_decoder_hitl.cpp. An earlier
+// version of this class called api->decode(ctx, packet, &frame) - the "simple" synchronous decode
+// API - which reliably segfaulted deep inside librockchip_mpp.so's own mpp_dec_decode(), at the
+// identical relative offset across two MPP versions, two buffer-handling approaches, and both
+// values of "base:split_parse". None of that was the real bug: MPP's OWN reference test
+// explicitly never uses the simple decode() API for MJPEG at all (rockchip-linux/mpp's
+// test/mpi_dec_test.c: `cmd->simple = (cmd->type != MPP_VIDEO_CodingMJPEG) ? (1) : (0);`), and a
+// maintainer confirmed this directly when asked (https://github.com/rockchip-linux/mpp/issues/586:
+// "是的，jpeg 解码走 advanced 接口" - "Yes, JPEG decoding goes through the advanced interface"). This
+// class uses that "advanced" interface instead: decode_put_packet()+decode_get_frame(), with the
+// OUTPUT frame buffer pre-allocated by this class itself (from the width/height the caller already
+// knows) and attached to the packet via its own metadata BEFORE decoding - no info-change
+// negotiation round trip at all, unlike the simple API's contract other codecs use.
 namespace {
-	// dumps this process's own /proc/self/maps to stderr - correlate the fault PC dmesg reports
-	// (`sysctl -w kernel.print-fatal-signals=1`, then read the crash's pc/lr out of dmesg) against
-	// this to find which .so and offset actually faulted, then `nm -D --defined-only <lib> | sort`
-	// to find the nearest exported symbol at-or-below that offset. Kept from the investigation
-	// that root-caused this - harmless if nothing ever crashes here again.
-	void DumpMapsOnce() {
-		static bool done = false;
-		if (done) return;
-		done = true;
-		FILE* f = fopen("/proc/self/maps", "r");
-		if (!f) return;
-		fprintf(stderr, "MppJpegDecoder: /proc/self/maps --\n");
-		char line[512];
-		while (fgets(line, sizeof(line), f)) fputs(line, stderr);
-		fprintf(stderr, "MppJpegDecoder: -- end maps\n");
-		fflush(stderr);
-		fclose(f);
-	}
-
 	// MPP_ALIGN as defined by rockchip-linux/mpp's own osal/inc/mpp_common.h - not part of the
 	// public pkg-config include path, so defined locally rather than depending on an internal
 	// header. Only ever used with a=16 here, matching mpi_dec_test.c's own advanced-path sizing.
@@ -205,7 +184,6 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 				MppMeta meta = mpp_packet_get_meta(packet);
 				if (meta) mpp_meta_set_frame(meta, KEY_OUTPUT_FRAME, frame);
 
-				DumpMapsOnce();
 				if (api->decode_put_packet(ctx, packet) == MPP_OK) {
 					MppFrame frameOut = nullptr;
 					if (api->decode_get_frame(ctx, &frameOut) == MPP_OK && frameOut) {
