@@ -6,25 +6,35 @@
 #include <rockchip/mpp_packet.h>
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/rk_vdec_cfg.h>
+#include <cstdio>
 #include <cstring>
 
-// TEMPORARY - tracing to pinpoint the exact crashing call on real hardware (Catch2's signal
-// handler catches the SIGSEGV as a test failure, but gives no line/stack info of its own).
-#include <cstdio>
-#define MPPDBG(msg) do { fprintf(stderr, "MPPDBG %s:%d %s\n", __FILE__, __LINE__, msg); fflush(stderr); } while (0)
+// NOT CURRENTLY WORKING ON REAL HARDWARE - see LumenCore/CMakeLists.txt's own comment on
+// LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG (left OFF by default) for the full story. Short version:
+// api->decode() below reliably segfaults inside librockchip_mpp.so's own mpp_dec_decode(), at the
+// identical relative offset (+0x420, landing inside its mpp_parser_prepare() call - i.e. MPP's own
+// internal JPEG bitstream parser) across two independent MPP versions and two structurally
+// different buffer-handling approaches. That points at a real incompatibility between this
+// board's vendor kernel/driver and MPP's JPEG decode path, not a bug in this calling code, but
+// that has NOT been proven conclusively (no debug symbols/gdb were available on-device to confirm
+// the exact faulting statement). DumpMapsOnce below is kept for whoever picks this up next - see
+// its own comment for the kernel.print-fatal-signals correlation technique that localized the
+// fault this precisely without a debugger.
 namespace {
-	// dumps this process's own /proc/self/maps to stderr - to correlate the fault PC dmesg
-	// reports (kernel.print-fatal-signals=1) against which shared library actually faulted.
+	// dumps this process's own /proc/self/maps to stderr - correlate the fault PC dmesg reports
+	// (`sysctl -w kernel.print-fatal-signals=1`, then read the crash's pc/lr out of dmesg) against
+	// this to find which .so and offset actually faulted, then `nm -D --defined-only <lib> | sort`
+	// to find the nearest exported symbol at-or-below that offset.
 	void DumpMapsOnce() {
 		static bool done = false;
 		if (done) return;
 		done = true;
 		FILE* f = fopen("/proc/self/maps", "r");
 		if (!f) return;
-		fprintf(stderr, "MPPDBG --- /proc/self/maps ---\n");
+		fprintf(stderr, "MppJpegDecoder: /proc/self/maps --\n");
 		char line[512];
 		while (fgets(line, sizeof(line), f)) fputs(line, stderr);
-		fprintf(stderr, "MPPDBG --- end maps ---\n");
+		fprintf(stderr, "MppJpegDecoder: -- end maps\n");
 		fflush(stderr);
 		fclose(f);
 	}
@@ -83,18 +93,14 @@ MppJpegDecoder::~MppJpegDecoder()
 
 bool MppJpegDecoder::EnsureInputBufferGroup(size_t jpegSize)
 {
-	MPPDBG("EnsureInputBufferGroup: enter");
-	if (m_InputBufGroup && m_InputBufGroupSize >= jpegSize) { MPPDBG("EnsureInputBufferGroup: already big enough"); return true; }
+	if (m_InputBufGroup && m_InputBufGroupSize >= jpegSize) return true;
 	if (m_InputBufGroup) {
-		MPPDBG("EnsureInputBufferGroup: putting old group");
 		mpp_buffer_group_put(static_cast<MppBufferGroup>(m_InputBufGroup));
 		m_InputBufGroup = nullptr;
 		m_InputBufGroupSize = 0;
 	}
-	MPPDBG("EnsureInputBufferGroup: calling CreateInternalGroup");
 	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg_in");
-	if (!group) { MPPDBG("EnsureInputBufferGroup: no allocator type worked"); return false; }
-	MPPDBG("EnsureInputBufferGroup: exit ok");
+	if (!group) return false;
 	m_InputBufGroup = group;
 	m_InputBufGroupSize = jpegSize;
 	return true;
@@ -102,11 +108,9 @@ bool MppJpegDecoder::EnsureInputBufferGroup(size_t jpegSize)
 
 bool MppJpegDecoder::SetupBufferGroup(size_t bufSize)
 {
-	MPPDBG("SetupBufferGroup: enter");
-	if (m_BufGroup && m_BufGroupSize >= bufSize) { MPPDBG("SetupBufferGroup: already big enough"); return true; }
+	if (m_BufGroup && m_BufGroupSize >= bufSize) return true;
 
 	if (m_BufGroup) {
-		MPPDBG("SetupBufferGroup: putting old group");
 		mpp_buffer_group_put(static_cast<MppBufferGroup>(m_BufGroup));
 		m_BufGroup = nullptr;
 		m_BufGroupSize = 0;
@@ -115,27 +119,20 @@ bool MppJpegDecoder::SetupBufferGroup(size_t bufSize)
 	MppApi* api = static_cast<MppApi*>(m_Api);
 	MppCtx ctx = static_cast<MppCtx>(m_Ctx);
 
-	MPPDBG("SetupBufferGroup: calling CreateInternalGroup");
 	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg");
-	if (!group) { MPPDBG("SetupBufferGroup: no allocator type worked"); return false; }
+	if (!group) return false;
 
-	MPPDBG("SetupBufferGroup: calling mpp_buffer_group_limit_config");
 	if (mpp_buffer_group_limit_config(group, bufSize, kBufferCount) != MPP_OK) {
-		MPPDBG("SetupBufferGroup: limit_config failed");
 		mpp_buffer_group_put(group);
 		return false;
 	}
-	MPPDBG("SetupBufferGroup: limit_config ok, calling control(SET_EXT_BUF_GROUP)");
 	if (api->control(ctx, MPP_DEC_SET_EXT_BUF_GROUP, group) != MPP_OK) {
-		MPPDBG("SetupBufferGroup: control(SET_EXT_BUF_GROUP) failed");
 		mpp_buffer_group_put(group);
 		return false;
 	}
-	MPPDBG("SetupBufferGroup: control(SET_EXT_BUF_GROUP) ok");
 
 	m_BufGroup = group;
 	m_BufGroupSize = bufSize;
-	MPPDBG("SetupBufferGroup: exit ok");
 	return true;
 }
 
@@ -146,15 +143,11 @@ bool MppJpegDecoder::EnsureInitialized()
 
 	MppCtx ctx = nullptr;
 	MppApi* api = nullptr;
-	MPPDBG("EnsureInitialized: calling mpp_create");
-	if (mpp_create(&ctx, &api) != MPP_OK) { MPPDBG("EnsureInitialized: mpp_create failed"); return false; }
-	MPPDBG("EnsureInitialized: mpp_create ok, calling mpp_init");
+	if (mpp_create(&ctx, &api) != MPP_OK) return false;
 	if (mpp_init(ctx, MPP_CTX_DEC, MPP_VIDEO_CodingMJPEG) != MPP_OK) {
-		MPPDBG("EnsureInitialized: mpp_init failed");
 		mpp_destroy(ctx);
 		return false;
 	}
-	MPPDBG("EnsureInitialized: mpp_init ok");
 
 	// CONFIRMED THE HARD WAY (a real board segfault, isolated down to the very first api->decode
 	// call, before this class's own buffer-group setup even runs): a decode context needs its
@@ -164,33 +157,25 @@ bool MppJpegDecoder::EnsureInitialized()
 	// decode() call cannot handle. "base:split_parse"=1 matches the demo's own default (lets
 	// MPP's internal frame splitter find frame boundaries) - a no-op for a single already-
 	// complete JPEG image, but this is the documented, tested init sequence, not a value chosen
-	// for its own meaning.
+	// for its own meaning. Necessary but NOT sufficient - see this file's top comment; the crash
+	// this was meant to fix moved past mpp_init but still happens later, inside decode() itself.
 	MppDecCfg cfg = nullptr;
-	MPPDBG("EnsureInitialized: calling mpp_dec_cfg_init");
 	if (mpp_dec_cfg_init(&cfg) != MPP_OK) {
-		MPPDBG("EnsureInitialized: mpp_dec_cfg_init failed");
 		mpp_destroy(ctx);
 		return false;
 	}
-	MPPDBG("EnsureInitialized: mpp_dec_cfg_init ok, calling control(GET_CFG)");
 	if (api->control(ctx, MPP_DEC_GET_CFG, cfg) != MPP_OK) {
-		MPPDBG("EnsureInitialized: control(GET_CFG) failed");
 		mpp_dec_cfg_deinit(cfg);
 		mpp_destroy(ctx);
 		return false;
 	}
-	MPPDBG("EnsureInitialized: control(GET_CFG) ok, calling cfg_set_u32(split_parse)");
 	mpp_dec_cfg_set_u32(cfg, "base:split_parse", 1);
-	MPPDBG("EnsureInitialized: cfg_set_u32 ok, calling control(SET_CFG)");
 	if (api->control(ctx, MPP_DEC_SET_CFG, cfg) != MPP_OK) {
-		MPPDBG("EnsureInitialized: control(SET_CFG) failed");
 		mpp_dec_cfg_deinit(cfg);
 		mpp_destroy(ctx);
 		return false;
 	}
-	MPPDBG("EnsureInitialized: control(SET_CFG) ok, deiniting cfg");
 	mpp_dec_cfg_deinit(cfg);
-	MPPDBG("EnsureInitialized: exit ok");
 
 	m_Ctx = ctx;
 	m_Api = api;
@@ -208,33 +193,27 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 
 	// CONFIRMED THE HARD WAY (isolated via a HITL test with no camera/Server involved, then a
 	// kernel-level fault report - kernel.print-fatal-signals=1 - correlated against
-	// /proc/self/maps): the crash is deep inside librockchip_mpp.so itself, on the very FIRST
-	// api->decode() call, before this class's own output buffer group even gets a chance to run.
-	// mpp_packet_init() below wraps a plain heap pointer (this project's own std::vector/mmap'd
-	// buffer) with no MppBuffer behind it at all - the JPEG-decode VPU needs to DMA directly from
-	// its input, which a plain heap pointer was never going to satisfy. The input packet needs a
-	// real MppBuffer (from its own dedicated buffer group, since its size - the JPEG's own byte
-	// count - is known upfront, unlike the output frame's, which the decoder only reveals via its
-	// first info-change), with the JPEG bytes copied in, exactly the same "real MppBuffer, not a
-	// bare pointer" principle SetupBufferGroup already applies on the output side.
-	MPPDBG("Decode: calling EnsureInputBufferGroup");
-	if (!EnsureInputBufferGroup(jpegSize)) { MPPDBG("Decode: EnsureInputBufferGroup failed"); return false; }
-	MPPDBG("Decode: EnsureInputBufferGroup ok, calling mpp_buffer_get for input");
+	// /proc/self/maps): an earlier version of this function crashed on the very FIRST
+	// api->decode() call, before this class's own output buffer group even got a chance to run,
+	// because mpp_packet_init() wrapped a plain heap pointer with no MppBuffer behind it - the
+	// JPEG-decode VPU needs to DMA directly from its input, which a plain heap pointer was never
+	// going to satisfy. The input packet now uses a real MppBuffer (from its own dedicated buffer
+	// group, since its size - the JPEG's own byte count - is known upfront, unlike the output
+	// frame's, which the decoder only reveals via its first info-change), with the JPEG bytes
+	// copied in - the same "real MppBuffer, not a bare pointer" principle SetupBufferGroup already
+	// applies on the output side. This fixed THAT crash, but api->decode() below still crashes
+	// later, deeper inside mpp_dec_decode() itself - see this file's top comment.
+	if (!EnsureInputBufferGroup(jpegSize)) return false;
 	MppBuffer inputBuffer = nullptr;
 	if (mpp_buffer_get(static_cast<MppBufferGroup>(m_InputBufGroup), &inputBuffer, jpegSize) != MPP_OK || !inputBuffer) {
-		MPPDBG("Decode: mpp_buffer_get for input failed");
 		return false;
 	}
-	MPPDBG("Decode: mpp_buffer_get ok, calling mpp_buffer_get_ptr for input");
 	void* inputPtr = mpp_buffer_get_ptr(inputBuffer);
-	if (!inputPtr) { MPPDBG("Decode: mpp_buffer_get_ptr for input failed"); mpp_buffer_put(inputBuffer); return false; }
-	MPPDBG("Decode: got input ptr, memcpy'ing JPEG bytes in");
+	if (!inputPtr) { mpp_buffer_put(inputBuffer); return false; }
 	memcpy(inputPtr, jpegData, jpegSize);
 
-	MPPDBG("Decode: calling mpp_packet_init_with_buffer");
 	MppPacket packet = nullptr;
 	if (mpp_packet_init_with_buffer(&packet, inputBuffer) != MPP_OK) {
-		MPPDBG("Decode: mpp_packet_init_with_buffer failed");
 		mpp_buffer_put(inputBuffer);
 		return false;
 	}
@@ -242,65 +221,50 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	// larger than this exact frame once the group's own buffer is reused/regrown) - the decoder
 	// must only see this frame's real byte count.
 	mpp_packet_set_length(packet, jpegSize);
-	MPPDBG("Decode: mpp_packet_init_with_buffer ok");
 
 	bool ok = false;
 	for (int attempt = 0; attempt < kMaxDecodeAttempts && !ok; attempt++) {
 		MppFrame frame = nullptr;
-		MPPDBG("Decode: calling api->decode");
+		// see this file's top comment - api->decode() is where this reliably segfaults on real
+		// hardware today. DumpMapsOnce below is what localized that to mpp_dec_decode+0x420.
 		DumpMapsOnce();
-		if (api->decode(ctx, packet, &frame) != MPP_OK || !frame) { MPPDBG("Decode: api->decode failed or no frame"); break; }
-		MPPDBG("Decode: api->decode ok, frame non-null");
+		if (api->decode(ctx, packet, &frame) != MPP_OK || !frame) break;
 
-		MPPDBG("Decode: calling mpp_frame_get_info_change");
 		if (mpp_frame_get_info_change(frame)) {
-			MPPDBG("Decode: info_change true, calling mpp_frame_get_buf_size");
 			size_t bufSize = mpp_frame_get_buf_size(frame);
-			MPPDBG("Decode: got buf_size, calling SetupBufferGroup");
 			// set up (or grow) the buffer group the decoder needs BEFORE acknowledging - see this
 			// file's own top comment on why this is mandatory, not optional. A failure here (no
 			// supported allocator, group setup rejected) falls straight back to software rather
 			// than acknowledging into a decoder that has nowhere to put its output.
 			if (!SetupBufferGroup(bufSize)) {
-				MPPDBG("Decode: SetupBufferGroup failed");
 				mpp_frame_deinit(&frame);
 				break;
 			}
-			MPPDBG("Decode: SetupBufferGroup ok, calling control(INFO_CHANGE_READY)");
 			api->control(ctx, MPP_DEC_SET_INFO_CHANGE_READY, nullptr);
-			MPPDBG("Decode: control(INFO_CHANGE_READY) ok, deiniting frame");
 			mpp_frame_deinit(&frame);
-			MPPDBG("Decode: frame deinit ok, looping");
 			continue;
 		}
-		MPPDBG("Decode: info_change false - real frame");
 
 		// Only 4:2:0 (NV12) output is handled - see this class's own header comment. A decode
 		// error/discarded frame, or any other reported chroma layout (4:2:2/NV16 for a 4:2:2
 		// JPEG), falls back to the caller's software path rather than guessing at a conversion
 		// OpenCV has no built-in cvtColor code for.
-		MPPDBG("Decode: checking errinfo/discard/fmt");
 		if (mpp_frame_get_errinfo(frame) != 0 || mpp_frame_get_discard(frame) != 0 ||
 			mpp_frame_get_fmt(frame) != MPP_FMT_YUV420SP) {
-			MPPDBG("Decode: errinfo/discard/fmt rejected this frame");
 			mpp_frame_deinit(&frame);
 			break;
 		}
 
-		MPPDBG("Decode: reading width/height/hor_stride/buffer");
 		int frameWidth = static_cast<int>(mpp_frame_get_width(frame));
 		int frameHeight = static_cast<int>(mpp_frame_get_height(frame));
 		int horStride = static_cast<int>(mpp_frame_get_hor_stride(frame));
 		MppBuffer buffer = mpp_frame_get_buffer(frame);
-		MPPDBG("Decode: calling mpp_buffer_get_ptr");
 		const uint8_t* base = buffer ? static_cast<const uint8_t*>(mpp_buffer_get_ptr(buffer)) : nullptr;
-		MPPDBG("Decode: got base pointer");
 
 		// a genuine size mismatch (a driver/decoder surprise) falls back rather than reading a
 		// mis-sized view into the real buffer - same discipline the software MJPEG path already
 		// uses (see V4l2CameraBackend.cpp's own comment on this).
 		if (!base || frameWidth < width || frameHeight < height || horStride < width) {
-			MPPDBG("Decode: size/base mismatch, rejecting frame");
 			mpp_frame_deinit(&frame);
 			break;
 		}
@@ -309,33 +273,25 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 		// asGray - this class never touches FramePool itself, see this file's own header
 		// comment on why.
 		if (asGray) {
-			MPPDBG("Decode: asGray copyTo");
 			// the Y plane IS the grayscale image - genuinely free, no colour conversion at all.
 			cv::Mat yView(height, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(horStride));
 			yView.copyTo(dst);
-			MPPDBG("Decode: asGray copyTo done");
 		} else {
-			MPPDBG("Decode: cvtColor NV12->BGR");
 			// same strided-view construction V4l2CameraBackend.cpp's own software NV12 branch
 			// already uses for the wire format - one Mat spanning the Y plane (height rows)
 			// directly followed by interleaved UV at half resolution, all at horStride.
 			cv::Mat nv12View(height * 3 / 2, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(horStride));
 			cv::cvtColor(nv12View, dst, cv::COLOR_YUV2BGR_NV12);
-			MPPDBG("Decode: cvtColor done");
 		}
 
-		MPPDBG("Decode: deiniting final frame");
 		mpp_frame_deinit(&frame);
 		ok = true;
-		MPPDBG("Decode: ok = true");
 	}
 
-	MPPDBG("Decode: loop exited, calling mpp_packet_deinit");
 	mpp_packet_deinit(&packet);
 	// drops THIS function's own reference from mpp_buffer_get above - mpp_packet_init_with_buffer
 	// took its own separate reference for the packet, already released by mpp_packet_deinit.
 	mpp_buffer_put(inputBuffer);
-	MPPDBG("Decode: mpp_packet_deinit ok, returning");
 	return ok;
 }
 #endif // LUMEN_WITH_MPP_JPEG

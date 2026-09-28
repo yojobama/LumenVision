@@ -66,14 +66,6 @@ jobs:
       - name: Test
         run: ctest --preset ci-linux-arm64 --output-on-failure
 
-      # TEMPORARY - debugging MppJpegDecoder directly on real hardware in isolation from the full
-      # Server (which is what crashed twice already). Remove once that's confirmed working.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: lumen-core-tests-debug
-          path: out/build/ci-linux-arm64/stage/Release/LumenCoreTests
-          if-no-files-found: error
-
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
