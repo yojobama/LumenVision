@@ -68,7 +68,7 @@ endif()
 # (https://github.com/rockchip-linux/mpp/issues/586). MppJpegDecoder now uses the "advanced"
 # decode_put_packet()/decode_get_frame() interface instead, with a caller-preallocated output
 # buffer - see MppJpegDecoder.cpp's own top comment for the full trail.
-option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" OFF)
+option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" ON)
 set(LUMEN_WITH_MPP_JPEG OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
     find_package(PkgConfig QUIET)
