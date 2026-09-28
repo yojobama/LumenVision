@@ -5,28 +5,32 @@
 #include <rockchip/mpp_frame.h>
 #include <rockchip/mpp_packet.h>
 #include <rockchip/mpp_buffer.h>
+#include <rockchip/mpp_meta.h>
 #include <rockchip/rk_vdec_cfg.h>
 #include <cstdio>
 #include <cstring>
 
-// NOT CURRENTLY WORKING ON REAL HARDWARE - see LumenCore/CMakeLists.txt's own comment on
-// LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG (left OFF by default) for the full story. Short version:
-// api->decode() below reliably segfaults inside librockchip_mpp.so's own mpp_dec_decode(), at the
-// identical relative offset (+0x420, landing inside its mpp_parser_prepare() call - i.e. MPP's own
-// internal JPEG bitstream parser) across two independent MPP versions, two structurally different
-// buffer-handling approaches, AND both values of "base:split_parse" (0 and 1 - ruled out as the
-// cause; see rk_vdec_cfg.h's real-world usage in EnsureInitialized below and the retest that
-// confirmed the identical offset either way). That points at a real incompatibility between this
-// board's vendor kernel/driver and MPP's JPEG decode path, not a bug in this calling code, but
-// that has NOT been proven conclusively (no debug symbols/gdb were available on-device to confirm
-// the exact faulting statement). DumpMapsOnce below is kept for whoever picks this up next - see
-// its own comment for the kernel.print-fatal-signals correlation technique that localized the
-// fault this precisely without a debugger.
+// PREVIOUSLY NOT WORKING ON REAL HARDWARE, root-caused and fixed - see the git history around
+// "Conclude MPP JPEG hardware decode investigation" and the mpp-jpeg-decode-crash memory for the
+// full trail. Short version: the earlier version of this class called api->decode(ctx, packet,
+// &frame) - the "simple" synchronous decode API - which reliably segfaulted deep inside
+// librockchip_mpp.so's own mpp_dec_decode(), at the identical relative offset across two MPP
+// versions, two buffer-handling approaches, and both values of "base:split_parse". None of that
+// was the real bug: MPP's OWN reference test explicitly never uses the simple decode() API for
+// MJPEG at all (rockchip-linux/mpp's test/mpi_dec_test.c: `cmd->simple = (cmd->type !=
+// MPP_VIDEO_CodingMJPEG) ? (1) : (0);`), and a maintainer confirmed this directly when asked
+// (https://github.com/rockchip-linux/mpp/issues/586: "是的，jpeg 解码走 advanced 接口" - "Yes, JPEG
+// decoding goes through the advanced interface"). This class now uses that "advanced" interface
+// instead: decode_put_packet()+decode_get_frame(), with the OUTPUT frame buffer pre-allocated by
+// this class itself (from the width/height the caller already knows) and attached to the packet
+// via its own metadata BEFORE decoding - no info-change negotiation round trip at all, unlike the
+// simple API's contract other codecs use.
 namespace {
 	// dumps this process's own /proc/self/maps to stderr - correlate the fault PC dmesg reports
 	// (`sysctl -w kernel.print-fatal-signals=1`, then read the crash's pc/lr out of dmesg) against
 	// this to find which .so and offset actually faulted, then `nm -D --defined-only <lib> | sort`
-	// to find the nearest exported symbol at-or-below that offset.
+	// to find the nearest exported symbol at-or-below that offset. Kept from the investigation
+	// that root-caused this - harmless if nothing ever crashes here again.
 	void DumpMapsOnce() {
 		static bool done = false;
 		if (done) return;
@@ -40,36 +44,16 @@ namespace {
 		fflush(stderr);
 		fclose(f);
 	}
-}
 
-namespace {
-	// A fresh MJPEG decode context requires an "info change" round trip on its first real
-	// picture (the decoder reports the buffer requirements it discovered from the bitstream
-	// before it will actually produce pixels - see rockchip-linux/mpp's own test/mpi_dec_test.c,
-	// the "simple decode" path this class otherwise mirrors) - MPP_DEC_SET_INFO_CHANGE_READY
-	// acknowledges it and lets decoding continue. CONFIRMED THE HARD WAY (a real board segfault,
-	// not a guess): an explicit buffer group registered via MPP_DEC_SET_EXT_BUF_GROUP is
-	// mandatory here, even for a single-frame codec with no reference chaining - a prior version
-	// of this class skipped it entirely (reasoning "JPEG needs no reference-frame pool, MPP's
-	// internal allocation should be enough"), which crashed the whole process the moment a real
-	// frame was decoded. mpi_dec_test.c's own default buffer mode (MPP_DEC_BUF_HALF_INT in its
-	// own utils/mpi_dec_utils.c) always sets one up; SetupBufferGroup below mirrors exactly that
-	// path (mpp_buffer_group_get_internal + mpp_buffer_group_limit_config), not the untested
-	// "mode=INTERNAL, register nothing" alternative that same file also defines but never uses
-	// by default. Bounded, not a real retry loop: one real info-change round trip is the
-	// documented case; anything beyond that is treated as a protocol surprise this class doesn't
-	// understand, not looped on forever.
-	constexpr int kMaxDecodeAttempts = 4;
+	// MPP_ALIGN as defined by rockchip-linux/mpp's own osal/inc/mpp_common.h - not part of the
+	// public pkg-config include path, so defined locally rather than depending on an internal
+	// header. Only ever used with a=16 here, matching mpi_dec_test.c's own advanced-path sizing.
+	constexpr RK_U32 MppAlign(RK_U32 x, RK_U32 a) { return (x + a - 1) & ~(a - 1); }
 
-	// JPEG has no reference-frame chaining (one frame in, one frame out) - a handful of buffers
-	// is plenty; this only bounds how many the group is ALLOWED to grow to
-	// (mpp_buffer_group_limit_config), not a fixed pre-allocation.
-	constexpr RK_S32 kBufferCount = 4;
-
-	// shared by SetupBufferGroup (output frames) and EnsureInputBufferGroup (the input packet) -
-	// priority order per mpp_buffer.h's own comment ("MPP_BUFFER_TYPE_DMA_HEAP >
-	// MPP_BUFFER_TYPE_DRM > MPP_BUFFER_TYPE_ION") - fall back down the list if the preferred
-	// allocator isn't available on this kernel rather than failing outright.
+	// shared by EnsureOutputBufferGroup and EnsureInputBufferGroup - priority order per
+	// mpp_buffer.h's own comment ("MPP_BUFFER_TYPE_DMA_HEAP > MPP_BUFFER_TYPE_DRM >
+	// MPP_BUFFER_TYPE_ION") - fall back down the list if the preferred allocator isn't available
+	// on this kernel rather than failing outright.
 	MppBufferGroup CreateInternalGroup(const char* tag)
 	{
 		static const MppBufferType kTypesInPriorityOrder[] = {
@@ -108,31 +92,16 @@ bool MppJpegDecoder::EnsureInputBufferGroup(size_t jpegSize)
 	return true;
 }
 
-bool MppJpegDecoder::SetupBufferGroup(size_t bufSize)
+bool MppJpegDecoder::EnsureOutputBufferGroup(size_t bufSize)
 {
 	if (m_BufGroup && m_BufGroupSize >= bufSize) return true;
-
 	if (m_BufGroup) {
 		mpp_buffer_group_put(static_cast<MppBufferGroup>(m_BufGroup));
 		m_BufGroup = nullptr;
 		m_BufGroupSize = 0;
 	}
-
-	MppApi* api = static_cast<MppApi*>(m_Api);
-	MppCtx ctx = static_cast<MppCtx>(m_Ctx);
-
-	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg");
+	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg_out");
 	if (!group) return false;
-
-	if (mpp_buffer_group_limit_config(group, bufSize, kBufferCount) != MPP_OK) {
-		mpp_buffer_group_put(group);
-		return false;
-	}
-	if (api->control(ctx, MPP_DEC_SET_EXT_BUF_GROUP, group) != MPP_OK) {
-		mpp_buffer_group_put(group);
-		return false;
-	}
-
 	m_BufGroup = group;
 	m_BufGroupSize = bufSize;
 	return true;
@@ -151,21 +120,14 @@ bool MppJpegDecoder::EnsureInitialized()
 		return false;
 	}
 
-	// CONFIRMED THE HARD WAY (a real board segfault, isolated down to the very first api->decode
-	// call, before this class's own buffer-group setup even runs): a decode context needs its
-	// MppDecCfg fetched, configured and re-applied before ANY decode call, exactly like the real
-	// reference (rockchip-linux/mpp's own test/mpi_dec_test.c) always does - skipping this
-	// entirely (this class's own prior state) leaves the decoder in a state its own first
-	// decode() call cannot handle. Necessary but NOT sufficient - see this file's top comment;
-	// the crash this was meant to fix moved past mpp_init but still happens later, inside decode()
-	// itself, localized (kernel fault correlation) to right around mpp_dec_decode's own call into
-	// mpp_parser_prepare() - the exact function whose behavior "base:split_parse" controls, which
-	// made this the single most plausible untried lead. TESTED ON REAL HARDWARE, RULED OUT: 0
-	// (this class always hands MPP one complete, self-contained JPEG image per call - the case
-	// split_parse=0, no cross-call boundary scanning, is actually for) faults at the IDENTICAL
-	// offset as 1 (matching mpi_dec_test.c's H.264-oriented default). Left at 0 anyway since it's
-	// the semantically correct value for this one-shot-decode calling pattern, not because it
-	// changes the outcome - the crash isn't reached via this flag at all.
+	// A decode context needs its MppDecCfg fetched, configured and re-applied before ANY decode
+	// call, exactly like the real reference (rockchip-linux/mpp's own test/mpi_dec_test.c) always
+	// does. "base:split_parse"=0 is the semantically correct value for this class's one-shot
+	// calling pattern (one complete, self-contained JPEG per call, no cross-call boundary
+	// scanning) - confirmed to make no difference to the crash that used to happen here (that
+	// crash was the simple decode() API itself being wrong for MJPEG, not this flag - see this
+	// file's top comment), but there's no reason to use the semantically wrong value now that
+	// this class no longer needs to match the H.264-oriented demo default.
 	MppDecCfg cfg = nullptr;
 	if (mpp_dec_cfg_init(&cfg) != MPP_OK) {
 		mpp_destroy(ctx);
@@ -198,18 +160,9 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	MppApi* api = static_cast<MppApi*>(m_Api);
 	MppCtx ctx = static_cast<MppCtx>(m_Ctx);
 
-	// CONFIRMED THE HARD WAY (isolated via a HITL test with no camera/Server involved, then a
-	// kernel-level fault report - kernel.print-fatal-signals=1 - correlated against
-	// /proc/self/maps): an earlier version of this function crashed on the very FIRST
-	// api->decode() call, before this class's own output buffer group even got a chance to run,
-	// because mpp_packet_init() wrapped a plain heap pointer with no MppBuffer behind it - the
-	// JPEG-decode VPU needs to DMA directly from its input, which a plain heap pointer was never
-	// going to satisfy. The input packet now uses a real MppBuffer (from its own dedicated buffer
-	// group, since its size - the JPEG's own byte count - is known upfront, unlike the output
-	// frame's, which the decoder only reveals via its first info-change), with the JPEG bytes
-	// copied in - the same "real MppBuffer, not a bare pointer" principle SetupBufferGroup already
-	// applies on the output side. This fixed THAT crash, but api->decode() below still crashes
-	// later, deeper inside mpp_dec_decode() itself - see this file's top comment.
+	// input packet: a real MppBuffer (the JPEG-decode VPU DMAs directly from its input, which a
+	// bare heap pointer can't satisfy), from its own dedicated buffer group since its size - the
+	// JPEG's own byte count - is known upfront.
 	if (!EnsureInputBufferGroup(jpegSize)) return false;
 	MppBuffer inputBuffer = nullptr;
 	if (mpp_buffer_get(static_cast<MppBufferGroup>(m_InputBufGroup), &inputBuffer, jpegSize) != MPP_OK || !inputBuffer) {
@@ -229,70 +182,84 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	// must only see this frame's real byte count.
 	mpp_packet_set_length(packet, jpegSize);
 
+	// output frame: per the advanced interface's contract (see this file's top comment), THIS
+	// class pre-allocates the output MppFrame and its backing MppBuffer from the width/height the
+	// caller already knows, and attaches it to the packet's own metadata before decoding - MPP
+	// decodes directly into it, with no info-change negotiation at all. Sizing/alignment mirrors
+	// mpi_dec_test.c's own dec_advanced() setup exactly (hor_stride/ver_stride aligned to 16,
+	// buffer sized at 4x w*h - enough headroom for either 4:2:0 or 4:2:2 chroma).
+	RK_U32 horStride = MppAlign(static_cast<RK_U32>(width), 16);
+	RK_U32 verStride = MppAlign(static_cast<RK_U32>(height), 16);
+	size_t outBufSize = static_cast<size_t>(horStride) * verStride * 4;
+
 	bool ok = false;
-	for (int attempt = 0; attempt < kMaxDecodeAttempts && !ok; attempt++) {
-		MppFrame frame = nullptr;
-		// see this file's top comment - api->decode() is where this reliably segfaults on real
-		// hardware today. DumpMapsOnce below is what localized that to mpp_dec_decode+0x420.
-		DumpMapsOnce();
-		if (api->decode(ctx, packet, &frame) != MPP_OK || !frame) break;
+	if (EnsureOutputBufferGroup(outBufSize)) {
+		MppBuffer outputBuffer = nullptr;
+		if (mpp_buffer_get(static_cast<MppBufferGroup>(m_BufGroup), &outputBuffer, outBufSize) == MPP_OK && outputBuffer) {
+			MppFrame frame = nullptr;
+			if (mpp_frame_init(&frame) == MPP_OK) {
+				mpp_frame_set_buffer(frame, outputBuffer);
+				// the frame now holds its own reference to outputBuffer.
+				mpp_buffer_put(outputBuffer);
 
-		if (mpp_frame_get_info_change(frame)) {
-			size_t bufSize = mpp_frame_get_buf_size(frame);
-			// set up (or grow) the buffer group the decoder needs BEFORE acknowledging - see this
-			// file's own top comment on why this is mandatory, not optional. A failure here (no
-			// supported allocator, group setup rejected) falls straight back to software rather
-			// than acknowledging into a decoder that has nowhere to put its output.
-			if (!SetupBufferGroup(bufSize)) {
-				mpp_frame_deinit(&frame);
-				break;
+				MppMeta meta = mpp_packet_get_meta(packet);
+				if (meta) mpp_meta_set_frame(meta, KEY_OUTPUT_FRAME, frame);
+
+				DumpMapsOnce();
+				if (api->decode_put_packet(ctx, packet) == MPP_OK) {
+					MppFrame frameOut = nullptr;
+					if (api->decode_get_frame(ctx, &frameOut) == MPP_OK && frameOut) {
+						// Only 4:2:0 (NV12) output is handled - see this class's own header
+						// comment. A decode error/discarded frame, or any other reported chroma
+						// layout (4:2:2/NV16 for a 4:2:2 JPEG), falls back to the caller's
+						// software path rather than guessing at a conversion OpenCV has no
+						// built-in cvtColor code for.
+						if (mpp_frame_get_errinfo(frameOut) == 0 && mpp_frame_get_discard(frameOut) == 0 &&
+							mpp_frame_get_fmt(frameOut) == MPP_FMT_YUV420SP) {
+							int frameWidth = static_cast<int>(mpp_frame_get_width(frameOut));
+							int frameHeight = static_cast<int>(mpp_frame_get_height(frameOut));
+							int frameHorStride = static_cast<int>(mpp_frame_get_hor_stride(frameOut));
+							MppBuffer frameBuffer = mpp_frame_get_buffer(frameOut);
+							const uint8_t* base = frameBuffer ? static_cast<const uint8_t*>(mpp_buffer_get_ptr(frameBuffer)) : nullptr;
+
+							// a genuine size mismatch (a driver/decoder surprise) falls back
+							// rather than reading a mis-sized view into the real buffer - same
+							// discipline the software MJPEG path already uses (see
+							// V4l2CameraBackend.cpp's own comment on this).
+							if (base && frameWidth >= width && frameHeight >= height && frameHorStride >= width) {
+								// `dst` is already the caller's own FramePool-acquired buffer,
+								// right-sized/typed for asGray - this class never touches
+								// FramePool itself, see this file's own header comment on why.
+								if (asGray) {
+									// the Y plane IS the grayscale image - genuinely free, no
+									// colour conversion at all.
+									cv::Mat yView(height, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(frameHorStride));
+									yView.copyTo(dst);
+								} else {
+									// same strided-view construction V4l2CameraBackend.cpp's own
+									// software NV12 branch already uses for the wire format - one
+									// Mat spanning the Y plane (height rows) directly followed by
+									// interleaved UV at half resolution, all at frameHorStride.
+									cv::Mat nv12View(height * 3 / 2, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(frameHorStride));
+									cv::cvtColor(nv12View, dst, cv::COLOR_YUV2BGR_NV12);
+								}
+								ok = true;
+							}
+						}
+						// per the advanced interface's contract, frameOut IS frame (the same
+						// preallocated frame attached above via the packet's own metadata) - one
+						// deinit for both, not two, or this double-frees.
+						mpp_frame_deinit(&frameOut);
+					} else {
+						mpp_frame_deinit(&frame);
+					}
+				} else {
+					mpp_frame_deinit(&frame);
+				}
+			} else {
+				mpp_buffer_put(outputBuffer);
 			}
-			api->control(ctx, MPP_DEC_SET_INFO_CHANGE_READY, nullptr);
-			mpp_frame_deinit(&frame);
-			continue;
 		}
-
-		// Only 4:2:0 (NV12) output is handled - see this class's own header comment. A decode
-		// error/discarded frame, or any other reported chroma layout (4:2:2/NV16 for a 4:2:2
-		// JPEG), falls back to the caller's software path rather than guessing at a conversion
-		// OpenCV has no built-in cvtColor code for.
-		if (mpp_frame_get_errinfo(frame) != 0 || mpp_frame_get_discard(frame) != 0 ||
-			mpp_frame_get_fmt(frame) != MPP_FMT_YUV420SP) {
-			mpp_frame_deinit(&frame);
-			break;
-		}
-
-		int frameWidth = static_cast<int>(mpp_frame_get_width(frame));
-		int frameHeight = static_cast<int>(mpp_frame_get_height(frame));
-		int horStride = static_cast<int>(mpp_frame_get_hor_stride(frame));
-		MppBuffer buffer = mpp_frame_get_buffer(frame);
-		const uint8_t* base = buffer ? static_cast<const uint8_t*>(mpp_buffer_get_ptr(buffer)) : nullptr;
-
-		// a genuine size mismatch (a driver/decoder surprise) falls back rather than reading a
-		// mis-sized view into the real buffer - same discipline the software MJPEG path already
-		// uses (see V4l2CameraBackend.cpp's own comment on this).
-		if (!base || frameWidth < width || frameHeight < height || horStride < width) {
-			mpp_frame_deinit(&frame);
-			break;
-		}
-
-		// `dst` is already the caller's own FramePool-acquired buffer, right-sized/typed for
-		// asGray - this class never touches FramePool itself, see this file's own header
-		// comment on why.
-		if (asGray) {
-			// the Y plane IS the grayscale image - genuinely free, no colour conversion at all.
-			cv::Mat yView(height, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(horStride));
-			yView.copyTo(dst);
-		} else {
-			// same strided-view construction V4l2CameraBackend.cpp's own software NV12 branch
-			// already uses for the wire format - one Mat spanning the Y plane (height rows)
-			// directly followed by interleaved UV at half resolution, all at horStride.
-			cv::Mat nv12View(height * 3 / 2, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(horStride));
-			cv::cvtColor(nv12View, dst, cv::COLOR_YUV2BGR_NV12);
-		}
-
-		mpp_frame_deinit(&frame);
-		ok = true;
 	}
 
 	mpp_packet_deinit(&packet);

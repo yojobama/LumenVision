@@ -57,29 +57,18 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 # --- Optional: hardware MJPEG decode via the RK3588's JPEG-decode VPU (rockchip_mpp) ------------
-# Two structurally different fixes have gone into MppJpegDecoder so far - registering a real
-# MPP_DEC_SET_EXT_BUF_GROUP output buffer group (real MPP decode requires one; confirmed against
-# rockchip-linux/mpp's own utils/mpi_dec_utils.c), and backing the INPUT packet with a real
-# DMA-capable MppBuffer instead of a raw heap pointer, plus setting up MppDecCfg (split_parse)
-# before the first decode call (also required per that same reference). All three are real,
-# necessary fixes and stay in the code. None of them were sufficient: on real hardware (Orange Pi
-# 5 Plus, RK3588, vendor kernel 6.1.115-rk35xx), api->decode() still crashes - confirmed via kernel
-# fault correlation (dmesg pc/lr against /proc/self/maps) to fault at the IDENTICAL relative offset,
-# mpp_dec_decode+0x420, across TWO independent MPP versions (develop@14729dd and the tagged 1.1.0
-# release this project now pins to - see install-deps.sh's MPP_REF). That offset lands inside
-# mpp_dec_decode's own mpp_parser_prepare() call (mpp/codec/mpp_dec_no_thread.c in the 1.1.0 tag),
-# i.e. inside MPP's own internal JPEG-bitstream parser, not in anything this caller controls
-# directly - version-independent and calling-pattern-independent within what's been tried, which
-# points at a genuine incompatibility between this vendor kernel/driver and MPP's JPEG decode path
-# rather than a caller-side bug. h264_rkmpp ENCODE is independently confirmed working on this same
-# board (RecordSink/WebRTCSink), so the hardware/kernel/MPP stack as a whole is not broken - only
-# this specific decode path is. Since ruled out: "base:split_parse"=0 (a complete, self-contained
-# JPEG per call, no cross-call boundary scanning) instead of =1 (the H.264-oriented demo default,
-# which this class's own EOS-less one-shot calling pattern arguably mismatches) - tested on real
-# hardware and faults at the IDENTICAL offset either way, so the flag isn't even reached before
-# whatever's actually wrong. Left OFF by default until this is actually resolved; flip
-# LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG on for further hardware debugging only, not for a real build.
-option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" OFF)
+# Root-caused (see MppJpegDecoder.cpp's own top comment and the mpp-jpeg-decode-crash memory for
+# the full trail): the earlier version of this class called the "simple" synchronous
+# api->decode(ctx, packet, &frame) API, which segfaulted deep inside librockchip_mpp.so's own
+# mpp_dec_decode() on real hardware, reproducibly, across MPP versions and buffer-handling
+# approaches. That was never a tuning problem - rockchip-linux/mpp's OWN reference test never uses
+# that API for MJPEG at all (test/mpi_dec_test.c: `cmd->simple = (cmd->type !=
+# MPP_VIDEO_CodingMJPEG) ? (1) : (0);`), confirmed directly by a maintainer
+# (https://github.com/rockchip-linux/mpp/issues/586). MppJpegDecoder now uses the "advanced"
+# decode_put_packet()/decode_get_frame() interface instead, with a caller-preallocated output
+# buffer - RE-ENABLED and pending a real-hardware retest to confirm this actually fixes it (see
+# the commit re-enabling this and adding the temporary CI test-artifact step back).
+option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" ON)
 set(LUMEN_WITH_MPP_JPEG OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
     find_package(PkgConfig QUIET)

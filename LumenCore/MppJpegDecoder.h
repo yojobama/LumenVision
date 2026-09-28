@@ -33,10 +33,13 @@ public:
 
 private:
 	bool EnsureInitialized();
-	// (Re)creates m_BufGroup sized for bufSize and registers it with the decoder via
-	// MPP_DEC_SET_EXT_BUF_GROUP - see the .cpp's own comment on why this is mandatory, not
-	// optional, even for a single-frame codec with no reference chaining.
-	bool SetupBufferGroup(size_t bufSize);
+	// (Re)creates m_BufGroup, sized for at least bufSize - the group backing the OUTPUT frame
+	// buffer this class pre-allocates and hands to MPP itself (see the .cpp's own top comment on
+	// why: JPEG decode requires the "advanced" put_packet/get_frame interface with a caller-
+	// supplied output buffer, not the simple decode() call's internal-allocation contract other
+	// codecs use). Not registered with the decoder via MPP_DEC_SET_EXT_BUF_GROUP - the advanced
+	// path never needs that, only a real MppBuffer to attach to the frame it pre-allocates.
+	bool EnsureOutputBufferGroup(size_t bufSize);
 	// (Re)creates m_InputBufGroup, sized for at least jpegSize - the group backing INPUT packets
 	// (the compressed bytes handed to the decoder), separate from m_BufGroup (the decoder's own
 	// OUTPUT frame buffers) - see the .cpp's own comment on why the input packet also needs to be
@@ -48,7 +51,7 @@ private:
 	bool m_InitAttempted = false;
 	bool m_InitOk = false;
 
-	void* m_BufGroup = nullptr; // MppBufferGroup, owns the frame buffers MPP decodes into
+	void* m_BufGroup = nullptr; // MppBufferGroup, owns the OUTPUT frame buffer MPP decodes into
 	size_t m_BufGroupSize = 0;
 
 	void* m_InputBufGroup = nullptr; // MppBufferGroup, owns the INPUT packet buffer
