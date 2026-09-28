@@ -13,8 +13,10 @@
 // LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG (left OFF by default) for the full story. Short version:
 // api->decode() below reliably segfaults inside librockchip_mpp.so's own mpp_dec_decode(), at the
 // identical relative offset (+0x420, landing inside its mpp_parser_prepare() call - i.e. MPP's own
-// internal JPEG bitstream parser) across two independent MPP versions and two structurally
-// different buffer-handling approaches. That points at a real incompatibility between this
+// internal JPEG bitstream parser) across two independent MPP versions, two structurally different
+// buffer-handling approaches, AND both values of "base:split_parse" (0 and 1 - ruled out as the
+// cause; see rk_vdec_cfg.h's real-world usage in EnsureInitialized below and the retest that
+// confirmed the identical offset either way). That points at a real incompatibility between this
 // board's vendor kernel/driver and MPP's JPEG decode path, not a bug in this calling code, but
 // that has NOT been proven conclusively (no debug symbols/gdb were available on-device to confirm
 // the exact faulting statement). DumpMapsOnce below is kept for whoever picks this up next - see
@@ -157,13 +159,13 @@ bool MppJpegDecoder::EnsureInitialized()
 	// decode() call cannot handle. Necessary but NOT sufficient - see this file's top comment;
 	// the crash this was meant to fix moved past mpp_init but still happens later, inside decode()
 	// itself, localized (kernel fault correlation) to right around mpp_dec_decode's own call into
-	// mpp_parser_prepare() - the exact function whose behavior "base:split_parse" controls.
-	// TRYING split_parse=0 here (was 1, matching mpi_dec_test.c's H.264-oriented default): 1 tells
-	// MPP's parser to expect a continuous elementary stream and scan for frame boundaries across
-	// calls (and this code never calls mpp_packet_set_eos, since it does one-shot decode, not
-	// streaming - a mismatch with what split_parse=1 expects). This class always hands MPP exactly
-	// one complete, self-contained JPEG image (SOI...EOI) per call - the case split_parse=0 (no
-	// boundary-scanning, parse the packet directly as one complete frame) is actually for.
+	// mpp_parser_prepare() - the exact function whose behavior "base:split_parse" controls, which
+	// made this the single most plausible untried lead. TESTED ON REAL HARDWARE, RULED OUT: 0
+	// (this class always hands MPP one complete, self-contained JPEG image per call - the case
+	// split_parse=0, no cross-call boundary scanning, is actually for) faults at the IDENTICAL
+	// offset as 1 (matching mpi_dec_test.c's H.264-oriented default). Left at 0 anyway since it's
+	// the semantically correct value for this one-shot-decode calling pattern, not because it
+	// changes the outcome - the crash isn't reached via this flag at all.
 	MppDecCfg cfg = nullptr;
 	if (mpp_dec_cfg_init(&cfg) != MPP_OK) {
 		mpp_destroy(ctx);

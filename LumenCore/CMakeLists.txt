@@ -73,9 +73,13 @@ endif()
 # points at a genuine incompatibility between this vendor kernel/driver and MPP's JPEG decode path
 # rather than a caller-side bug. h264_rkmpp ENCODE is independently confirmed working on this same
 # board (RecordSink/WebRTCSink), so the hardware/kernel/MPP stack as a whole is not broken - only
-# this specific decode path is. Left OFF by default until this is actually resolved; flip
+# this specific decode path is. Since ruled out: "base:split_parse"=0 (a complete, self-contained
+# JPEG per call, no cross-call boundary scanning) instead of =1 (the H.264-oriented demo default,
+# which this class's own EOS-less one-shot calling pattern arguably mismatches) - tested on real
+# hardware and faults at the IDENTICAL offset either way, so the flag isn't even reached before
+# whatever's actually wrong. Left OFF by default until this is actually resolved; flip
 # LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG on for further hardware debugging only, not for a real build.
-option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" ON)
+option(LUMEN_ENABLE_EXPERIMENTAL_MPP_JPEG "Hardware MJPEG decode via rockchip_mpp - see this file's own comment" OFF)
 set(LUMEN_WITH_MPP_JPEG OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
     find_package(PkgConfig QUIET)
