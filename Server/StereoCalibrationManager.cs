@@ -40,13 +40,6 @@ namespace Server
             File.WriteAllText(path, JsonSerializer.Serialize(calibrations, new JsonSerializerOptions { WriteIndented = true }));
         }
 
-        // resolves the two camera paths the StereoCalibrationSink is bound to (Source = left, Source2 = right)
-        public void SaveResult(int calibratorSinkId, StereoCalibrationResult result)
-        {
-            var sink = SinkManager.Instance.GetSinkById(calibratorSinkId);
-            SaveResult(sink?.Source?.CameraHardwareInfo?.path, sink?.Source2?.CameraHardwareInfo?.path, result);
-        }
-
         // persists the result under both cameras' device paths; not persisted unless both are real cameras
         public void SaveResult(string? leftPath, string? rightPath, StereoCalibrationResult result)
         {

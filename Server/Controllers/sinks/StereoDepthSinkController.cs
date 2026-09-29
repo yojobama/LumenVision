@@ -7,7 +7,7 @@ namespace Server.Controllers.sinks
 {
     internal class StereoDepthSinkController : ControllerBase
     {
-        // POST: create a StereoDepthNode from a calibration result (StereoCalibrationSink /run or /result); bind sources via /bind.
+        // POST: create a StereoDepthNode from a calibration result (a saved stereo calibration, /calibration/savedStereo); bind sources via /bind.
         // The body is deserialised by hand with System.Text.Json.
         [HttpPost("stereoDepthSink/create")]
         public async Task<int> Create([FromQuery] string name, [FromQuery] StereoDepthBackendKind backend,

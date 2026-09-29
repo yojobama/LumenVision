@@ -42,10 +42,6 @@ namespace Server
             File.WriteAllText(path, JsonSerializer.Serialize(calibrations, new JsonSerializerOptions { WriteIndented = true }));
         }
 
-        // resolves the camera path the calibrator sink is bound to and persists the result under it
-        public void SaveResult(int calibratorSinkId, CameraCalibrationResult result) =>
-            SaveResult(SinkManager.Instance.GetSinkById(calibratorSinkId)?.Source?.CameraHardwareInfo?.path, result);
-
         // persists the result under the camera's device path; not persisted without one (e.g. a video file)
         public void SaveResult(string? cameraPath, CameraCalibrationResult result)
         {

@@ -14,11 +14,9 @@ namespace Server
             // sinks
             typeof(SinkController),
             typeof(ApriltagSinkController),
-            typeof(CameraCalibrationSinkController),
             typeof(NetworkTablesSinkController),
             typeof(ObjectDetectionSinkController),
             typeof(WebRTCSinkController),
-            typeof(StereoCalibrationSinkController),
             typeof(StereoDepthSinkController),
             typeof(DepthFusionSinkController),
             typeof(MjpegSinkController),

@@ -11,7 +11,7 @@ namespace Server
         Camera,
         ImageFile,
         VideoFile,
-        // A dual-role sink (ApriltagSink, ObjectDetectionSink, CameraCalibrationSink) acting as its own frame/json-producing source;
+        // A dual-role sink (ApriltagSink, ObjectDetectionSink) acting as its own frame/json-producing source;
         // natively in Manager's m_Sources but not tracked by SourceManager. See SinkManager.BindSourceToSink.
         SinkOutput
     }

@@ -69,7 +69,10 @@ namespace Server
 
                     if (dbData != null)
                     {
-                        sinks = dbData.Sinks ?? new List<Sink>();
+                        // calibration is no longer a graph node; records of the old calibration sinks (types 3 and 6) are dropped
+                        sinks = (dbData.Sinks ?? new List<Sink>())
+                            .Where(s => s.Type != SinkType.CameraCalibrationSink && s.Type != SinkType.StereoCalibrationSink)
+                            .ToList();
                         sources = dbData.Sources ?? new List<Source>();
                     }
 
@@ -121,7 +124,7 @@ namespace Server
                     {
                         if (sink.Source != null && sink.Source2 != null)
                         {
-                            // stereo sink (StereoCalibrationSink/StereoDepthSink): Source is the left role, Source2 the right
+                            // stereo sink (StereoDepthSink): Source is the left role, Source2 the right
                             SinkManager.Instance.BindStereoSourcesToSink(sink.Id, sink.Source.Id, sink.Source2.Id);
                         }
                         else if (sink.Source != null)
@@ -135,13 +138,11 @@ namespace Server
                         }
                     }
 
-                    // Start the sinks meant to run unattended after a restart. Excluded: CameraCalibrationSink (interactive wizard) and WebRTCSink
+                    // Start the sinks meant to run unattended after a restart. Excluded: WebRTCSink
                     // (its encoder runs on every frame even with no peer). StartSinkById also starts a sink's bound source; RecordSink is included so recordings resume.
                     foreach (var sink in sinks)
                     {
-                        // StereoCalibrationSink is interactive like CameraCalibrationSink, so it is excluded too
-                        if (sink.Type != SinkType.CameraCalibrationSink && sink.Type != SinkType.WebRTCSink
-                            && sink.Type != SinkType.StereoCalibrationSink)
+                        if (sink.Type != SinkType.WebRTCSink)
                         {
                             SinkManager.Instance.EnableSinkById(sink.Id);
                         }

@@ -96,15 +96,6 @@ namespace Server
                         id = ManagerWrapper.Instance.CreateObjectDetectionSink(ObjectDetectionProvider.ONNX, id.Value);
                         sinks.Add(new Sink(id.Value, name, SinkType.ObjectDetectionSink));
                         break;
-                    case "cameracalibrationsink":
-                    case "cameracalibration":
-                        id = ManagerWrapper.Instance.CreateCameraCalibrator(id.Value);
-                        sinks.Add(new Sink(id.Value, name, SinkType.CameraCalibrationSink));
-                        break;
-                    case "stereocalibrationsink":
-                        id = ManagerWrapper.Instance.CreateStereoCalibrator(id.Value);
-                        sinks.Add(new Sink(id.Value, name, SinkType.StereoCalibrationSink));
-                        break;
                     case "depthfusionsink":
                         id = ManagerWrapper.Instance.CreateDepthFusionNode(id.Value);
                         sinks.Add(new Sink(id.Value, name, SinkType.DepthFusionSink));
@@ -128,15 +119,6 @@ namespace Server
                         id = ManagerWrapper.Instance.CreateObjectDetectionSink(ObjectDetectionProvider.ONNX);
                         sinks.Add(new Sink(id.Value, name, SinkType.ObjectDetectionSink));
                         break;
-                    case "cameracalibrationsink":
-                    case "cameracalibration":
-                        id = ManagerWrapper.Instance.CreateCameraCalibrator();
-                        sinks.Add(new Sink(id.Value, name, SinkType.CameraCalibrationSink));
-                        break;
-                    case "stereocalibrationsink":
-                        id = ManagerWrapper.Instance.CreateStereoCalibrator();
-                        sinks.Add(new Sink(id.Value, name, SinkType.StereoCalibrationSink));
-                        break;
                     case "depthfusionsink":
                         id = ManagerWrapper.Instance.CreateDepthFusionNode();
                         sinks.Add(new Sink(id.Value, name, SinkType.DepthFusionSink));
@@ -147,45 +129,6 @@ namespace Server
                 return id.GetValueOrDefault(-1);
             }
         }
-
-        // creates a CameraCalibrationSink with an explicit board configuration (checkerboard or ChArUco)
-        public int AddCameraCalibrationSinkWithBoard(string name, CalibrationBoardType boardType, int rows, int cols,
-            float squareSizeMeters, float markerSizeMeters = 0.018f, int arucoDictionaryId = 10)
-        {
-            int id = ManagerWrapper.Instance.CreateCameraCalibrator(boardType, rows, cols, squareSizeMeters, markerSizeMeters, arucoDictionaryId);
-            sinks.Add(new Sink(id, name, SinkType.CameraCalibrationSink));
-            DB.Instance.Save();
-            return id;
-        }
-
-        // fetches the calibration result computed by a CameraCalibrationSink
-        public CameraCalibrationResult GetCameraCalibrationResult(int calibratorSinkId)
-        {
-            return ManagerWrapper.Instance.GetCameraCalibrationResult(calibratorSinkId);
-        }
-
-        // saves the checkerboard corners detected in the latest frame for the later calibration
-        public bool SaveCameraCalibrationBoardDetection(int calibratorSinkId)
-        {
-            return ManagerWrapper.Instance.SaveCameraCalibrationBoardDetection(calibratorSinkId);
-        }
-
-        // runs cv::calibrateCamera over every saved snapshot
-        public CameraCalibrationResult RunCameraCalibration(int calibratorSinkId)
-        {
-            var result = ManagerWrapper.Instance.RunCameraCalibration(calibratorSinkId);
-            CalibrationManager.Instance.SaveResult(calibratorSinkId, result);
-            return result;
-        }
-
-        public int GetCameraCalibrationSnapshotCount(int calibratorSinkId) =>
-            ManagerWrapper.Instance.GetCameraCalibrationSnapshotCount(calibratorSinkId);
-
-        public bool RemoveCameraCalibrationSnapshot(int calibratorSinkId, int index) =>
-            ManagerWrapper.Instance.RemoveCameraCalibrationSnapshot(calibratorSinkId, index);
-
-        public void ClearCameraCalibrationSnapshots(int calibratorSinkId) =>
-            ManagerWrapper.Instance.ClearCameraCalibrationSnapshots(calibratorSinkId);
 
         // creates an ApriltagSink using the saved calibration of a camera source at its current resolution,
         // so the apriltag detections can be translated into real world tag locations
@@ -516,23 +459,6 @@ namespace Server
 
         // --- Stereo depth ---
 
-        public int AddStereoCalibrationSink(string name)
-        {
-            int id = ManagerWrapper.Instance.CreateStereoCalibrator();
-            sinks.Add(new Sink(id, name, SinkType.StereoCalibrationSink));
-            DB.Instance.Save();
-            return id;
-        }
-
-        // explicit board config; defaults to a 6x9 checkerboard with 25mm squares (ChArUco is not supported for stereo)
-        public int AddStereoCalibrationSinkWithBoard(string name, CalibrationBoardType boardType, int rows, int cols, float squareSizeMeters)
-        {
-            int id = ManagerWrapper.Instance.CreateStereoCalibrator(boardType, rows, cols, squareSizeMeters);
-            sinks.Add(new Sink(id, name, SinkType.StereoCalibrationSink));
-            DB.Instance.Save();
-            return id;
-        }
-
         // binds the explicit left/right roles of a stereo sink; BindSourceToSink is bind-order only, and swapping them flips the disparity sign
         public void BindStereoSourcesToSink(int sinkId, int leftSourceId, int rightSourceId)
         {
@@ -567,32 +493,8 @@ namespace Server
             DB.Instance.Save();
         }
 
-        public bool SaveStereoCalibrationDetection(int calibratorSinkId) =>
-            ManagerWrapper.Instance.SaveStereoCalibrationDetection(calibratorSinkId);
-
-        public int GetStereoCalibrationPairCount(int calibratorSinkId) =>
-            ManagerWrapper.Instance.GetStereoCalibrationPairCount(calibratorSinkId);
-
-        public bool RemoveStereoCalibrationPair(int calibratorSinkId, int index) =>
-            ManagerWrapper.Instance.RemoveStereoCalibrationPair(calibratorSinkId, index);
-
-        public void ClearStereoCalibrationPairs(int calibratorSinkId) =>
-            ManagerWrapper.Instance.ClearStereoCalibrationPairs(calibratorSinkId);
-
-        // runs cv::stereoCalibrate + cv::stereoRectify over every saved pair and persists the result
-        // (keyed by both cameras' device paths + resolution) if the sink is bound to two real camera sources.
-        public StereoCalibrationResult RunStereoCalibration(int calibratorSinkId)
-        {
-            var result = ManagerWrapper.Instance.RunStereoCalibration(calibratorSinkId);
-            StereoCalibrationManager.Instance.SaveResult(calibratorSinkId, result);
-            return result;
-        }
-
-        public StereoCalibrationResult GetStereoCalibrationResult(int calibratorSinkId) =>
-            ManagerWrapper.Instance.GetStereoCalibrationResult(calibratorSinkId);
-
         // creates a StereoDepthNode with nothing bound; bind its left/right sources with BindStereoSourcesToSink.
-        // `calibration` is normally the result of RunStereoCalibration/GetStereoCalibrationResult.
+        // `calibration` is a saved stereo calibration result.
         public int AddStereoDepthSink(string name, StereoDepthBackendKind backend, StereoCalibrationResult calibration,
             double minDepthMeters, double maxDepthMeters, int maxSkewUs, StereoFrameOutput frameOutput)
         {
@@ -712,11 +614,10 @@ namespace Server
             }
         }
 
-        // ApriltagSink, ObjectDetectionSink and CameraCalibrationSink are dual-role (natively both sink and source), so their id is a valid bind target,
+        // ApriltagSink and ObjectDetectionSink are dual-role (natively both sink and source), so their id is a valid bind target,
         // but SourceManager's C# source list does not track them, so the source lookup yields null.
         private static readonly HashSet<SinkType> DualRoleSinkTypes = new HashSet<SinkType> {
-            SinkType.ApriltagSink, SinkType.ObjectDetectionSink, SinkType.CameraCalibrationSink,
-            SinkType.StereoCalibrationSink, SinkType.StereoDepthSink, SinkType.DepthFusionSink
+            SinkType.ApriltagSink, SinkType.ObjectDetectionSink, SinkType.StereoDepthSink, SinkType.DepthFusionSink
         };
 
         public void BindSourceToSink(int sinkId, int sourceId)

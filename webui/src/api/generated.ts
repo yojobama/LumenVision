@@ -19,7 +19,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/apriltagSink/createFromCalibrator": {
+    "/apriltagSink/createFromCamera": {
         parameters: {
             query?: never;
             header?: never;
@@ -28,7 +28,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["ApriltagSinkController_CreateFromCalibrator"];
+        post: operations["ApriltagSinkController_CreateFromCamera"];
         delete?: never;
         options?: never;
         head?: never;
@@ -157,6 +157,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["CalibrationController_StartStereo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/stereo/startSplit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["CalibrationController_StartStereoSplit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -395,166 +411,6 @@ export interface paths {
             cookie?: never;
         };
         get: operations["CalibrationController_GetSavedStereo"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["CameraCalibrationSinkController_Create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/createWithBoard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["CameraCalibrationSinkController_CreateWithBoard"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/{id}/saveDetection": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["CameraCalibrationSinkController_SaveDetection"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/{id}/snapshotCount": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["CameraCalibrationSinkController_GetSnapshotCount"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/{id}/snapshot": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["CameraCalibrationSinkController_RemoveSnapshot"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/{id}/snapshots": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["CameraCalibrationSinkController_ClearSnapshots"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/{id}/run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["CameraCalibrationSinkController_RunCalibration"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/{id}/result": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["CameraCalibrationSinkController_GetResult"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/savedResults": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["CameraCalibrationSinkController_GetSavedResults"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/cameraCalibrationSink/{id}/coverage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["CameraCalibrationSinkController_GetCoverage"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1571,166 +1427,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/stereoCalibrationSink/create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["StereoCalibrationSinkController_Create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/createWithBoard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["StereoCalibrationSinkController_CreateWithBoard"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/bind": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch: operations["StereoCalibrationSinkController_Bind"];
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/saveDetection": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["StereoCalibrationSinkController_SaveDetection"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/pairCount": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["StereoCalibrationSinkController_GetPairCount"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/pair": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["StereoCalibrationSinkController_RemovePair"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/pairs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["StereoCalibrationSinkController_ClearPairs"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/run": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["StereoCalibrationSinkController_RunCalibration"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/result": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["StereoCalibrationSinkController_GetResult"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/stereoCalibrationSink/{id}/coverage": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["StereoCalibrationSinkController_GetCoverage"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/stereoDepthSink/create": {
         parameters: {
             query?: never;
@@ -2018,7 +1714,6 @@ export interface components {
             Name?: string;
             Kind: number;
             TagSize?: number;
-            CalibratorSinkId?: number;
             Backend?: number;
             FrameWidth: number;
             FrameHeight: number;
@@ -2201,11 +1896,11 @@ export interface operations {
             };
         };
     };
-    ApriltagSinkController_CreateFromCalibrator: {
+    ApriltagSinkController_CreateFromCamera: {
         parameters: {
             query: {
                 name?: string;
-                calibratorId: number;
+                sourceId: number;
                 tagSize: number;
             };
             header?: never;
@@ -2421,6 +2116,32 @@ export interface operations {
             query: {
                 leftSourceId: number;
                 rightSourceId: number;
+                boardType?: number;
+                rows?: number;
+                cols?: number;
+                squareSizeMeters?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationSessionDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_StartStereoSplit: {
+        parameters: {
+            query: {
+                sourceId: number;
                 boardType?: number;
                 rows?: number;
                 cols?: number;
@@ -2763,230 +2484,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StoredStereoCalibrationDto"][];
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_Create: {
-        parameters: {
-            query?: {
-                name?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": number;
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_CreateWithBoard: {
-        parameters: {
-            query: {
-                name?: string;
-                boardType: number;
-                rows: number;
-                cols: number;
-                squareSizeMeters: number;
-                markerSizeMeters?: number;
-                arucoDictionaryId?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": number;
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_SaveDetection: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": boolean;
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_GetSnapshotCount: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": number;
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_RemoveSnapshot: {
-        parameters: {
-            query: {
-                index: number;
-            };
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": boolean;
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_ClearSnapshots: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    CameraCalibrationSinkController_RunCalibration: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CameraCalibrationResultDto"];
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_GetResult: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CameraCalibrationResultDto"];
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_GetSavedResults: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StoredCalibrationDto"][];
-                };
-            };
-        };
-    };
-    CameraCalibrationSinkController_GetCoverage: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CalibrationCoverageDto"];
                 };
             };
         };
@@ -3791,7 +3288,6 @@ export interface operations {
                 sourceId: number;
                 name?: string;
                 tagSize: number;
-                calibratorSinkId?: number;
                 backend?: number;
                 frameWidth?: number;
                 frameHeight?: number;
@@ -4443,233 +3939,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": boolean;
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_Create: {
-        parameters: {
-            query?: {
-                name?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": number;
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_CreateWithBoard: {
-        parameters: {
-            query: {
-                name?: string;
-                boardType: number;
-                rows: number;
-                cols: number;
-                squareSizeMeters: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": number;
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_Bind: {
-        parameters: {
-            query: {
-                leftSourceId: number;
-                rightSourceId: number;
-            };
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    StereoCalibrationSinkController_SaveDetection: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": boolean;
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_GetPairCount: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": number;
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_RemovePair: {
-        parameters: {
-            query: {
-                index: number;
-            };
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": boolean;
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_ClearPairs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    StereoCalibrationSinkController_RunCalibration: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StereoCalibrationResultDto"];
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_GetResult: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["StereoCalibrationResultDto"];
-                };
-            };
-        };
-    };
-    StereoCalibrationSinkController_GetCoverage: {
-        parameters: {
-            query?: {
-                eye?: string;
-            };
-            header?: never;
-            path: {
-                id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CalibrationCoverageDto"];
                 };
             };
         };

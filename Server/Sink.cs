@@ -15,6 +15,7 @@ namespace Server
         [Description("ObjectDetectionSink")]
         ObjectDetectionSink = 1,
         // 2 is reserved; do not reuse.
+        // 3 and 6 were calibration sinks, now calibration sessions; they only appear in older saved data, which DB.Load drops. Do not reuse.
         [Description("CameraCalibrationSink")]
         CameraCalibrationSink = 3,
         [Description("NetworkTablesSink")]
@@ -57,9 +58,6 @@ namespace Server
                     case SinkType.ObjectDetectionSink:
                         // unreachable in practice (see AddSink's no-model overload comment)
                         id = ManagerWrapper.Instance.CreateObjectDetectionSink(ObjectDetectionProvider.ONNX);
-                        break;
-                    case SinkType.CameraCalibrationSink:
-                        id = ManagerWrapper.Instance.CreateCameraCalibrator();
                         break;
                 }
                 type = value;
@@ -125,9 +123,6 @@ namespace Server
                     break;
                 case SinkType.ObjectDetectionSink:
                     id = ManagerWrapper.Instance.CreateObjectDetectionSink(ObjectDetectionProvider.ONNX);
-                    break;
-                case SinkType.CameraCalibrationSink:
-                    id = ManagerWrapper.Instance.CreateCameraCalibrator();
                     break;
             }
         }
