@@ -157,7 +157,7 @@ namespace Server
                 if (!ManagerWrapper.Instance.BindStereoSources(id, leftId, rightId))
                     throw ApiException.BadRequest($"could not bind sources {leftId} and {rightId}");
                 foreach (int sourceId in managedSourceIds) SourceManager.Instance.EnableSourceById(sourceId);
-                foreach (int roiId in ownedRoiIds) ManagerWrapper.Instance.StartSourceById(roiId);
+                foreach (int roiId in ownedRoiIds) ManagerWrapper.Instance.StartSinkById(roiId);
                 ManagerWrapper.Instance.StartSinkById(id);
                 previewId = CreatePreview(id);
             }
