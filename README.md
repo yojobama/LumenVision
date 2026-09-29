@@ -79,11 +79,22 @@ publishes each into its own subtable under the configured root table (default `/
 
 ## Calibration
 
-`POST /api/cameraCalibrationSink/create` (default 6x9 checkerboard, 25mm squares) or
-`createWithBoard` for a custom checkerboard or ChArUco board. Point it at a camera, call
-`.../saveDetection` for each snapshot (need at least 4), then `.../run` to compute the result —
-calibration only happens when explicitly asked, never implicitly. Results persist to
-`calibrations.json`, keyed by camera device path + resolution.
+Calibration is a *session*, not a graph node: a session owns a private calibrator and a live preview
+stream, never appears in the graph or `data.json`, and ends when stopped (or after 15 minutes idle).
+Use the WebUI's **Calibration** tab, or the REST API:
+
+`POST /api/calibration/camera/start?sourceId=` (default 6x9 checkerboard, 25mm squares; pass
+`boardType`, `rows`, `cols`, `squareSizeMeters` — and `markerSizeMeters` for ChArUco — for another
+board) returns a session id and a preview sink id (`/stream/mjpeg?SinkID=`). Call
+`POST /api/calibration/{id}/saveDetection` for each snapshot (need at least 4), then
+`POST .../{id}/runCamera` to compute the result — calibration only happens when explicitly asked, never
+implicitly. `POST .../{id}/stop` frees the session. Results persist to `calibrations.json`, keyed by
+camera device path + resolution, and are listed by `GET /api/calibration/saved`.
+
+An AprilTag pipeline profile picks up the source camera's saved calibration at its current
+resolution when it is activated, so calibrate first and the profile gets real-world pose; a camera
+with no calibration at its current resolution runs uncalibrated (the graph shows a "Calibration
+stale" badge when a saved calibration is for a different resolution).
 
 ## Object detection
 
@@ -108,23 +119,26 @@ over ordinary HTTP requests is enough.
 See `docs/history/STEREO_IMPLEMENTATION_PLAN.md` for the full design (disparity-window
 derivation, sign convention, accuracy expectations, and the risks around camera synchronization
 worth reading before buying stereo hardware) and `ROADMAP.md` for the upcoming side-by-side
-single-camera layout. Two nodes: `StereoCalibrationSink` and `StereoDepthSink`, both bound to a
-left/right camera pair via `PATCH /api/stereoCalibrationSink/{id}/bind` or
-`.../stereoDepthSink/{id}/bind` (`leftSourceId`/`rightSourceId`) — the ordinary single-source
-`/api/sink/bind` doesn't apply here, since getting left/right backwards silently flips the sign
-of every disparity.
+single-camera layout. The graph node is `StereoDepthSink`, bound to a left/right camera pair via
+`PATCH /api/stereoDepthSink/{id}/bind` (`leftSourceId`/`rightSourceId`) — the ordinary
+single-source `/api/sink/bind` doesn't apply here, since getting left/right backwards silently
+flips the sign of every disparity.
 
-Calibrate first: `POST /api/stereoCalibrationSink/create` (default 6x9 checkerboard, 25mm
-squares — ChArUco isn't supported for stereo yet), bind both cameras, call
-`.../saveDetection` for each pair with the board visible to both eyes (need at least 8),
-then `.../run`. Check the returned `epipolarRms`, not `stereoRms` — gate real use at < 0.5px,
-since that's what predicts whether the depth node will actually produce dense output. Results
-persist to `stereoCalibrations.json`, keyed by both cameras' device paths + resolution.
+Calibrate first, in a calibration session (see Calibration above): `POST /api/calibration/stereo/start`
+with `leftSourceId`/`rightSourceId` (default 6x9 checkerboard, 25mm squares — ChArUco isn't
+supported for stereo yet), or `POST /api/calibration/stereo/startSplit?sourceId=` for one
+side-by-side stereo camera, which the session splits in half into left/right eyes. Call
+`.../{id}/saveDetection` for each pair with the board visible to both eyes (need at least 8),
+then `.../{id}/runStereo`. Check the returned `epipolarRms`, not `stereoRms` — gate real use at
+< 0.5px, since that's what predicts whether the depth node will actually produce dense output.
+Results persist to `stereoCalibrations.json`, keyed by both cameras' device paths + resolution
+(a split camera is keyed by its own path for both eyes), and are listed by
+`GET /api/calibration/savedStereo`.
 
 Then `POST /api/stereoDepthSink/create` with a backend (`STEREO_BACKEND_SGBM` always available;
 `STEREO_BACKEND_CODEC_LAVC`/`STEREO_BACKEND_CODEC_RKMPP_HWENC` need `LUMEN_WITH_CODEC_STEREO`,
-on by default — see the feature-flag table above), a depth range, and the calibration result
-from above, then bind the same two cameras. `GET .../stats` returns the last pair's valid
+on by default — see the feature-flag table above), a depth range, and a saved calibration result
+(the request body), then bind the two cameras. `GET .../stats` returns the last pair's valid
 fraction and median depth; the full per-block grid is in `/api/sink/getResult`'s JSON.
 
 Optionally, `POST /api/depthFusionSink/create` fuses a detector's (AprilTag/object detection)
@@ -134,9 +148,8 @@ the same grid), then `PATCH .../attachDepthSource` to point it at the depth sink
 plain C++ reference, not a bound source — the full depth grid is deliberately never serialized
 through JSON). Each detection comes back with `distanceMeters`/`xMeters`/`yMeters` added.
 
-The WebUI's "Stereo" page covers creating and binding stereo calibration/depth sinks; the actual
-step-by-step capture flow lives in the calibration wizard (see below), reachable from there or
-from the graph editor's node inspector.
+The WebUI's "Stereo" page covers creating and binding stereo depth sinks, choosing a saved stereo
+calibration from the Calibration tab.
 
 ## WebUI
 
@@ -147,21 +160,35 @@ right-hand inspector covers per-node parameters, a live WebRTC preview, the late
 and pipeline profile switching. State (topology, per-node FPS/latency, device stats) is pushed
 over a `/ws/state` WebSocket, not polled.
 
-Mono and stereo calibration each get a full-screen wizard (`/calibrate/:sinkId`,
-`/calibrate/stereo/:sinkId`, opened from a `CameraCalibrationSink`/`StereoCalibrationSink` node's
-inspector): bind camera(s) → capture with a live coverage heatmap showing where the board has and
-hasn't been seen in-frame → run, with a pass/fail light against the real gate (`epipolarRms` <
-0.5px for stereo, not `stereoRms`; a configurable RMS gate for mono).
+`/calibration` is its own tab: pick a camera (or a stereo pair, or one side-by-side camera) and a board, then
+start a session. Its wizard (`/calibration/camera/:sessionId`, `/calibration/stereo/:sessionId`) shows the
+live overlay, captures with a coverage heatmap showing where the board has and hasn't been seen
+in-frame, and runs with a pass/fail light against the real gate (`epipolarRms` < 0.5px for stereo,
+not `stereoRms`; a configurable RMS gate for mono). The tab also lists running sessions (to resume
+or stop them), each camera's calibration status, and every saved calibration.
 
 `/match` is a read-only, per-camera table (FPS, latency, detector binding, NT4 connection state)
 plus CPU/RAM/disk/temperature — meant to be legible across a pit during a match, not for editing
 anything.
+
+## Tests
+
+- **C++ (`tests/`, Catch2):** configure with `-DLUMEN_BUILD_TESTS=ON` (the `ci-*` presets do) and build the
+  `LumenCoreTests` target. The calibration tests (`[calibration]`) drive `CameraCalibrator` and
+  `StereoCalibrator` with synthetic checkerboard renders. The target links against the shared
+  LumenCore library, which only works where its symbols are exported by default (Linux/WSL); it does
+  not link on Windows.
+- **C# (`Server.Tests/`, xUnit):** `dotnet test Server.Tests` after building LumenCore for your preset
+  (pass `-p:LumenCorePreset=` as for `Server.csproj`). It covers calibration result persistence,
+  calibration session error paths and the legacy-record handling in `DB.Load`; on Windows the
+  native dependency folders must be on `PATH`, as when running the Server.
 
 ## Known gaps
 
 See `docs/history/IMPLEMENTATION_PLAN.md`'s phase status lines for the authoritative historical
 record, and `ROADMAP.md` for what's planned next. Currently: RKNN object detection runs but still
 takes ONNX-style BGR input rather than the NPU's native NV12 (ROADMAP.md C1); a stored calibration
-doesn't yet auto-apply to a matching camera source on creation; and WebRTC has been verified by
+is applied to an AprilTag pipeline profile when it is activated, but not yet to a standalone
+`ApriltagSink` restored after a restart; and WebRTC has been verified by
 compiling/linking against the real libraries, not
 against an actual browser ICE handshake in this environment.

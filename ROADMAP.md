@@ -213,6 +213,9 @@ Do both of the first two:
    check and an initial guess for `stereoCalibrate`, **not** a substitute for calibrating. Gate
    on `epipolarRms < 0.5px` as the existing plan already says.
 
+*Status: the calibration side of item 2 is done — `POST /api/calibration/stereo/startSplit` makes the
+session own two `RoiSource` nodes over one camera; the stereo depth node still binds two sources.*
+
 UI: the stereo wizard must ask "one camera or two?" as its first question and branch, rather
 than presenting a left/right binding pair that makes no sense for a single-device camera.
 
@@ -482,14 +485,16 @@ nowhere to put it.
 - **Right-hand inspector** for the selected node: parameters with live apply, a live WebRTC
   preview of *that node's* output, its latest result JSON, and its FPS / latency / backend name.
   Everything needed to tune a detector without leaving the canvas.
-- **Left rail**: Profiles · Cameras · Models · Calibrations · Logs · Settings.
+- **Left rail**: Profiles · Cameras · Models · Calibrations · Logs · Settings. (Calibration itself
+  lives in its own tab; the rail's Calibrations section lists saved results.)
 - **Bottom strip**: thumbnails of every previewed node, plus a global bar (NT connected, CPU,
   temperature, aggregate FPS).
 
 ### F2. Wizards for the multi-step flows
 
 Calibration and stereo calibration are inherently step-by-step and do not belong in a modal.
-Full-screen takeovers, with:
+*Status: delivered as the top-level Calibration tab, backed by calibration sessions rather than
+graph nodes.* Wizards, with:
 
 - a **live coverage heatmap** showing where board detections have landed in the frame, so the
   operator knows to move toward the corners — the single biggest usability gap in every existing
