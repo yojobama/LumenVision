@@ -41,12 +41,15 @@ namespace Server
         }
 
         // resolves the two camera paths the StereoCalibrationSink is bound to (Source = left, Source2 = right)
-        // and persists the result under them; not persisted unless bound to two real camera sources.
         public void SaveResult(int calibratorSinkId, StereoCalibrationResult result)
         {
             var sink = SinkManager.Instance.GetSinkById(calibratorSinkId);
-            string? leftPath = sink?.Source?.CameraHardwareInfo?.path;
-            string? rightPath = sink?.Source2?.CameraHardwareInfo?.path;
+            SaveResult(sink?.Source?.CameraHardwareInfo?.path, sink?.Source2?.CameraHardwareInfo?.path, result);
+        }
+
+        // persists the result under both cameras' device paths; not persisted unless both are real cameras
+        public void SaveResult(string? leftPath, string? rightPath, StereoCalibrationResult result)
+        {
             if (leftPath == null || rightPath == null) return;
 
             calibrations.RemoveAll(c => c.LeftCameraPath == leftPath && c.RightCameraPath == rightPath &&

@@ -34,6 +34,7 @@ namespace Server
             // others
             typeof(DeviceController),
             typeof(CapabilitiesController),
+            typeof(CalibrationController),
             typeof(OpenApiController),
             typeof(LogController),
             typeof(GraphProfileController),

@@ -42,12 +42,13 @@ namespace Server
             File.WriteAllText(path, JsonSerializer.Serialize(calibrations, new JsonSerializerOptions { WriteIndented = true }));
         }
 
-        // resolves the camera path the calibrator sink is bound to and persists the result under it;
-        // not persisted when there is no bound camera source (e.g. a video file)
-        public void SaveResult(int calibratorSinkId, CameraCalibrationResult result)
+        // resolves the camera path the calibrator sink is bound to and persists the result under it
+        public void SaveResult(int calibratorSinkId, CameraCalibrationResult result) =>
+            SaveResult(SinkManager.Instance.GetSinkById(calibratorSinkId)?.Source?.CameraHardwareInfo?.path, result);
+
+        // persists the result under the camera's device path; not persisted without one (e.g. a video file)
+        public void SaveResult(string? cameraPath, CameraCalibrationResult result)
         {
-            var sink = SinkManager.Instance.GetSinkById(calibratorSinkId);
-            string? cameraPath = sink?.Source?.CameraHardwareInfo?.path;
             if (cameraPath == null) return;
 
             calibrations.RemoveAll(c => c.CameraPath == cameraPath && c.Result.imageWidth == result.imageWidth && c.Result.imageHeight == result.imageHeight);

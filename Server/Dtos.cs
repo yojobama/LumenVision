@@ -65,6 +65,19 @@ namespace Server
             new(stored.CameraPath, CameraCalibrationResultDto.From(stored.Result), stored.CalibratedAtUnixMs);
     }
 
+    public record struct StoredStereoCalibrationDto(string LeftCameraPath, string RightCameraPath, StereoCalibrationResultDto Result, long CalibratedAtUnixMs)
+    {
+        public static StoredStereoCalibrationDto From(StoredStereoCalibration stored) =>
+            new(stored.LeftCameraPath, stored.RightCameraPath, StereoCalibrationResultDto.From(stored.Result), stored.CalibratedAtUnixMs);
+    }
+
+    // A running calibration session; PreviewSinkId is an MJPEG sink streamed from /stream/mjpeg?SinkID=.
+    public record struct CalibrationSessionDto(int SessionId, string Kind, int PreviewSinkId)
+    {
+        public static CalibrationSessionDto From(CalibrationSession session) =>
+            new(session.Id, session.Kind.ToString().ToLowerInvariant(), session.PreviewSinkId);
+    }
+
     public record struct CalibrationStatusDto(bool HasCalibration, bool MatchesCurrentResolution, int? CalibratedWidth, int? CalibratedHeight)
     {
         public static CalibrationStatusDto From(CalibrationStatus status) =>
