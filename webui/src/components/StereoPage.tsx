@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Camera, Wand2 } from 'lucide-react';
 import { ApiService } from '../services/ApiService';
 import type {
-  Source, Sink, StereoCalibrationResult, StereoDepthStats,
+  Source, Sink, StereoDepthStats, StoredStereoCalibration,
 } from '../types';
 import { StereoDepthBackendKind, StereoFrameOutput, STEREO_BACKEND_LABELS, STEREO_FRAME_OUTPUT_LABELS } from '../types';
 
@@ -34,114 +34,43 @@ const CameraSelect: React.FC<{
   </label>
 );
 
-// Creates and binds the stereo sink, then hands off to the calibration wizard
-// (/calibrate/stereo/:sinkId).
-const StereoCalibrationCard: React.FC<{
-  sources: Source[]; sinks: Sink[]; onToast: Props['onToast']; onRefresh: () => void;
-}> = ({ sources, sinks, onToast, onRefresh }) => {
-  const navigate = useNavigate();
-  const calibrationSinks = sinks.filter(s => s.type === 'stereocalibration');
-  const [name, setName] = useState('Stereo Calibration');
-  const [rows, setRows] = useState(6);
-  const [cols, setCols] = useState(9);
-  const [squareSize, setSquareSize] = useState(0.025);
-  const [left, setLeft] = useState<number | ''>('');
-  const [right, setRight] = useState<number | ''>('');
-  const [busy, setBusy] = useState(false);
-
-  const create = async () => {
-    if (!left || !right) { onToast('Select both cameras first', 'error'); return; }
-    setBusy(true);
-    try {
-      const id = await api.createStereoCalibrationSinkWithBoard(name, rows, cols, squareSize);
-      await api.bindStereoSources(id, left as number, right as number);
-      onToast(`Stereo calibration sink #${id} created and bound`, 'success');
-      onRefresh();
-      navigate(`/calibrate/stereo/${id}`);
-    } catch (e) {
-      onToast(`Failed to create stereo calibration sink: ${e}`, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">1. Stereo Calibration</h3>
-      <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-        Bind two cameras, then open the wizard to capture checkerboard pairs and run the
-        calibration.
-      </p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-        <label className="block text-sm">
-          <span className="text-gray-600 dark:text-gray-400">Name</span>
-          <input className="mt-1 w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white" value={name} onChange={e => setName(e.target.value)} />
-        </label>
-        <div className="grid grid-cols-3 gap-2">
-          <label className="block text-sm">
-            <span className="text-gray-600 dark:text-gray-400">Rows</span>
-            <input type="number" className="mt-1 w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white" value={rows} onChange={e => setRows(Number(e.target.value))} />
-          </label>
-          <label className="block text-sm">
-            <span className="text-gray-600 dark:text-gray-400">Cols</span>
-            <input type="number" className="mt-1 w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white" value={cols} onChange={e => setCols(Number(e.target.value))} />
-          </label>
-          <label className="block text-sm">
-            <span className="text-gray-600 dark:text-gray-400">Square (m)</span>
-            <input type="number" step="0.001" className="mt-1 w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white" value={squareSize} onChange={e => setSquareSize(Number(e.target.value))} />
-          </label>
-        </div>
-        <CameraSelect sources={sources} value={left} onChange={setLeft} label="Left camera" />
-        <CameraSelect sources={sources} value={right} onChange={setRight} label="Right camera" />
-      </div>
-      <button disabled={busy} onClick={create} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded text-sm font-medium">
-        Create stereo calibration sink &amp; open wizard
-      </button>
-
-      {calibrationSinks.length > 0 && (
-        <div className="mt-6 space-y-2">
-          {calibrationSinks.map(sink => (
-            <div key={sink.id} className="flex items-center justify-between border border-gray-200 dark:border-gray-700 rounded p-3">
-              <div>
-                <div className="font-medium text-gray-900 dark:text-white">{sink.name} <span className="text-gray-400">#{sink.id}</span></div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">left #{sink.sourceId ?? '-'}, right #{sink.source2Id ?? '-'}</div>
-              </div>
-              <button onClick={() => navigate(`/calibrate/stereo/${sink.id}`)} className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-medium flex items-center gap-1">
-                <Wand2 className="w-3 h-3" />Open wizard
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
+// Stereo calibration lives in the Calibration tab; this points there.
+const StereoCalibrationCard: React.FC = () => (
+  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">1. Stereo Calibration</h3>
+    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      Calibrate the stereo pair in the Calibration tab, then pick the saved result below.
+    </p>
+    <Link to="/calibration" className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium">
+      <Wand2 className="w-4 h-4" />Open the Calibration tab
+    </Link>
+  </div>
+);
 
 const StereoDepthCard: React.FC<{
   sources: Source[]; sinks: Sink[]; onToast: Props['onToast']; onRefresh: () => void;
 }> = ({ sources, sinks, onToast, onRefresh }) => {
   const depthSinks = sinks.filter(s => s.type === 'stereodepth');
-  const calibrationSinks = sinks.filter(s => s.type === 'stereocalibration');
+  const [savedCalibrations, setSavedCalibrations] = useState<StoredStereoCalibration[]>([]);
   const [name, setName] = useState('Stereo Depth');
   const [backend, setBackend] = useState<number>(StereoDepthBackendKind.SGBM);
   const [minDepth, setMinDepth] = useState(0.5);
   const [maxDepth, setMaxDepth] = useState(6.0);
   const [maxSkewUs, setMaxSkewUs] = useState(33000);
   const [frameOutput, setFrameOutput] = useState<number>(StereoFrameOutput.DEPTH_COLORMAP);
-  const [calibrationSinkId, setCalibrationSinkId] = useState<number | ''>('');
+  const [calibrationIndex, setCalibrationIndex] = useState<number | ''>('');
   const [left, setLeft] = useState<number | ''>('');
   const [right, setRight] = useState<number | ''>('');
   const [busy, setBusy] = useState(false);
   const [stats, setStats] = useState<Record<number, StereoDepthStats & { backendName: string }>>({});
 
+  useEffect(() => {
+    api.getSavedStereoCalibrations().then(setSavedCalibrations).catch(() => setSavedCalibrations([]));
+  }, []);
+
   const create = async () => {
     if (!left || !right) { onToast('Select both cameras first', 'error'); return; }
-    let calibration: StereoCalibrationResult | undefined;
-    if (calibrationSinkId) {
-      try { calibration = await api.getStereoCalibrationResult(calibrationSinkId as number); }
-      catch { /* fall through to the error below */ }
-    }
+    const calibration = calibrationIndex === '' ? undefined : savedCalibrations[calibrationIndex]?.Result;
     if (!calibration || !calibration.Q?.length || calibration.BaselineMeters <= 0) {
       onToast('Select a calibration that has actually been run (baselineMeters > 0)', 'error');
       return;
@@ -186,9 +115,13 @@ const StereoDepthCard: React.FC<{
         </label>
         <label className="block text-sm">
           <span className="text-gray-600 dark:text-gray-400">Calibration</span>
-          <select className="mt-1 w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white" value={calibrationSinkId} onChange={e => setCalibrationSinkId(e.target.value ? Number(e.target.value) : '')}>
-            <option value="">Select a calibration sink…</option>
-            {calibrationSinks.map(s => <option key={s.id} value={s.id}>{s.name} (#{s.id})</option>)}
+          <select className="mt-1 w-full rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white" value={calibrationIndex} onChange={e => setCalibrationIndex(e.target.value ? Number(e.target.value) : '')}>
+            <option value="">Select a saved calibration…</option>
+            {savedCalibrations.map((c, i) => (
+              <option key={i} value={i}>
+                {c.Result.ImageWidth}×{c.Result.ImageHeight} · epipolar {c.Result.EpipolarRms.toFixed(3)}px · {new Date(c.CalibratedAtUnixMs).toLocaleDateString()}
+              </option>
+            ))}
           </select>
         </label>
         <label className="block text-sm">
@@ -345,7 +278,7 @@ export const StereoPage: React.FC<Props> = ({ sources, sinks, onToast, onRefresh
         </p>
       </div>
 
-      <StereoCalibrationCard sources={sources} sinks={sinks} onToast={onToast} onRefresh={onRefresh} />
+      <StereoCalibrationCard />
       <StereoDepthCard sources={sources} sinks={sinks} onToast={onToast} onRefresh={onRefresh} />
       <DepthFusionCard sinks={sinks} onToast={onToast} onRefresh={onRefresh} onBindDetectorToDepthFrame={bindDetectorToDepthFrame} />
     </div>

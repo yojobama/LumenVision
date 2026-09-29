@@ -131,6 +131,278 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/calibration/camera/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["CalibrationController_StartCamera"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/stereo/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["CalibrationController_StartStereo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetSession"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["CalibrationController_Stop"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/saveDetection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["CalibrationController_SaveDetection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/entry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["CalibrationController_RemoveEntry"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["CalibrationController_ClearEntries"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/runCamera": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["CalibrationController_RunCamera"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/runStereo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["CalibrationController_RunStereo"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/cameraResult": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetCameraResult"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/stereoResult": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetStereoResult"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetCoverage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/saved": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetSaved"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/calibration/savedStereo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CalibrationController_GetSavedStereo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/cameraCalibrationSink/create": {
         parameters: {
             query?: never;
@@ -1677,6 +1949,11 @@ export interface components {
             QuadDecimateSupported: boolean;
             RefineEdges: boolean;
         };
+        CalibrationSessionDto: {
+            SessionId: number;
+            Kind?: string;
+            PreviewSinkId: number;
+        };
         CameraCalibrationResultDto: {
             Fx: number;
             Fy: number;
@@ -1687,15 +1964,50 @@ export interface components {
             ImageWidth: number;
             ImageHeight: number;
         };
-        StoredCalibrationDto: {
-            CameraPath?: string;
-            Result: components["schemas"]["CameraCalibrationResultDto"];
-            CalibratedAtUnixMs: number;
+        StereoCalibrationResultDto: {
+            Left: components["schemas"]["CameraCalibrationResultDto"];
+            Right: components["schemas"]["CameraCalibrationResultDto"];
+            R?: number[];
+            T?: number[];
+            E?: number[];
+            F?: number[];
+            R1?: number[];
+            R2?: number[];
+            P1?: number[];
+            P2?: number[];
+            Q?: number[];
+            StereoRms: number;
+            EpipolarRms: number;
+            BaselineMeters: number;
+            RectifiedFx: number;
+            RectifiedCx: number;
+            RectifiedCy: number;
+            ImageWidth: number;
+            ImageHeight: number;
+            RoiLeftX: number;
+            RoiLeftY: number;
+            RoiLeftW: number;
+            RoiLeftH: number;
+            RoiRightX: number;
+            RoiRightY: number;
+            RoiRightW: number;
+            RoiRightH: number;
         };
         CalibrationCoverageDto: {
             FrameWidth: number;
             FrameHeight: number;
             Snapshots?: number[][];
+        };
+        StoredCalibrationDto: {
+            CameraPath?: string;
+            Result: components["schemas"]["CameraCalibrationResultDto"];
+            CalibratedAtUnixMs: number;
+        };
+        StoredStereoCalibrationDto: {
+            LeftCameraPath?: string;
+            RightCameraPath?: string;
+            Result: components["schemas"]["StereoCalibrationResultDto"];
+            CalibratedAtUnixMs: number;
         };
         CameraHardwareInfo: {
             name?: string;
@@ -1847,35 +2159,6 @@ export interface components {
             ApriltagThreads?: number;
             ApriltagQuadDecimate?: number;
             ApriltagRefineEdges?: boolean;
-        };
-        StereoCalibrationResultDto: {
-            Left: components["schemas"]["CameraCalibrationResultDto"];
-            Right: components["schemas"]["CameraCalibrationResultDto"];
-            R?: number[];
-            T?: number[];
-            E?: number[];
-            F?: number[];
-            R1?: number[];
-            R2?: number[];
-            P1?: number[];
-            P2?: number[];
-            Q?: number[];
-            StereoRms: number;
-            EpipolarRms: number;
-            BaselineMeters: number;
-            RectifiedFx: number;
-            RectifiedCx: number;
-            RectifiedCy: number;
-            ImageWidth: number;
-            ImageHeight: number;
-            RoiLeftX: number;
-            RoiLeftY: number;
-            RoiLeftW: number;
-            RoiLeftH: number;
-            RoiRightX: number;
-            RoiRightY: number;
-            RoiRightW: number;
-            RoiRightH: number;
         };
         StereoDepthStatsDto: {
             ValidFraction: number;
@@ -2101,6 +2384,385 @@ export interface operations {
                 };
                 content: {
                     "application/json": number;
+                };
+            };
+        };
+    };
+    CalibrationController_StartCamera: {
+        parameters: {
+            query: {
+                sourceId: number;
+                boardType?: number;
+                rows?: number;
+                cols?: number;
+                squareSizeMeters?: number;
+                markerSizeMeters?: number;
+                arucoDictionaryId?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationSessionDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_StartStereo: {
+        parameters: {
+            query: {
+                leftSourceId: number;
+                rightSourceId: number;
+                boardType?: number;
+                rows?: number;
+                cols?: number;
+                squareSizeMeters?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationSessionDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_GetSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationSessionDto"][];
+                };
+            };
+        };
+    };
+    CalibrationController_GetSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationSessionDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_Stop: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CalibrationController_SaveDetection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+        };
+    };
+    CalibrationController_GetCount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    CalibrationController_RemoveEntry: {
+        parameters: {
+            query: {
+                index: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+        };
+    };
+    CalibrationController_ClearEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CalibrationController_RunCamera: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CameraCalibrationResultDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_RunStereo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StereoCalibrationResultDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_GetCameraResult: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CameraCalibrationResultDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_GetStereoResult: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StereoCalibrationResultDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_GetCoverage: {
+        parameters: {
+            query?: {
+                eye?: string;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationCoverageDto"];
+                };
+            };
+        };
+    };
+    CalibrationController_GetStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
+    CalibrationController_GetSaved: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredCalibrationDto"][];
+                };
+            };
+        };
+    };
+    CalibrationController_GetSavedStereo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoredStereoCalibrationDto"][];
                 };
             };
         };

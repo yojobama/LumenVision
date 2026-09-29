@@ -107,7 +107,6 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
           >
             <option value="ApriltagSink">AprilTag Detection</option>
-            <option value="calibration">Camera Calibration</option>
             {/* Backend (ONNX Runtime vs RKNN) depends on the selected model, not the sink type. */}
             <option value="object">Object Detection</option>
           </select>

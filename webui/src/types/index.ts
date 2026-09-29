@@ -65,6 +65,35 @@ export interface CalibrationStatus {
   CalibratedHeight: number | null;
 }
 
+// mirrors CalibrationController's board query parameters; boardType is CalibrationBoardType (0 checkerboard, 1 ChArUco)
+export interface CalibrationBoard {
+  boardType: number;
+  rows: number;
+  cols: number;
+  squareSizeMeters: number;
+  markerSizeMeters?: number;
+}
+
+// mirrors CalibrationSessionDto; PreviewSinkId is an MJPEG sink streamed from /stream/mjpeg
+export interface CalibrationSession {
+  SessionId: number;
+  Kind: 'camera' | 'stereo';
+  PreviewSinkId: number;
+}
+
+// mirrors StoredCalibrationDto / StoredStereoCalibrationDto
+export interface StoredCameraCalibration {
+  CameraPath: string;
+  Result: CameraCalibrationResult;
+  CalibratedAtUnixMs: number;
+}
+export interface StoredStereoCalibration {
+  LeftCameraPath: string;
+  RightCameraPath: string;
+  Result: StereoCalibrationResult;
+  CalibratedAtUnixMs: number;
+}
+
 // An uploaded ONNX object detection model (YOLOv8/YOLOv11), as returned by /model/getAll
 export interface Model {
   id: number;
@@ -243,7 +272,6 @@ export interface PipelineProfile {
   Name: string;
   Kind: number;
   TagSize: number | null;
-  CalibratorSinkId: number | null;
   Backend: number | null;
   FrameWidth: number;
   FrameHeight: number;

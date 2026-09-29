@@ -84,11 +84,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
             onToast('Bind the other camera role first, or use a single-source sink', 'error');
             return;
           }
-          if (targetNode.data.typeName === 'StereoDepthSink') {
-            await api.bindStereoDepthSources(targetSinkId, leftId, rightId);
-          } else {
-            await api.bindStereoSources(targetSinkId, leftId, rightId);
-          }
+          await api.bindStereoDepthSources(targetSinkId, leftId, rightId);
         } else {
           await api.bindSinkToSource(targetSinkId, Number(sourceRawId));
         }
@@ -154,8 +150,6 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
     try {
       if (type === 'ApriltagSink') {
         await api.createApriltagSinkWithBackend(name, options?.tagSize ?? 0.1651, options?.backend ?? 0);
-      } else if (type === 'calibration') {
-        await api.createCameraCalibrationSink(name);
       } else if (type === 'object' && options?.newModel) {
         // upload a new model first, then create the sink from the returned model id; a failed upload throws
         const modelId = await api.uploadModel(options.newModel);

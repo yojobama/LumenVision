@@ -5,8 +5,7 @@ import {
   Settings as SettingsIcon, PlayCircle, RefreshCw, Film,
 } from 'lucide-react';
 import { ApiService } from '../services/ApiService';
-import type { StateSnapshot, Model } from '../types';
-import type { components } from '../api/generated';
+import type { StateSnapshot, Model, StoredCameraCalibration } from '../types';
 
 const api = new ApiService();
 
@@ -153,7 +152,7 @@ const ModelsSection: React.FC = () => {
 };
 
 const CalibrationsSection: React.FC = () => {
-  const [calibrations, setCalibrations] = React.useState<components['schemas']['StoredCalibrationDto'][] | null>(null);
+  const [calibrations, setCalibrations] = React.useState<StoredCameraCalibration[] | null>(null);
 
   React.useEffect(() => {
     api.getSavedCalibrations().then(setCalibrations).catch(() => setCalibrations([]));
@@ -163,6 +162,9 @@ const CalibrationsSection: React.FC = () => {
   if (calibrations.length === 0) return <EmptyNote text="No saved calibrations yet" />;
   return (
     <ul className="space-y-1">
+      <li className="px-2 py-1">
+        <NavLink to="/calibration" className="text-xs text-blue-600 hover:text-blue-700">Open the Calibration tab</NavLink>
+      </li>
       {calibrations.map((c, i) => (
         <li key={`${c.CameraPath}-${c.CalibratedAtUnixMs}-${i}`} className="px-2 py-1 rounded hover:bg-gray-50 dark:hover:bg-gray-700">
           <p className="font-medium text-gray-800 dark:text-gray-200 truncate">{c.CameraPath}</p>

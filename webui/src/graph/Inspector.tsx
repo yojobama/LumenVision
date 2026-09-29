@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, Wand2, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
+import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
 import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment } from '../types';
 import { ApiService } from '../services/ApiService';
@@ -23,7 +22,6 @@ export const Inspector: React.FC<{
   onDeleted: () => void;
   nt4Settings: NT4Defaults;
 }> = ({ node, onClose, onToast, onDeleted, nt4Settings }) => {
-  const navigate = useNavigate();
   const { kind, raw, webrtcSink, nt4Sink, recordSink, isRunning } = node.data;
   const [name, setName] = useState(node.data.label);
   const [resultJson, setResultJson] = useState<string | null>(null);
@@ -524,16 +522,6 @@ export const Inspector: React.FC<{
                 <span className="text-xs text-gray-700 dark:text-gray-300">Backend</span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">{detectionBackendName ?? 'Loading...'}</span>
               </div>
-            )}
-
-            {/* entry point into the calibration wizards */}
-            {(node.data.typeName === 'CameraCalibrationSink' || node.data.typeName === 'StereoCalibrationSink') && (
-              <button
-                onClick={() => navigate(node.data.typeName === 'StereoCalibrationSink' ? `/calibrate/stereo/${sink.Id}` : `/calibrate/${sink.Id}`)}
-                className="w-full px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded text-sm font-medium flex items-center justify-center gap-2"
-              >
-                <Wand2 className="w-4 h-4" />Open Calibration Wizard
-              </button>
             )}
 
             <div className="flex items-center justify-between">

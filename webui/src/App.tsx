@@ -15,6 +15,7 @@ import {
   Gauge,
   Layers,
   Film,
+  Grid3x3,
 } from 'lucide-react';
 import './App.css';
 import StereoPage from './components/StereoPage';
@@ -23,6 +24,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { GraphPage } from './pages/GraphPage';
 import { MatchPage } from './pages/MatchPage';
 import { RecordingsPage } from './pages/RecordingsPage';
+import { CalibrationPage } from './pages/CalibrationPage';
 import { CalibrationWizardPage } from './pages/CalibrationWizardPage';
 import { StereoCalibrationWizardPage } from './pages/StereoCalibrationWizardPage';
 
@@ -105,6 +107,7 @@ const Header: React.FC<{
 const NAV_ITEMS = [
   { to: '/', label: 'Dashboard', icon: BarChart3, end: true },
   { to: '/graph', label: 'Graph', icon: Workflow, end: false },
+  { to: '/calibration', label: 'Calibration', icon: Grid3x3, end: false },
   { to: '/stereo', label: 'Stereo', icon: Layers, end: false },
   { to: '/match', label: 'Match', icon: Gauge, end: false },
   { to: '/recordings', label: 'Recordings', icon: Film, end: false },
@@ -231,8 +234,9 @@ function App() {
             <Route path="/match" element={<MatchPage />} />
             <Route path="/recordings" element={<RecordingsPage onToast={showToast} />} />
             <Route path="/settings" element={<SettingsPage settings={settings} onSave={setSettings} />} />
-            <Route path="/calibrate/stereo/:sinkId" element={<StereoCalibrationWizardPage sources={sources} onToast={showToast} />} />
-            <Route path="/calibrate/:sinkId" element={<CalibrationWizardPage sources={sources} onToast={showToast} />} />
+            <Route path="/calibration" element={<CalibrationPage sources={sources} onToast={showToast} />} />
+            <Route path="/calibration/stereo/:sessionId" element={<StereoCalibrationWizardPage onToast={showToast} />} />
+            <Route path="/calibration/camera/:sessionId" element={<CalibrationWizardPage onToast={showToast} />} />
           </Routes>
         </main>
 

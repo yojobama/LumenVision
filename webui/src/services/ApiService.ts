@@ -1,6 +1,5 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, NetworkTablesStatus, RecordSegment } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment } from '../types';
 import { apiClient } from '../api/client';
-import type { components } from '../api/generated';
 
 export class ApiService {
   // Relative to the page origin, so it works when the server is reached by hostname or IP.
@@ -125,11 +124,97 @@ export class ApiService {
     return data as CalibrationStatus;
   }
 
-  // GET: every calibration result saved to disk, across all cameras (CalibrationManager.cs)
-  async getSavedCalibrations(): Promise<components['schemas']['StoredCalibrationDto'][]> {
-    const { data, error } = await apiClient.GET('/cameraCalibrationSink/savedResults');
-    if (error) throw new Error('Failed to fetch saved calibrations');
-    return data ?? [];
+  // GET: every camera calibration saved to disk (CalibrationManager.cs)
+  async getSavedCalibrations(): Promise<StoredCameraCalibration[]> {
+    const response = await fetch(`${this.baseUrl}/calibration/saved`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // GET: every stereo calibration saved to disk (StereoCalibrationManager.cs)
+  async getSavedStereoCalibrations(): Promise<StoredStereoCalibration[]> {
+    const response = await fetch(`${this.baseUrl}/calibration/savedStereo`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Calibration sessions (CalibrationController.cs): interactive runs that are never graph nodes.
+  private boardParams(board: CalibrationBoard): URLSearchParams {
+    const params = new URLSearchParams({
+      boardType: String(board.boardType), rows: String(board.rows), cols: String(board.cols),
+      squareSizeMeters: String(board.squareSizeMeters),
+    });
+    if (board.markerSizeMeters != null) params.set('markerSizeMeters', String(board.markerSizeMeters));
+    return params;
+  }
+
+  private async sessionRequest<T>(path: string, method = 'GET'): Promise<T> {
+    const response = await fetch(`${this.baseUrl}/calibration/${path}`, { method });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async startCameraCalibration(sourceId: number, board: CalibrationBoard): Promise<CalibrationSession> {
+    const params = this.boardParams(board);
+    params.set('sourceId', String(sourceId));
+    return this.sessionRequest(`camera/start?${params}`, 'POST');
+  }
+
+  // ChArUco is unsupported for stereo (StereoCalibrator.h); the board is always a checkerboard
+  async startStereoCalibration(leftSourceId: number, rightSourceId: number, board: CalibrationBoard): Promise<CalibrationSession> {
+    const params = this.boardParams({ ...board, boardType: 0 });
+    params.set('leftSourceId', String(leftSourceId));
+    params.set('rightSourceId', String(rightSourceId));
+    return this.sessionRequest(`stereo/start?${params}`, 'POST');
+  }
+
+  // one side-by-side stereo camera, split in half into left/right eyes by the server
+  async startStereoSplitCalibration(sourceId: number, board: CalibrationBoard): Promise<CalibrationSession> {
+    const params = this.boardParams({ ...board, boardType: 0 });
+    params.set('sourceId', String(sourceId));
+    return this.sessionRequest(`stereo/startSplit?${params}`, 'POST');
+  }
+
+  getCalibrationSessions(): Promise<CalibrationSession[]> {
+    return this.sessionRequest('sessions');
+  }
+
+  getCalibrationSession(id: number): Promise<CalibrationSession> {
+    return this.sessionRequest(`${id}`);
+  }
+
+  async stopCalibrationSession(id: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/calibration/${id}/stop`, { method: 'POST' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
+  // saves the latest detected board (camera) or matched pair (stereo); false if none is available
+  saveCalibrationDetection(id: number): Promise<boolean> {
+    return this.sessionRequest(`${id}/saveDetection`, 'POST');
+  }
+
+  // number of saved snapshots (camera) or pairs (stereo)
+  getCalibrationCount(id: number): Promise<number> {
+    return this.sessionRequest(`${id}/count`);
+  }
+
+  async clearCalibrationEntries(id: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/calibration/${id}/entries`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
+  runCameraCalibration(id: number): Promise<CameraCalibrationResult> {
+    return this.sessionRequest(`${id}/runCamera`, 'POST');
+  }
+
+  // gate real use on the returned EpipolarRms (< 0.5px), as StereoRms alone does not predict validity
+  runStereoCalibration(id: number): Promise<StereoCalibrationResult> {
+    return this.sessionRequest(`${id}/runStereo`, 'POST');
+  }
+
+  // data for the coverage heatmap; `eye` applies only to stereo sessions
+  getCalibrationCoverage(id: number, eye?: 'left' | 'right'): Promise<CalibrationCoverage> {
+    return this.sessionRequest(`${id}/coverage${eye ? `?eye=${eye}` : ''}`);
   }
 
   // GET: the server's recent diagnostic log lines (LogController.cs)
@@ -270,64 +355,6 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const dto = await response.json();
     return { threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges };
-  }
-
-  // Camera Calibration Sink Controller routes (default 6x9 checkerboard, 25mm squares)
-  async createCameraCalibrationSink(name: string): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/create?name=${encodeURIComponent(name)}`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async createCameraCalibrationSinkWithBoard(name: string, boardType: number, rows: number, cols: number, squareSizeMeters: number): Promise<number> {
-    const params = new URLSearchParams({ name, boardType: String(boardType), rows: String(rows), cols: String(cols), squareSizeMeters: String(squareSizeMeters) });
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/createWithBoard?${params}`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  // Camera calibration wizard capture/run/result loop (CameraCalibrationSinkController.cs); mirrors
-  // the stereo equivalents below.
-  async saveCameraCalibrationDetection(sinkId: number): Promise<boolean> {
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/saveDetection`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async getCameraCalibrationSnapshotCount(sinkId: number): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/snapshotCount`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async clearCameraCalibrationSnapshots(sinkId: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/snapshots`, { method: 'DELETE' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
-  async runCameraCalibration(sinkId: number): Promise<CameraCalibrationResult> {
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/run`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async getCameraCalibrationResult(sinkId: number): Promise<CameraCalibrationResult> {
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/result`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  // Data for the coverage heatmap: every saved snapshot/pair's detected corners; `eye` applies only to stereo.
-  async getCameraCalibrationCoverage(sinkId: number): Promise<CalibrationCoverage> {
-    const response = await fetch(`${this.baseUrl}/cameraCalibrationSink/${sinkId}/coverage`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async getStereoCalibrationCoverage(sinkId: number, eye: 'left' | 'right'): Promise<CalibrationCoverage> {
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/coverage?eye=${eye}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
   }
 
   // Object Detection Sink Controller routes
@@ -502,64 +529,10 @@ export class ApiService {
     return response.json();
   }
 
-  // Stereo Calibration Sink Controller routes
-  async createStereoCalibrationSink(name: string): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/create?name=${encodeURIComponent(name)}`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  // ChArUco is unsupported for stereo (StereoCalibrator.h), so boardType is always 0 (checkerboard)
-  async createStereoCalibrationSinkWithBoard(name: string, rows: number, cols: number, squareSizeMeters: number): Promise<number> {
-    const params = new URLSearchParams({ name, boardType: '0', rows: String(rows), cols: String(cols), squareSizeMeters: String(squareSizeMeters) });
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/createWithBoard?${params.toString()}`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  // Binds explicit left/right sources for a stereo sink (StereoCalibrationSink or StereoDepthSink);
-  // swapping them flips the sign of every disparity.
-  async bindStereoSources(sinkId: number, leftSourceId: number, rightSourceId: number): Promise<void> {
-    const params = new URLSearchParams({ leftSourceId: String(leftSourceId), rightSourceId: String(rightSourceId) });
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/bind?${params.toString()}`, { method: 'PATCH' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
   async bindStereoDepthSources(sinkId: number, leftSourceId: number, rightSourceId: number): Promise<void> {
     const params = new URLSearchParams({ leftSourceId: String(leftSourceId), rightSourceId: String(rightSourceId) });
     const response = await fetch(`${this.baseUrl}/stereoDepthSink/${sinkId}/bind?${params.toString()}`, { method: 'PATCH' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
-  async saveStereoCalibrationDetection(sinkId: number): Promise<boolean> {
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/saveDetection`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async getStereoCalibrationPairCount(sinkId: number): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/pairCount`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async clearStereoCalibrationPairs(sinkId: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/pairs`, { method: 'DELETE' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
-  // runs cv::stereoCalibrate + cv::stereoRectify over every saved pair; gate real use on the
-  // returned epipolarRms (< 0.5px), as stereoRms alone does not predict validity.
-  async runStereoCalibration(sinkId: number): Promise<StereoCalibrationResult> {
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/run`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async getStereoCalibrationResult(sinkId: number): Promise<StereoCalibrationResult> {
-    const response = await fetch(`${this.baseUrl}/stereoCalibrationSink/${sinkId}/result`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
   }
 
   // Stereo Depth Sink Controller routes
@@ -841,10 +814,9 @@ export class ApiService {
   }
 
   async createApriltagProfile(sourceId: number, name: string, tagSize: number, options?: {
-    calibratorSinkId?: number; backend?: number; frameWidth?: number; frameHeight?: number; driverMode?: boolean;
+    backend?: number; frameWidth?: number; frameHeight?: number; driverMode?: boolean;
   }): Promise<number> {
     const params = new URLSearchParams({ sourceId: String(sourceId), name, tagSize: String(tagSize) });
-    if (options?.calibratorSinkId != null) params.set('calibratorSinkId', String(options.calibratorSinkId));
     if (options?.backend != null) params.set('backend', String(options.backend));
     if (options?.frameWidth != null) params.set('frameWidth', String(options.frameWidth));
     if (options?.frameHeight != null) params.set('frameHeight', String(options.frameHeight));
