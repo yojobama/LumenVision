@@ -73,8 +73,8 @@ cat > "$STAGE_DIR/etc/udev/rules.d/99-lumenvision-rockchip.rules" <<'EOF'
 KERNEL=="mpp_service", GROUP="video", MODE="0660"
 SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
 KERNEL=="rga", GROUP="video", MODE="0660"
-# RK3588 Mali GPU: hold the top clock instead of the default simple_ondemand governor
-SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu", ATTR{governor}="performance"
+# RK3588 GPU (fb000000.gpu), memory controller (dmc) and NPU (fdab0000.npu): hold the top clock instead of the on-demand governors
+SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu|dmc|fdab0000.npu", ATTR{governor}="performance"
 EOF
 
 echo "==> Writing DEBIAN control files"
