@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Server\Server.csproj" />
+  </ItemGroup>
+
+  <!--
+    Server.csproj copies the native LumenCore library, its libLumenCore alias and its dependencies next to Server.dll;
+    ProjectReference does not carry them over, so they are copied from Server's output directory.
+  -->
+  <Target Name="CopyServerNativeLibraries" AfterTargets="Build">
+    <MSBuild Projects="..\Server\Server.csproj" Targets="GetTargetPath">
+      <Output TaskParameter="TargetOutputs" ItemName="_ServerTargetPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <_ServerOutDir>%(_ServerTargetPath.RootDir)%(_ServerTargetPath.Directory)</_ServerOutDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_ServerNativeFiles Include="$(_ServerOutDir)*.dll;$(_ServerOutDir)*.so*" Exclude="$(_ServerOutDir)Server.dll;$(_ServerOutDir)Microsoft.*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_ServerNativeFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>
