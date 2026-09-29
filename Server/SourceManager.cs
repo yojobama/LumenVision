@@ -156,7 +156,7 @@ namespace Server
 
         // Pipeline profiles (see PipelineProfile.cs). Index is assigned once and never reused after a delete,
         // so a robot program's stored index keeps meaning the same profile.
-        public int AddApriltagProfile(int sourceId, string name, double tagSize, int? calibratorSinkId,
+        public int AddApriltagProfile(int sourceId, string name, double tagSize,
             ApriltagBackendKind backend, int frameWidth, int frameHeight, bool driverMode,
             int? threads = null, float? quadDecimate = null, bool? refineEdges = null)
         {
@@ -168,7 +168,6 @@ namespace Server
                 Name = name,
                 Kind = DetectionSinkKind.ApriltagSink,
                 TagSize = tagSize,
-                CalibratorSinkId = calibratorSinkId,
                 Backend = backend,
                 FrameWidth = frameWidth,
                 FrameHeight = frameHeight,
@@ -242,7 +241,7 @@ namespace Server
                 SinkManager.Instance.DeleteSink(explicitId.Value);
 
             string sinkName = $"{source.Name} - {profile.Name}";
-            int sinkId = SinkManager.Instance.CreateOrReplaceDetectionSinkForProfile(sinkName, profile, explicitId);
+            int sinkId = SinkManager.Instance.CreateOrReplaceDetectionSinkForProfile(sinkName, profile, explicitId, sourceId);
 
             SinkManager.Instance.BindSourceToSink(sinkId, sourceId);
             foreach (int downstreamId in downstreamSinkIds)

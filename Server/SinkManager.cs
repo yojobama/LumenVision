@@ -187,11 +187,13 @@ namespace Server
         public void ClearCameraCalibrationSnapshots(int calibratorSinkId) =>
             ManagerWrapper.Instance.ClearCameraCalibrationSnapshots(calibratorSinkId);
 
-        // creates an ApriltagSink that reuses the calibration result of an existing CameraCalibrationSink,
+        // creates an ApriltagSink using the saved calibration of a camera source at its current resolution,
         // so the apriltag detections can be translated into real world tag locations
-        public int AddApriltagSinkFromCalibrator(string name, int calibratorSinkId, double tagSize)
+        public int AddApriltagSinkForCamera(string name, int sourceId, double tagSize)
         {
-            int id = ManagerWrapper.Instance.CreateApriltagDetectorFromCalibrator(calibratorSinkId, tagSize);
+            CameraCalibrationResult calibration = CalibrationManager.Instance.GetForSource(sourceId)
+                ?? throw Server.Web.ApiException.BadRequest($"no saved calibration for source {sourceId} at its current resolution");
+            int id = ManagerWrapper.Instance.CreateApriltagDetector(calibration, tagSize);
             sinks.Add(NewApriltagSinkRecord(id, name, tagSize, ApriltagBackendKind.APRILTAG_BACKEND_CPU, 0, 0.0f, true));
             DB.Instance.Save();
             return id;
@@ -428,15 +430,15 @@ namespace Server
 
         // (re)creates the detection sink a PipelineProfile describes: construction-time settings at creation, the rest via setters.
         // explicitId creates it at that exact id (used by SourceManager.ActivateProfile).
-        public int CreateOrReplaceDetectionSinkForProfile(string name, PipelineProfile profile, int? explicitId)
+        // An AprilTag profile gets the saved calibration of the source's camera at its current resolution, if there is one.
+        public int CreateOrReplaceDetectionSinkForProfile(string name, PipelineProfile profile, int? explicitId, int sourceId)
         {
             int id;
             switch (profile.Kind)
             {
                 case DetectionSinkKind.ApriltagSink:
-                    CameraCalibrationResult calibration = profile.CalibratorSinkId.HasValue
-                        ? ManagerWrapper.Instance.GetCameraCalibrationResult(profile.CalibratorSinkId.Value)
-                        : new CameraCalibrationResult();
+                    CameraCalibrationResult calibration = CalibrationManager.Instance.GetForSource(sourceId)
+                        ?? new CameraCalibrationResult();
                     double tagSize = profile.TagSize ?? 0.1651;
                     ApriltagBackendKind backend = profile.Backend ?? ApriltagBackendKind.APRILTAG_BACKEND_CPU;
                     int nthreads = profile.Threads ?? 0;

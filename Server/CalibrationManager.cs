@@ -69,6 +69,15 @@ namespace Server
                 .FirstOrDefault();
         }
 
+        // The saved calibration for a camera source at its current resolution; null for non-camera sources or when none matches.
+        public CameraCalibrationResult? GetForSource(int sourceId)
+        {
+            string? cameraPath = SourceManager.Instance.GetSourceById(sourceId)?.CameraHardwareInfo?.path;
+            if (cameraPath == null) return null;
+            CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(sourceId);
+            return GetLatest(cameraPath, mode.width, mode.height)?.Result;
+        }
+
         public List<StoredCalibration> GetAll() => calibrations;
 
         // Ignores the current resolution when looking up, then compares against the camera's actual mode,

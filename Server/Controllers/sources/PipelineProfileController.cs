@@ -12,17 +12,17 @@ namespace Server.Controllers.sources
     // instance built from the profile; other sinks on the same source are untouched.
     internal class PipelineProfileController : ControllerBase
     {
-        // POST: define an AprilTag profile on a source; calibratorSinkId is optional (none = pose without real-world
-        // scale/undistort). Returns the new profile's index.
+        // POST: define an AprilTag profile on a source; activation uses the source camera's saved calibration at its
+        // current resolution (none = pose without real-world scale/undistort). Returns the new profile's index.
         [HttpPost("source/profiles/apriltag")]
         public Task<int> CreateApriltagProfile([FromQuery] int sourceId, [FromQuery] string name,
-            [FromQuery] double tagSize, [FromQuery] int? calibratorSinkId = null,
+            [FromQuery] double tagSize,
             [FromQuery] ApriltagBackendKind backend = ApriltagBackendKind.APRILTAG_BACKEND_CPU,
             [FromQuery] int frameWidth = 0, [FromQuery] int frameHeight = 0,
             [FromQuery] bool driverMode = false,
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null)
         {
-            int index = SourceManager.Instance.AddApriltagProfile(sourceId, name, tagSize, calibratorSinkId,
+            int index = SourceManager.Instance.AddApriltagProfile(sourceId, name, tagSize,
                 backend, frameWidth, frameHeight, driverMode, nthreads, quadDecimate, refineEdges);
             return Task.FromResult(index);
         }

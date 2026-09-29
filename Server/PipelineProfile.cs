@@ -19,8 +19,6 @@ namespace Server
 
         // --- ApriltagSink settings (Kind == ApriltagSink) ---
         public double? TagSize { get; set; }
-        // a CameraCalibrationSink id whose intrinsics are looked up live at activation time (not snapshotted)
-        public int? CalibratorSinkId { get; set; }
         public ApriltagBackendKind? Backend { get; set; }
         public int FrameWidth { get; set; }
         public int FrameHeight { get; set; }

@@ -21,12 +21,12 @@ namespace Server.Controllers.sinks
             return Task.FromResult(SinkID);
         }
 
-        // POST: create an Apriltag sink reusing an existing CameraCalibrationSink's calibration,
+        // POST: create an Apriltag sink using a camera source's saved calibration at its current resolution,
         // so detected tags' real-world location can be computed
-        [HttpPost("apriltagSink/createFromCalibrator")]
-        public Task<int> CreateFromCalibrator([FromQuery] string name, [FromQuery] int calibratorId, [FromQuery] double tagSize)
+        [HttpPost("apriltagSink/createFromCamera")]
+        public Task<int> CreateFromCamera([FromQuery] string name, [FromQuery] int sourceId, [FromQuery] double tagSize)
         {
-            int sinkId = SinkManager.Instance.AddApriltagSinkFromCalibrator(name, calibratorId, tagSize);
+            int sinkId = SinkManager.Instance.AddApriltagSinkForCamera(name, sourceId, tagSize);
             return Task.FromResult(sinkId);
         }
 
