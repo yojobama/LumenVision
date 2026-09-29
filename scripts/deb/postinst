@@ -16,6 +16,8 @@ case "$1" in
         udevadm trigger --subsystem-match=dma_heap 2>/dev/null || true
         udevadm trigger --sysname-match=mpp_service 2>/dev/null || true
         udevadm trigger --sysname-match=rga 2>/dev/null || true
+        # GPU governor rule: applies at boot on a real system; the trigger covers an install onto a running one
+        udevadm trigger --subsystem-match=devfreq --action=add 2>/dev/null || true
 
         systemctl daemon-reload
         systemctl enable lumenvision.service
