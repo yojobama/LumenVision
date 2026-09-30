@@ -15,6 +15,10 @@ PacketHeader GoldenHeader() {
 	header.sequenceId = 42;
 	header.latencyUs = 12345;
 	header.multiTagIds = { 3, 7 };
+	header.hasMultiTag = true;
+	header.multiTagT = { 1.5, -2.25, 0.5 };
+	header.multiTagQ = { 0.5, -0.5, 0.5, -0.5 };
+	header.multiTagReprojErr = 0.75f;
 	return header;
 }
 
@@ -61,6 +65,10 @@ TEST_CASE("a result packet survives a build and parse round trip", "[packet]") {
 	REQUIRE(header.sequenceId == 42);
 	REQUIRE(header.latencyUs == 12345);
 	REQUIRE(header.multiTagIds == std::vector<uint16_t>{ 3, 7 });
+	REQUIRE(header.hasMultiTag);
+	REQUIRE(header.multiTagT[1] == -2.25);
+	REQUIRE(header.multiTagQ[3] == -0.5);
+	REQUIRE(header.multiTagReprojErr == 0.75f);
 	REQUIRE(targets.size() == 2);
 
 	REQUIRE(targets[0].fiducialId == 3);

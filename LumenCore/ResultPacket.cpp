@@ -76,6 +76,13 @@ std::vector<uint8_t> BuildResultPacket(const PacketHeader& header, const std::ve
 	AppendU64(packet, header.sequenceId);
 	AppendU32(packet, header.latencyUs);
 
+	AppendU8(packet, header.hasMultiTag ? 1 : 0);
+	if (header.hasMultiTag) {
+		for (double v : header.multiTagT) AppendF64(packet, v);
+		for (double v : header.multiTagQ) AppendF64(packet, v);
+		AppendF32(packet, header.multiTagReprojErr);
+	}
+
 	size_t idCount = std::min<size_t>(header.multiTagIds.size(), 255);
 	AppendU8(packet, static_cast<uint8_t>(idCount));
 	for (size_t i = 0; i < idCount; i++) AppendU16(packet, header.multiTagIds[i]);
@@ -111,6 +118,12 @@ bool ParseResultPacket(const std::vector<uint8_t>& bytes, PacketHeader& header, 
 	header = PacketHeader();
 	header.sequenceId = in.U64();
 	header.latencyUs = in.U32();
+	header.hasMultiTag = in.U8() != 0;
+	if (header.hasMultiTag) {
+		for (double& v : header.multiTagT) v = in.F64();
+		for (double& v : header.multiTagQ) v = in.F64();
+		header.multiTagReprojErr = in.F32();
+	}
 	uint8_t idCount = in.U8();
 	for (uint8_t i = 0; i < idCount; i++) header.multiTagIds.push_back(in.U16());
 

@@ -431,6 +431,15 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 			putNumber("multitag/tagCount", multiTag.value("tagCount", 0));
 			putNumber("multitag/reprojErrPixels", multiTag.value("reprojErrPixels", 0.0));
 			for (int id : multiTag.value("fiducialIds", std::vector<int>{})) header.multiTagIds.push_back(static_cast<uint16_t>(id));
+
+			// the same pose rides inside the packet so a reader gets it from the frame it belongs to
+			header.hasMultiTag = true;
+			header.multiTagT = { multiTag.value("x", 0.0), multiTag.value("y", 0.0), multiTag.value("z", 0.0) };
+			std::array<double, 9> multiTagR{};
+			for (int row = 0; row < 3; row++)
+				for (int col = 0; col < 3; col++) multiTagR[row * 3 + col] = rotation[row][col].get<double>();
+			header.multiTagQ = frames::RotationToQuaternion(multiTagR);
+			header.multiTagReprojErr = static_cast<float>(multiTag.value("reprojErrPixels", 0.0));
 		} else {
 			// no multi-tag result this frame (fewer than 2 known-field-pose tags, no field layout, or no envelope): clear tagCount to 0
 			// rather than leaving a stale pose published.
