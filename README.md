@@ -77,6 +77,60 @@ server. Create one via `POST /api/networkTablesSink/createForTeam` (or `createFo
 bench testing against a local NT4 server), bind it to one or more detector nodes, and it
 publishes each into its own subtable under the configured root table (default `/lumenvision`).
 
+### Topics
+
+Each camera publishes under `/<root>/<camera>/`, where `<camera>` is the camera's name in the UI (characters outside
+`A-Za-z0-9_.-` become `_`; a detector's id also works as an alias). Every value is stamped with the frame's
+**capture time**, not its arrival time, so feed that timestamp to your robot's pose estimator.
+
+| Topic | Type | Meaning |
+|---|---|---|
+| `result` | raw | The binary result packet (schema v2, below): targets, multi-tag pose, constrained pose. Sent with "send all" so a reader's queue sees every frame. |
+| `tags/*`, `multitag/*` | numbers | Flat per-tag and multi-tag values for dashboards. |
+| `cameraIntrinsics`, `cameraDistortion` | double[] | The calibration in use (3x3 row-major; OpenCV distortion coefficients). |
+| `config/pipelineIndex`, `config/driverMode`, `config/fpsLimit` | int / bool / int | Robot-written controls. `status/*` reports the value in effect. |
+| `config/inputSnapshot`, `config/outputSnapshot` | any write | Save a raw or annotated snapshot. |
+| `config/constrainedSeed`, `config/robotToCamera` | double[3], double[7] | Start the floor-constrained solve: seed `[x, y, yaw]` (layout frame) and the camera mount `[x, y, z, qw, qx, qy, qz]`. |
+| `/<root>/config/ledMode`, `config/recording` | int / bool | Global LED (-1 default, 0 off, 1 on, 2 blink) and recording. |
+| `/<root>/heartbeat`, `/<root>/.version` | double / string | Liveness and the coprocessor's version (compared with the vendordep's). |
+
+### Frames and units
+
+All poses are in WPILib frames: the camera is X forward / Y left / Z up, and a tag's frame is the one a field-layout tag pose
+describes (X out of its face, Z up). A target's transforms are camera-to-tag; the multi-tag pose is the camera's pose in the
+layout's own frame (relative to the layout file's origin, which the vendordep re-expresses for the current alliance origin).
+**Yaw is positive to the left and pitch is positive up**, both in degrees.
+
+### Result packet, schema v2
+
+Big-endian. Header: `u16 version, u64 sequenceId, u32 latencyUs`, `u8 hasMultiTag [f64 t[3], f64 q[4], f32 reprojErr]`,
+`u8 hasConstrained [f64 x, f64 y, f64 yaw, f32 reprojErr, u8 tagCount]`, `u8 idCount, u16 ids[]` (tags in the multi-tag
+solve), `u16 targetCount`. Each target: `i16 fiducialId, i16 objectClassId, f32 confidence, f64 yaw, pitch, area, skew,
+ambiguity`, best and alternate camera-to-tag as `f32 t[3], q[4]`, `f32` best and alternate reprojection error, `f32
+corners[8]`, `f32 minAreaRect[8]`. `LumenCore/ResultPacket.h` is the specification; `tests/data/packet_v2.bin` locks it
+between the C++ encoder and the Java decoder.
+
+### Robot code: the `photoncompat` vendordep
+
+`photoncompat/` is a Java vendordep with PhotonLib-shaped classes (`org.lumenvision.photoncompat.compat.PhotonCamera`,
+`PhotonPoseEstimator`, ...) and native ones (`LumenCamera`, `LumenPoseEstimator`). It covers `getLatestResult` and
+`getAllUnreadResults`, driver mode, pipeline index, snapshots, LED, FPS limit, camera intrinsics, every pose strategy
+(lowest ambiguity, closest to height/reference/last, average, coprocessor multi-tag with fallback, distance/trig solve and
+constrained SolvePnP) and a version check. `MULTI_TAG_PNP_ON_RIO` is mapped to coprocessor multi-tag.
+
+- **Install from a release:** add `https://github.com/yojobama/LumenVision/releases/latest/download/photoncompat.json`
+  in the WPILib "Manage Vendor Libraries" dialog.
+- **Install from a checkout:** `cd photoncompat && ./gradlew installIntoRobot` publishes to `photoncompat/build/maven-repo` and
+  writes `robot/vendordeps/photoncompat.json` pointing at it (git-ignored). `robot/` is an example project: see
+  `subsystems/VisionSubsystem.java`.
+- **Simulation:** `org.lumenvision.photoncompat.sim` has `VisionSystemSim`, `PhotonCameraSim`, `SimCameraProperties`,
+  `VisionTargetSim` and `TargetModel`. A simulated camera projects targets through a pinhole model and publishes the same
+  topics as the coprocessor, so `PhotonCamera` and the estimators read it unchanged. Poses are ground truth (zero
+  ambiguity) and pixel noise moves the reported corners only; targets do not occlude each other.
+- **Hardware in the loop:** no code is needed. Point the real coprocessor at the simulation's NT server
+  (`createForServer`) and the robot code sees real detections in simulation.
+- **Tests:** `cd photoncompat && ./gradlew test` (an in-process NT server and ntcore's JNI, unpacked from WPILib's native zips).
+
 ## Calibration
 
 Calibration is a *session*, not a graph node: a session owns a private calibrator and a live preview
@@ -195,11 +249,12 @@ anything.
   Vulkan-versus-CPU agreement check in every refine mode, which needs a Vulkan device. The target links
   against the shared LumenCore library; on Windows `LUMEN_BUILD_TESTS` makes LumenCore export all its
   symbols so the test executable can link (production builds do not), and the native dependency
-  folders must be on `PATH`.
+  folders must be on `PATH`. The `[constrained]`, `[frames]` and `[packet]` tests cover the floor-constrained solver, the
+  WPILib frame conversions and the result packet's golden file.
 - **C# (`Server.Tests/`, xUnit):** `dotnet test Server.Tests` after building LumenCore for your preset
   (pass `-p:LumenCorePreset=` as for `Server.csproj`). It covers calibration result persistence,
   calibration session error paths, the legacy-record handling in `DB.Load` and the AprilTag refine-mode
-  persistence and defaults; on Windows the
+  persistence and defaults, and the NT control service; on Windows the
   native dependency folders must be on `PATH`, as when running the Server.
 
 ## Known gaps

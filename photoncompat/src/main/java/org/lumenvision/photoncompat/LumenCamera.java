@@ -74,6 +74,11 @@ public class LumenCamera implements AutoCloseable {
     private boolean versionChecked = false;
     private boolean schemaWarned = false;
 
+    /** The default NT4 instance and root table "lumenvision". */
+    public LumenCamera(String cameraName) {
+        this(NetworkTableInstance.getDefault(), "lumenvision", cameraName);
+    }
+
     /**
      * @param instance the NetworkTableInstance to use (injectable for simulation)
      * @param rootTable must match the coprocessor's NetworkTablesConfig.rootTable (default "lumenvision")

@@ -103,3 +103,19 @@ publishing {
         }
     }
 }
+
+// Renders vendordep-template.json for a local build and copies it into robot/vendordeps, so the example robot (or any GradleRIO
+// project pointed at the same file) resolves photoncompat from this checkout's build/maven-repo instead of a release.
+tasks.register("installIntoRobot") {
+    dependsOn "publishMavenPublicationToLocalRepository"
+    def template = file("vendordep-template.json")
+    def repoUrl = layout.buildDirectory.dir("maven-repo").get().asFile.toURI().toString()
+    def target = file("../robot/vendordeps/photoncompat.json")
+    doLast {
+        def json = template.text
+                .replace("https://yojobama.github.io/LumenVision/maven", repoUrl)
+                .replace("__VERSION__", project.version.toString())
+        target.text = json
+        println "Wrote ${target}"
+    }
+}

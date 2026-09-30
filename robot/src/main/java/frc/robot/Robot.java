@@ -4,7 +4,10 @@
 
 package frc.robot;
 
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj2.command.Command;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
 
@@ -91,5 +94,11 @@ public class Robot extends TimedRobot {
 
   /** This function is called periodically whilst in simulation. */
   @Override
-  public void simulationPeriodic() {}
+  public void simulationPeriodic() {
+    // the robot drives a slow circle in front of the tags so the simulated camera has something to see
+    double t = Timer.getFPGATimestamp() * 0.2;
+    m_robotContainer
+        .getVision()
+        .simulate(new Pose2d(12.5 + 2.0 * Math.cos(t), 4.0 + 1.5 * Math.sin(t), Rotation2d.fromRadians(t + Math.PI / 2)));
+  }
 }
