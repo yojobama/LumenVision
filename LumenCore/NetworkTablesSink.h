@@ -24,6 +24,8 @@ struct NetworkTablesConfig {
 struct NetworkTablesStreamStats {
 	uint64_t lastFrameNumber = 0;
 	uint64_t lastCaptureTimeUs = 0;
+	// last NT timestamp a frame's topics were written with; keeps them monotonic
+	int64_t lastNtCaptureUs = 0;
 	double fps = 0.0;
 };
 
@@ -53,6 +55,10 @@ public:
 	// Publishes "<rootTable>/status/recording": whether the coprocessor is actually recording.
 	void SetRecordingStatus(bool recording);
 
+	// Publishes a node's topics under this table name instead of its id (and maps robot config writes on that name back to the
+	// id), so robot code can address a camera by name. The name is sanitised to [A-Za-z0-9_.-]; an empty alias clears it.
+	void SetNodeAlias(const std::string& nodeId, const std::string& alias);
+
 private:
 	// nt::Event callback for every topic under this sink's root table; parses the source id and
 	// config/pipelineIndex|driverMode writes out of the topic name.
@@ -63,6 +69,9 @@ private:
 	// the binary "result" packet (see BuildResultPacket). Non-AprilTag JSON falls back to a "raw" string topic.
 	void PublishSourceResult(const SourceResult& result);
 
+	std::string TableNameForNode(const std::string& nodeId) const;
+	std::string NodeIdForTableName(const std::string& tableName) const;
+
 	nt::NetworkTableInstance m_Instance;
 	NetworkTablesConfig m_Config;
 	std::shared_ptr<Logger> m_Logger;
@@ -70,6 +79,10 @@ private:
 	uint64_t m_Heartbeat = 0;
 	uint64_t m_ConstructedAtUs = 0;
 	std::unordered_map<std::string, NetworkTablesStreamStats> m_StreamStats;
+
+	mutable std::mutex m_AliasMutex;
+	std::unordered_map<std::string, std::string> m_NodeAliases; // node id -> table name
+	std::unordered_map<std::string, std::string> m_AliasToNode; // table name -> node id
 
 	NT_Listener m_ConfigListener = 0;
 	std::mutex m_ConfigMutex;

@@ -512,6 +512,14 @@ int Manager::CreateRoiSource(int upstreamSourceId, int x, int y, int width, int 
     return id;
 }
 
+void Manager::SetObjectDetectionCalibration(int sinkId, CameraCalibrationResult calibrationResult)
+{
+    auto sinkIt = m_Sinks.find(sinkId);
+    if (sinkIt == m_Sinks.end()) return;
+    if (auto objectDetectionSink = std::dynamic_pointer_cast<ObjectDetectionSink>(sinkIt->second))
+        objectDetectionSink->SetCalibration(calibrationResult);
+}
+
 void Manager::SetDriverMode(int sinkId, bool enabled)
 {
     auto sinkIt = m_Sinks.find(sinkId);
@@ -1369,6 +1377,14 @@ void Manager::SetNetworkTablesSinkRecordingStatus(int sinkId, bool recording)
     if (NetworkTablesSink* p_NtSink = dynamic_cast<NetworkTablesSink*>(sink->second.get()))
         p_NtSink->SetRecordingStatus(recording);
 }
+
+void Manager::SetNetworkTablesSinkNodeAlias(int sinkId, string nodeId, string alias)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return;
+    if (NetworkTablesSink* p_NtSink = dynamic_cast<NetworkTablesSink*>(sink->second.get()))
+        p_NtSink->SetNodeAlias(nodeId, alias);
+}
 #else
 int Manager::CreateNetworkTablesSinkForTeam(int, string, string)
 {
@@ -1391,6 +1407,7 @@ string Manager::GetNetworkTablesSinkStatus(int) { return "{}"; }
 string Manager::PollNetworkTablesSinkConfigRequests(int) { return "[]"; }
 int Manager::PollNetworkTablesSinkRecordingRequest(int) { return -1; }
 void Manager::SetNetworkTablesSinkRecordingStatus(int, bool) {}
+void Manager::SetNetworkTablesSinkNodeAlias(int, string, string) {}
 #endif
 
 // Declared unconditionally with an #ifdef'd body, as in the NT4 block above.

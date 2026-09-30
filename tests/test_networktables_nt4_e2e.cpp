@@ -2,6 +2,8 @@
 #include "ApriltagDetector.h"
 #include "CameraCalibrationResult.h"
 #include "NetworkTablesSink.h"
+#include "ResultPacket.h"
+#include <networktables/RawTopic.h>
 #include <chrono>
 #include <thread>
 
@@ -95,11 +97,12 @@ TEST_CASE("NetworkTablesSink publishes the real NT4 schema end to end over a loo
 	REQUIRE(detectorTable->GetNumber("latencyMs", -1.0) >= 0.0);
 
 	std::vector<uint8_t> packet = detectorTable->GetRaw("result", std::vector<uint8_t>{});
-	REQUIRE(packet.size() >= 3); // schemaVersion (u16) + targetCount (u8) at minimum
-	uint16_t schemaVersion = (static_cast<uint16_t>(packet[0]) << 8) | packet[1];
-	REQUIRE(schemaVersion == 1);
-	uint8_t targetCount = packet[2];
-	REQUIRE(targetCount == ids.size());
+	PacketHeader packetHeader;
+	std::vector<PacketTarget> packetTargets;
+	REQUIRE(ParseResultPacket(packet, packetHeader, packetTargets)); // schema version 2
+	REQUIRE(packetTargets.size() == ids.size());
+	REQUIRE(packetTargets[0].fiducialId == static_cast<int16_t>(ids[0]));
+	REQUIRE(packetHeader.sequenceId > 0);
 
 	std::string status = clientTable->GetString(".status", "");
 	nlohmann::json statusJson = nlohmann::json::parse(status, nullptr, false /* allow_exceptions */);
@@ -195,5 +198,78 @@ TEST_CASE("NetworkTablesSink surfaces the robot's config/recording request and p
 	REQUIRE(WaitUntil([&] { return statusSub.Get() == false; }));
 
 	robot.StopClient();
+	server.StopServer();
+}
+
+TEST_CASE("NetworkTablesSink publishes both pose solutions, ambiguity and capture-time stamps for a calibrated detector", "[nt4][e2e]") {
+	cv::Mat gray = cv::imread(std::string(LUMEN_VKAPRILTAG_SAMPLE_DIR) + "/grayimage.pgm", cv::IMREAD_GRAYSCALE);
+	REQUIRE_FALSE(gray.empty());
+	cv::Mat bgr;
+	cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);
+
+	constexpr unsigned int TEST_NT3_PORT = 17831;
+	constexpr unsigned int TEST_NT4_PORT = 17832;
+	nt::NetworkTableInstance server = nt::NetworkTableInstance::Create();
+	server.StartServer("", "127.0.0.1", TEST_NT3_PORT, TEST_NT4_PORT);
+
+	auto logger = std::make_shared<Logger>("LumenCoreTests-nt4-pose.log");
+	auto imageSource = std::make_shared<PgmFrameSource>(logger, "nt4-pose-image", bgr);
+	CameraCalibrationResult calibration(1000.0, 1000.0, gray.cols / 2.0, gray.rows / 2.0, 0.1, std::vector<double>{}, gray.cols, gray.rows);
+	auto detector = std::make_shared<ApriltagDetector>(logger, "nt4-pose-detector", calibration, 0.1651);
+	REQUIRE(detector->BindSource(imageSource));
+
+	NetworkTablesConfig config;
+	config.serverAddress = "127.0.0.1";
+	config.port = TEST_NT4_PORT;
+	config.rootTable = "lumenvision";
+	config.clientIdentity = "LumenCoreTests-nt4-pose-sink";
+	auto ntSink = std::make_shared<NetworkTablesSink>(logger, "nt4-pose-sink", config);
+	// robot code addresses the camera by name, not by its node id
+	ntSink->SetNodeAlias("nt4-pose-detector", "front camera");
+	REQUIRE(ntSink->BindSource(detector));
+
+	imageSource->Toggle(true);
+	static_cast<ISink&>(*detector).Toggle(true);
+	static_cast<ISink&>(*ntSink).Toggle(true);
+
+	nt::NetworkTableInstance client = nt::NetworkTableInstance::Create();
+	client.SetServer("127.0.0.1", TEST_NT4_PORT);
+	client.StartClient4("LumenCoreTests-nt4-pose-reader");
+	nt::RawSubscriber resultSub = client.GetRawTopic("/lumenvision/front_camera/result").Subscribe("raw", {});
+
+	std::vector<uint8_t> packet;
+	int64_t valueTimeUs = 0;
+	REQUIRE(WaitUntil([&] {
+		nt::TimestampedRaw sample = resultSub.GetAtomic();
+		if (sample.value.size() < 3) return false;
+		packet = sample.value;
+		valueTimeUs = sample.time;
+		return true;
+	}));
+	int64_t readAtUs = client.GetServerTimeOffset().has_value() ? nt::Now() + client.GetServerTimeOffset().value() : nt::Now();
+
+	imageSource->Toggle(false);
+	static_cast<ISink&>(*detector).Toggle(false);
+	static_cast<ISink&>(*ntSink).Toggle(false);
+
+	PacketHeader header;
+	std::vector<PacketTarget> targets;
+	REQUIRE(ParseResultPacket(packet, header, targets));
+	REQUIRE_FALSE(targets.empty());
+	const PacketTarget& tag = targets[0];
+	REQUIRE(tag.hasPose);
+	REQUIRE(tag.bestReprojErr >= 0.0f);
+	REQUIRE(tag.poseAmbiguity >= 0.0);
+	REQUIRE(tag.poseAmbiguity <= 1.0);
+	// the planar-PnP second solution is present whenever the tag is not exactly fronto-parallel
+	if (tag.altReprojErr >= 0.0f) REQUIRE(tag.altReprojErr >= tag.bestReprojErr - 1e-3f);
+	REQUIRE(tag.areaPercent > 0.0);
+	REQUIRE(header.sequenceId > 0);
+
+	// the NT value timestamp is the frame's capture time, so it is not in the future and is older than the packet's own latency allows
+	REQUIRE(valueTimeUs > 0);
+	REQUIRE(valueTimeUs <= readAtUs);
+
+	client.StopClient();
 	server.StopServer();
 }

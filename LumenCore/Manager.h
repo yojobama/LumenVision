@@ -77,6 +77,9 @@ public:
 	// and bind each into StereoCalibrator/StereoDepthNode. Binds itself to upstreamSourceId; throws if it doesn't exist.
 	int CreateRoiSource(int upstreamSourceId, int x, int y, int width, int height);
 
+	// Gives an ObjectDetectionSink the camera calibration it needs to report each detection's yaw/pitch; a no-op for other nodes
+	void SetObjectDetectionCalibration(int sinkId, CameraCalibrationResult calibrationResult);
+
 	// Driver mode: throws if sinkId isn't a detection sink that supports it (ApriltagDetector/ObjectDetectionSink).
 	void SetDriverMode(int sinkId, bool enabled);
 	bool GetDriverMode(int sinkId);
@@ -241,6 +244,8 @@ public:
 	int PollNetworkTablesSinkRecordingRequest(int sinkId);
 	// publishes "<root>/status/recording" on that sink's NT connection
 	void SetNetworkTablesSinkRecordingStatus(int sinkId, bool recording);
+	// publishes a node's topics under `alias` instead of its id (see NetworkTablesSink::SetNodeAlias); "" clears it
+	void SetNetworkTablesSinkNodeAlias(int sinkId, string nodeId, string alias);
 
 	// terminal sink: bind any single frame-producing node and it encodes and streams it over WebRTC. Takes only primitive parameters, as
 	// WebRTCSink.h's libdatachannel API must never reach swig.i. Declared unconditionally like the NT4 methods above.

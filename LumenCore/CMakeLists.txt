@@ -35,6 +35,7 @@ set(LUMEN_CORE_SOURCES
     OpenCvCameraBackend.cpp
     PixelUnpack.cpp
     RecordSink.cpp
+    ResultPacket.cpp
     RoiSource.cpp
     SourceResult.cpp
     SystemMonitor.cpp

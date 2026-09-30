@@ -1,57 +1,19 @@
 #ifdef LUMEN_WITH_NT4
 #include "NetworkTablesSink.h"
+#include "ResultPacket.h"
 #include "SystemMonitor.h"
+#include <opencv2/geometry/2d.hpp> // cv::minAreaRect (OpenCV 5 moved it out of imgproc)
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <numbers>
 #include <string_view>
 
 namespace {
 	// arbitrary but generous; a real deployment binds a handful of detector nodes, not dozens
 	constexpr int MAX_BOUND_SOURCES = 16;
-
-	// bumped whenever the binary "result" packet layout changes; a consumer refuses payloads from a schema version it doesn't understand
-	constexpr uint16_t RESULT_PACKET_SCHEMA_VERSION = 1;
-
-	void AppendU8(std::vector<uint8_t>& buf, uint8_t v) {
-		buf.push_back(v);
-	}
-	void AppendU16(std::vector<uint8_t>& buf, uint16_t v) {
-		buf.push_back(static_cast<uint8_t>(v >> 8));
-		buf.push_back(static_cast<uint8_t>(v));
-	}
-	// big-endian regardless of host, as the packet layout is an explicit contract
-	void AppendF32(std::vector<uint8_t>& buf, float v) {
-		uint32_t bits;
-		static_assert(sizeof(bits) == sizeof(v));
-		std::memcpy(&bits, &v, sizeof(bits));
-		for (int shift = 24; shift >= 0; shift -= 8) buf.push_back(static_cast<uint8_t>(bits >> shift));
-	}
-	void AppendF64(std::vector<uint8_t>& buf, double v) {
-		uint64_t bits;
-		static_assert(sizeof(bits) == sizeof(v));
-		std::memcpy(&bits, &v, sizeof(bits));
-		for (int shift = 56; shift >= 0; shift -= 8) buf.push_back(static_cast<uint8_t>(bits >> shift));
-	}
-
-	// One tag's worth of everything both the binary packet and the flattened scalar topics need,
-	// computed once per tag rather than duplicated between the two publish paths below.
-	struct TargetMetrics {
-		int id = -1;
-		double yawDeg = 0.0;
-		double pitchDeg = 0.0;
-		// always 0: PhotonVision's AprilTag pipelines never compute skew (it only applies to colour-shape pipelines)
-		double skewDeg = 0.0;
-		double areaPercent = 0.0;
-		bool hasPose = false;
-		float tx = 0.0f, ty = 0.0f, tz = 0.0f;
-		float qw = 1.0f, qx = 0.0f, qy = 0.0f, qz = 0.0f;
-		// always 0: estimate_tag_pose is single-hypothesis, so there is no second pose to derive an ambiguity from; kept so the layout matches
-		double poseAmbiguity = 0.0;
-		std::array<float, 8> corners{}; // x0,y0,x1,y1,x2,y2,x3,y3
-	};
 
 	// Shoelace formula on the 4 corners; needs no calibration, so it can pick a "best" target on an uncalibrated camera.
 	double QuadPixelArea(const std::array<float, 8>& c) {
@@ -65,7 +27,7 @@ namespace {
 
 	// Row-major 3x3 rotation matrix (ApriltagDetector.cpp's pose.R layout) to unit quaternion, via the largest-diagonal-term
 	// method (stable for small trace).
-	void RotationMatrixToQuaternion(const nlohmann::json& r, float& qw, float& qx, float& qy, float& qz) {
+	void RotationMatrixToQuaternion(const nlohmann::json& r, std::array<float, 4>& q) {
 		double m00 = r[0][0], m01 = r[0][1], m02 = r[0][2];
 		double m10 = r[1][0], m11 = r[1][1], m12 = r[1][2];
 		double m20 = r[2][0], m21 = r[2][1], m22 = r[2][2];
@@ -96,21 +58,42 @@ namespace {
 			y = (m12 + m21) / s;
 			z = 0.25 * s;
 		}
-		qw = static_cast<float>(w);
-		qx = static_cast<float>(x);
-		qy = static_cast<float>(y);
-		qz = static_cast<float>(z);
+		q = { static_cast<float>(w), static_cast<float>(x), static_cast<float>(y), static_cast<float>(z) };
 	}
 
-	std::vector<TargetMetrics> ComputeTargetMetrics(const nlohmann::json& tagsArray, const nlohmann::json& calibration) {
+	// translation + quaternion from a detector "pose"/"altPose" object ({x, y, z, R}); false when the object is absent
+	bool PoseFromJson(const nlohmann::json& pose, std::array<float, 3>& t, std::array<float, 4>& q) {
+		if (!pose.is_object()) return false;
+		t = { static_cast<float>(pose.value("x", 0.0)), static_cast<float>(pose.value("y", 0.0)), static_cast<float>(pose.value("z", 0.0)) };
+		static const std::array<double, 3> identityRow{ 0.0, 0.0, 0.0 };
+		auto rotation = pose.value("R", nlohmann::json::array({identityRow, identityRow, identityRow}));
+		RotationMatrixToQuaternion(rotation, q);
+		return true;
+	}
+
+	// Minimum-area rectangle around the four corners, as x0,y0..x3,y3; `skewDeg` is its rotation angle.
+	void FillMinAreaRect(PacketTarget& t) {
+		std::vector<cv::Point2f> points;
+		for (int i = 0; i < 4; i++) points.emplace_back(t.corners[i * 2], t.corners[i * 2 + 1]);
+		cv::RotatedRect rect = cv::minAreaRect(points);
+		cv::Point2f box[4];
+		rect.points(box);
+		for (int i = 0; i < 4; i++) {
+			t.minAreaRectCorners[i * 2] = box[i].x;
+			t.minAreaRectCorners[i * 2 + 1] = box[i].y;
+		}
+		t.skewDeg = rect.angle;
+	}
+
+	std::vector<PacketTarget> ComputeTagTargets(const nlohmann::json& tagsArray, const nlohmann::json& calibration) {
 		bool hasFrameSize = calibration.is_object() && calibration.value("imageWidth", 0) > 0 && calibration.value("imageHeight", 0) > 0;
 		double frameArea = hasFrameSize ? static_cast<double>(calibration.value("imageWidth", 0)) * calibration.value("imageHeight", 0) : 0.0;
 
-		std::vector<TargetMetrics> out;
+		std::vector<PacketTarget> out;
 		out.reserve(tagsArray.size());
 		for (const auto& tag : tagsArray) {
-			TargetMetrics m;
-			m.id = tag.value("id", -1);
+			PacketTarget m;
+			m.fiducialId = static_cast<int16_t>(tag.value("id", -1));
 			const auto& corners = tag["corners"];
 			for (int i = 0; i < 4; i++) {
 				m.corners[i * 2] = static_cast<float>(corners[i][0].get<double>());
@@ -118,53 +101,56 @@ namespace {
 			}
 			double pixelArea = QuadPixelArea(m.corners);
 			m.areaPercent = hasFrameSize ? (pixelArea / frameArea) * 100.0 : 0.0;
+			FillMinAreaRect(m);
 
-			if (tag.contains("pose")) {
-				const auto& pose = tag["pose"];
-				double x = pose.value("x", 0.0), y = pose.value("y", 0.0), z = pose.value("z", 0.0);
+			if (tag.contains("pose") && PoseFromJson(tag["pose"], m.bestT, m.bestQ)) {
 				m.hasPose = true;
-				m.tx = static_cast<float>(x);
-				m.ty = static_cast<float>(y);
-				m.tz = static_cast<float>(z);
 				// apriltag camera-frame convention (also used for tags/x,y,z): +X right, +Y down, +Z forward. Yaw is the horizontal angle
 				// off boresight (positive = right), pitch the vertical angle (Y negated: positive = above, as PhotonVision). Not remapped
 				// to WPILib NWU; the robot-side vendordep applies its own conversion.
-				m.yawDeg = std::atan2(x, z) * 180.0 / std::numbers::pi;
-				m.pitchDeg = std::atan2(-y, z) * 180.0 / std::numbers::pi;
-				static const std::array<double, 3> identityRow{ 0.0, 0.0, 0.0 };
-				auto rotation = pose.value("R", nlohmann::json::array({identityRow, identityRow, identityRow}));
-				RotationMatrixToQuaternion(rotation, m.qw, m.qx, m.qy, m.qz);
+				m.yawDeg = std::atan2(m.bestT[0], m.bestT[2]) * 180.0 / std::numbers::pi;
+				m.pitchDeg = std::atan2(-m.bestT[1], m.bestT[2]) * 180.0 / std::numbers::pi;
+				m.bestReprojErr = static_cast<float>(tag.value("reprojErr", -1.0));
+				m.poseAmbiguity = tag.value("poseAmbiguity", -1.0);
+				if (tag.contains("altPose") && PoseFromJson(tag["altPose"], m.altT, m.altQ))
+					m.altReprojErr = static_cast<float>(tag.value("altReprojErr", -1.0));
 			}
 			out.push_back(m);
 		}
 		return out;
 	}
 
-	// [u16 schemaVersion][u8 targetCount][repeated per target: u16 fiducialId, f64 yaw, f64 pitch, f64 area, f64 skew, f32x3
-	// translation, f32x4 rotation-quaternion(w,x,y,z), f64 poseAmbiguity, f32x8 corners], all big-endian (see AppendU16/F32/F64).
-	// Hand-packed like photonlib's Packet as results are variable-length; this comment is the spec the Java decoder follows.
-	std::vector<uint8_t> BuildResultPacket(const std::vector<TargetMetrics>& targets) {
-		std::vector<uint8_t> packet;
-		AppendU16(packet, RESULT_PACKET_SCHEMA_VERSION);
-		AppendU8(packet, static_cast<uint8_t>(std::min<size_t>(targets.size(), 255)));
-		for (size_t i = 0; i < targets.size() && i < 255; i++) {
-			const TargetMetrics& t = targets[i];
-			AppendU16(packet, static_cast<uint16_t>(t.id));
-			AppendF64(packet, t.yawDeg);
-			AppendF64(packet, t.pitchDeg);
-			AppendF64(packet, t.areaPercent);
-			AppendF64(packet, t.skewDeg);
-			AppendF32(packet, t.tx);
-			AppendF32(packet, t.ty);
-			AppendF32(packet, t.tz);
-			AppendF32(packet, t.qw);
-			AppendF32(packet, t.qx);
-			AppendF32(packet, t.qy);
-			AppendF32(packet, t.qz);
-			AppendF64(packet, t.poseAmbiguity);
-			for (float c : t.corners) AppendF32(packet, c);
+	// ObjectDetectionSink entries: {classId, className, confidence, box:[x,y,w,h], frameWidth?, frameHeight?, yawDeg?, pitchDeg?}
+	std::vector<PacketTarget> ComputeObjectTargets(const nlohmann::json& detections) {
+		std::vector<PacketTarget> out;
+		out.reserve(detections.size());
+		for (const auto& detection : detections) {
+			PacketTarget m;
+			m.objectClassId = static_cast<int16_t>(detection.value("classId", -1));
+			m.objectConfidence = static_cast<float>(detection.value("confidence", -1.0));
+			m.yawDeg = detection.value("yawDeg", 0.0);
+			m.pitchDeg = detection.value("pitchDeg", 0.0);
+
+			const auto& box = detection["box"];
+			double x = box[0].get<double>(), y = box[1].get<double>(), w = box[2].get<double>(), h = box[3].get<double>();
+			m.corners = { static_cast<float>(x), static_cast<float>(y), static_cast<float>(x + w), static_cast<float>(y),
+				static_cast<float>(x + w), static_cast<float>(y + h), static_cast<float>(x), static_cast<float>(y + h) };
+			m.minAreaRectCorners = m.corners;
+			double frameArea = static_cast<double>(detection.value("frameWidth", 0)) * detection.value("frameHeight", 0);
+			m.areaPercent = frameArea > 0.0 ? (w * h) / frameArea * 100.0 : 0.0;
+			out.push_back(m);
 		}
-		return packet;
+		return out;
+	}
+
+	// NT table names are path segments: anything outside this set would split or confuse a topic path
+	std::string SanitiseTableName(const std::string& name) {
+		std::string out = name;
+		for (char& c : out) {
+			bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+			if (!ok) c = '_';
+		}
+		return out;
 	}
 }
 
@@ -229,7 +215,8 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 	if (firstSlash == std::string::npos || secondSlash == std::string::npos) return;
 	if (rest.substr(firstSlash + 1, secondSlash - firstSlash - 1) != "config") return;
 
-	std::string sourceId = rest.substr(0, firstSlash);
+	// the topic path carries the camera's table name (its alias, when one is set); requests are keyed by node id
+	std::string sourceId = NodeIdForTableName(rest.substr(0, firstSlash));
 	std::string leaf = rest.substr(secondSlash + 1);
 
 	std::lock_guard<std::mutex> lock(m_ConfigMutex);
@@ -294,21 +281,70 @@ std::string NetworkTablesSink::GetConnectionStatus() const
 	return status.dump();
 }
 
+void NetworkTablesSink::SetNodeAlias(const std::string& nodeId, const std::string& alias)
+{
+	std::lock_guard<std::mutex> lock(m_AliasMutex);
+	auto existing = m_NodeAliases.find(nodeId);
+	if (existing != m_NodeAliases.end()) {
+		m_AliasToNode.erase(existing->second);
+		m_NodeAliases.erase(existing);
+	}
+	std::string sanitised = SanitiseTableName(alias);
+	if (sanitised.empty()) return;
+	m_NodeAliases[nodeId] = sanitised;
+	m_AliasToNode[sanitised] = nodeId;
+}
+
+std::string NetworkTablesSink::TableNameForNode(const std::string& nodeId) const
+{
+	std::lock_guard<std::mutex> lock(m_AliasMutex);
+	auto it = m_NodeAliases.find(nodeId);
+	return it != m_NodeAliases.end() ? it->second : nodeId;
+}
+
+std::string NetworkTablesSink::NodeIdForTableName(const std::string& tableName) const
+{
+	std::lock_guard<std::mutex> lock(m_AliasMutex);
+	auto it = m_AliasToNode.find(tableName);
+	return it != m_AliasToNode.end() ? it->second : tableName;
+}
+
 void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 {
 	const std::string& sourceId = result.sourceId;
 	const nlohmann::json& json = result.json.value();
-	auto table = m_Instance.GetTable(m_Config.rootTable + "/" + sourceId);
+	auto table = m_Instance.GetTable(m_Config.rootTable + "/" + TableNameForNode(sourceId));
+	NetworkTablesStreamStats& stats = m_StreamStats[sourceId];
+
+	// Every per-camera topic is published with the frame's capture time as its NT timestamp, so a robot reading it (or its
+	// readQueue) gets the time the image was taken. ntcore converts this client-local time to the server's time base itself.
+	// SourceResult times are wall-clock; only their difference (the frame's age) is used, so the two clocks never mix.
+	const int64_t publishNtUs = nt::Now();
+	const int64_t ageUs = static_cast<int64_t>(SourceResult::NowUs()) - static_cast<int64_t>(result.captureTimeUs);
+	int64_t captureNtUs = publishNtUs - std::clamp<int64_t>(ageUs, 0, publishNtUs);
+	captureNtUs = std::max(captureNtUs, stats.lastNtCaptureUs + 1); // a topic's timestamps must not go backwards
+	stats.lastNtCaptureUs = captureNtUs;
+
+	auto putBoolean = [&](const std::string& key, bool v) { table->GetEntry(key).SetValue(nt::Value::MakeBoolean(v, captureNtUs)); };
+	auto putNumber = [&](const std::string& key, double v) { table->GetEntry(key).SetValue(nt::Value::MakeDouble(v, captureNtUs)); };
+	auto putNumberArray = [&](const std::string& key, const std::vector<double>& v) {
+		table->GetEntry(key).SetValue(nt::Value::MakeDoubleArray(v, captureNtUs));
+	};
+	auto putString = [&](const std::string& key, const std::string& v) { table->GetEntry(key).SetValue(nt::Value::MakeString(v, captureNtUs)); };
+	auto putRaw = [&](const std::string& key, const std::vector<uint8_t>& v) { table->GetEntry(key).SetValue(nt::Value::MakeRaw(v, captureNtUs)); };
 
 	// AprilTag detector shape: a bare array of {id, center, corners, pose:{x,y,z,R}} objects, or an object envelope
-	// {"tags": [...], "multiTag": {...} | null, "calibration": {...} | null}. Detected structurally, as no "type" field exists.
+	// {"tags": [...], "multiTag": {...} | null, "calibration": {...} | null}; ObjectDetectionSink publishes a bare array of
+	// {classId, confidence, box, ...}. Detected structurally, as no "type" field exists.
 	nlohmann::json tagsArray;
 	nlohmann::json calibration = nullptr;
 	bool looksLikeTags = false;
+	bool looksLikeObjects = false;
 	bool hasEnvelope = false;
 	if (json.is_array()) {
 		// An EMPTY array counts too, so tags leaving frame update to "zero tags" instead of leaving stale values published.
-		looksLikeTags = json.empty() || (json[0].is_object() && json[0].contains("id") && json[0].contains("pose"));
+		looksLikeObjects = !json.empty() && json[0].is_object() && json[0].contains("classId") && json[0].contains("box");
+		looksLikeTags = !looksLikeObjects && (json.empty() || (json[0].is_object() && json[0].contains("id") && json[0].contains("pose")));
 		tagsArray = json;
 	} else if (json.is_object() && json.contains("tags") && json["tags"].is_array()) {
 		looksLikeTags = true;
@@ -316,6 +352,10 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 		tagsArray = json["tags"];
 		calibration = json.value("calibration", nlohmann::json(nullptr));
 	}
+
+	std::vector<PacketTarget> targets;
+	PacketHeader header;
+	header.sequenceId = result.frameNumber;
 
 	if (looksLikeTags) {
 		std::vector<double> ids, x, y, z;
@@ -346,71 +386,77 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 			}
 		}
 
-		table->PutNumberArray("tags/ids", ids);
-		table->PutNumberArray("tags/x", x);
-		table->PutNumberArray("tags/y", y);
-		table->PutNumberArray("tags/z", z);
+		putNumberArray("tags/ids", ids);
+		putNumberArray("tags/x", x);
+		putNumberArray("tags/y", y);
+		putNumberArray("tags/z", z);
 		for (int i = 0; i < 9; i++) {
-			table->PutNumberArray("tags/r" + std::to_string(i), r[i]);
+			putNumberArray("tags/r" + std::to_string(i), r[i]);
 		}
 
 		// multi-tag PnP result, only present in the object-envelope shape. Published as scalars (one per frame); x/y/z/r0..r8 are the
 		// CAMERA's pose in FIELD frame, not camera-to-tag as in tags/x,y,z.
 		nlohmann::json multiTag = hasEnvelope ? json.value("multiTag", nlohmann::json(nullptr)) : nlohmann::json(nullptr);
 		if (!multiTag.is_null()) {
-			table->PutNumber("multitag/x", multiTag.value("x", 0.0));
-			table->PutNumber("multitag/y", multiTag.value("y", 0.0));
-			table->PutNumber("multitag/z", multiTag.value("z", 0.0));
+			putNumber("multitag/x", multiTag.value("x", 0.0));
+			putNumber("multitag/y", multiTag.value("y", 0.0));
+			putNumber("multitag/z", multiTag.value("z", 0.0));
 			static const std::array<double, 3> identityRow{ 0.0, 0.0, 0.0 };
 			auto rotation = multiTag.value("R", nlohmann::json::array({identityRow, identityRow, identityRow}));
 			for (int row = 0; row < 3; row++) {
 				for (int col = 0; col < 3; col++) {
-					table->PutNumber("multitag/r" + std::to_string(row * 3 + col), rotation[row][col].get<double>());
+					putNumber("multitag/r" + std::to_string(row * 3 + col), rotation[row][col].get<double>());
 				}
 			}
-			table->PutNumber("multitag/tagCount", multiTag.value("tagCount", 0));
-			table->PutNumber("multitag/reprojErrPixels", multiTag.value("reprojErrPixels", 0.0));
+			putNumber("multitag/tagCount", multiTag.value("tagCount", 0));
+			putNumber("multitag/reprojErrPixels", multiTag.value("reprojErrPixels", 0.0));
+			for (int id : multiTag.value("fiducialIds", std::vector<int>{})) header.multiTagIds.push_back(static_cast<uint16_t>(id));
 		} else {
 			// no multi-tag result this frame (fewer than 2 known-field-pose tags, no field layout, or no envelope): clear tagCount to 0
 			// rather than leaving a stale pose published.
-			table->PutNumber("multitag/tagCount", 0);
+			putNumber("multitag/tagCount", 0);
 		}
 
-		// --- flattened best-target scalars + versioned binary packet ---
-		std::vector<TargetMetrics> targets = ComputeTargetMetrics(tagsArray, calibration);
-		const TargetMetrics* best = nullptr;
-		for (const auto& t : targets) {
-			if (best == nullptr || t.areaPercent > best->areaPercent) best = &t;
-		}
-
-		table->PutBoolean("hasTargets", best != nullptr);
-		table->PutNumber("targetYaw", best ? best->yawDeg : 0.0);
-		table->PutNumber("targetPitch", best ? best->pitchDeg : 0.0);
-		table->PutNumber("targetArea", best ? best->areaPercent : 0.0);
-		// [x, y, z, qw, qx, qy, qz]: translation + unit quaternion as a flat double array (no wpi::Struct<Transform3d> specialisation here)
-		table->PutNumberArray("targetPose", best
-			? std::vector<double>{best->tx, best->ty, best->tz, best->qw, best->qx, best->qy, best->qz}
-			: std::vector<double>{0, 0, 0, 1, 0, 0, 0});
+		targets = ComputeTagTargets(tagsArray, calibration);
 
 		if (calibration.is_object()) {
 			double fx = calibration.value("fx", 0.0), fy = calibration.value("fy", 0.0);
 			double cx = calibration.value("cx", 0.0), cy = calibration.value("cy", 0.0);
-			table->PutNumberArray("cameraIntrinsics", std::vector<double>{fx, 0, cx, 0, fy, cy, 0, 0, 1});
-			table->PutNumberArray("cameraDistortion", calibration.value("distCoeffs", std::vector<double>{}));
+			putNumberArray("cameraIntrinsics", std::vector<double>{fx, 0, cx, 0, fy, cy, 0, 0, 1});
+			putNumberArray("cameraDistortion", calibration.value("distCoeffs", std::vector<double>{}));
 		}
-
-		table->PutRaw("result", BuildResultPacket(targets));
+	} else if (looksLikeObjects) {
+		targets = ComputeObjectTargets(json);
+		// the object list stays readable as JSON for consumers that want class names
+		putString("raw", json.dump());
 	} else {
-		table->PutString("raw", json.dump());
+		putString("raw", json.dump());
 	}
 
-	// pipeline latency (capture -> published-to-NT), independent of NT4's network timestamping; both times come from SourceResult::NowUs()
-	double latencyMs = (result.producedTimeUs > result.captureTimeUs)
-		? static_cast<double>(result.producedTimeUs - result.captureTimeUs) / 1000.0
-		: 0.0;
-	table->PutNumber("latencyMs", latencyMs);
+	if (looksLikeTags || looksLikeObjects) {
+		// --- flattened best-target scalars + versioned binary packet ---
+		const PacketTarget* best = nullptr;
+		for (const auto& t : targets) {
+			if (best == nullptr || t.areaPercent > best->areaPercent) best = &t;
+		}
 
-	NetworkTablesStreamStats& stats = m_StreamStats[sourceId];
+		putBoolean("hasTargets", best != nullptr);
+		putNumber("targetYaw", best ? best->yawDeg : 0.0);
+		putNumber("targetPitch", best ? best->pitchDeg : 0.0);
+		putNumber("targetArea", best ? best->areaPercent : 0.0);
+		// [x, y, z, qw, qx, qy, qz]: translation + unit quaternion as a flat double array (no wpi::Struct<Transform3d> specialisation here)
+		putNumberArray("targetPose", best
+			? std::vector<double>{best->bestT[0], best->bestT[1], best->bestT[2], best->bestQ[0], best->bestQ[1], best->bestQ[2], best->bestQ[3]}
+			: std::vector<double>{0, 0, 0, 1, 0, 0, 0});
+
+		// pipeline latency (capture -> published-to-NT), independent of NT4's network timestamping
+		header.latencyUs = static_cast<uint32_t>(std::clamp<int64_t>(ageUs, 0, std::numeric_limits<uint32_t>::max()));
+		putRaw("result", BuildResultPacket(header, targets));
+	}
+
+	double latencyMs = static_cast<double>(std::max<int64_t>(ageUs, 0)) / 1000.0;
+	putNumber("latencyMs", latencyMs);
+
 	if (stats.lastCaptureTimeUs != 0 && result.captureTimeUs > stats.lastCaptureTimeUs && result.frameNumber > stats.lastFrameNumber) {
 		double deltaSeconds = static_cast<double>(result.captureTimeUs - stats.lastCaptureTimeUs) / 1'000'000.0;
 		double deltaFrames = static_cast<double>(result.frameNumber - stats.lastFrameNumber);
@@ -418,7 +464,7 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 	}
 	stats.lastCaptureTimeUs = result.captureTimeUs;
 	stats.lastFrameNumber = result.frameNumber;
-	table->PutNumber("fps", stats.fps);
+	putNumber("fps", stats.fps);
 }
 
 void NetworkTablesSink::Process(const std::vector<SourceResult>& results)

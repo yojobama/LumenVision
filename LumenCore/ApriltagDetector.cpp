@@ -7,6 +7,45 @@
 #include "VkApriltagBackend.h"
 #endif
 
+namespace {
+	// Number of orthogonal-iteration refinements estimate_tag_pose runs (libapriltag's own default is 50).
+	constexpr int POSE_ITERATIONS = 50;
+
+	nlohmann::json PoseToJson(const apriltag_pose_t& pose)
+	{
+		return {
+			{"x", pose.t->data[0]},
+			{"y", pose.t->data[1]},
+			{"z", pose.t->data[2]},
+			{"R", {
+				{pose.R->data[0], pose.R->data[1], pose.R->data[2]},
+				{pose.R->data[3], pose.R->data[4], pose.R->data[5]},
+				{pose.R->data[6], pose.R->data[7], pose.R->data[8]}
+			}}
+		};
+	}
+
+	// RMS pixel distance between the tag's projected corners under `pose` and the detected (undistorted) corners.
+	// Local corner order matches detection->p[0..3] (see the multi-tag setup in Process()).
+	double TagReprojectionErrorPixels(const apriltag_pose_t& pose, double tagSize, double fx, double fy, double cx, double cy,
+		const apriltag_detection_t& detection)
+	{
+		double half = tagSize / 2.0;
+		const double local[4][3] = { {-half, half, 0}, {half, half, 0}, {half, -half, 0}, {-half, -half, 0} };
+		double sumSquares = 0.0;
+		for (int i = 0; i < 4; i++) {
+			double x = pose.R->data[0] * local[i][0] + pose.R->data[1] * local[i][1] + pose.R->data[2] * local[i][2] + pose.t->data[0];
+			double y = pose.R->data[3] * local[i][0] + pose.R->data[4] * local[i][1] + pose.R->data[5] * local[i][2] + pose.t->data[1];
+			double z = pose.R->data[6] * local[i][0] + pose.R->data[7] * local[i][1] + pose.R->data[8] * local[i][2] + pose.t->data[2];
+			if (z <= 0.0) return -1.0;
+			double dx = fx * x / z + cx - detection.p[i][0];
+			double dy = fy * y / z + cy - detection.p[i][1];
+			sumSquares += dx * dx + dy * dy;
+		}
+		return std::sqrt(sumSquares / 4.0);
+	}
+}
+
 ApriltagDetector::ApriltagDetector(std::shared_ptr<Logger> logger, std::string id, CameraCalibrationResult cameraCalibrationResult,
 	double tagSize, ApriltagBackendKind backendKind, int frameWidth, int frameHeight, ApriltagTuning tuning)
 	// requireColor=false: Process() only calls AsGray() on its input, so it must not force a colour
@@ -259,6 +298,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 			// Multi-tag PnP: accumulates tags with a known field pose, solved jointly after the tag loop.
 			std::vector<cv::Point3d> multiTagObjectPoints;
 			std::vector<cv::Point2d> multiTagImagePoints;
+			std::vector<int> multiTagIds;
 			int multiTagCount = 0;
 
 			for (int i = 0; i < zarray_size(detections); i++) {
@@ -296,6 +336,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 						multiTagImagePoints.emplace_back(detection->p[corner][0], detection->p[corner][1]);
 					}
 					multiTagCount++;
+					multiTagIds.push_back(detection->id);
 				}
 
 				// estimate_tag_pose returns invalid pose pointers for degenerate intrinsics (fx=fy=0), which
@@ -319,24 +360,39 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					}
 
 					m_DetectionInfo.det = &poseDetection;
-					apriltag_pose_t pose;
-					double err = estimate_tag_pose(&m_DetectionInfo, &pose);
+					// Both orthogonal-iteration solutions (as estimate_tag_pose does internally): the lower object-space error is the best pose.
+					// The second is absent (R == nullptr, error HUGE_VAL) when only one minimum was found.
+					apriltag_pose_t pose1 = {}, pose2 = {};
+					double err1 = 0.0, err2 = 0.0;
+					estimate_tag_pose_orthogonal_iteration(&m_DetectionInfo, &err1, &pose1, &err2, &pose2, POSE_ITERATIONS);
+					const bool haveSecond = pose2.R != nullptr && pose2.t != nullptr;
+					const bool firstIsBest = !haveSecond || err1 <= err2;
+					apriltag_pose_t& best = firstIsBest ? pose1 : pose2;
+					apriltag_pose_t& alternate = firstIsBest ? pose2 : pose1;
+					const double bestError = firstIsBest ? err1 : err2;
+					const double alternateError = firstIsBest ? err2 : err1;
 
 					// R is row-major 3x3 (pose.R->data[i*3+j]); published whole for WPILib's Rotation3d(Matrix).
-					detectionJson["pose"] = {
-						{"x", pose.t->data[0]},
-						{"y", pose.t->data[1]},
-						{"z", pose.t->data[2]},
-						{"R", {
-							{pose.R->data[0], pose.R->data[1], pose.R->data[2]},
-							{pose.R->data[3], pose.R->data[4], pose.R->data[5]},
-							{pose.R->data[6], pose.R->data[7], pose.R->data[8]}
-						}}
-					};
+					detectionJson["pose"] = PoseToJson(best);
+					detectionJson["reprojErr"] = TagReprojectionErrorPixels(best, m_DetectionInfo.tagsize,
+						m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, poseDetection);
+					if (haveSecond) {
+						detectionJson["altPose"] = PoseToJson(alternate);
+						detectionJson["altReprojErr"] = TagReprojectionErrorPixels(alternate, m_DetectionInfo.tagsize,
+							m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, poseDetection);
+						// 0 = unambiguous, approaching 1 as the two hypotheses fit equally well (PhotonVision's definition)
+						detectionJson["poseAmbiguity"] = alternateError > 0.0 ? bestError / alternateError : 0.0;
+					} else {
+						detectionJson["poseAmbiguity"] = 0.0;
+					}
 
-					// estimate_tag_pose allocates pose.R/pose.t; the caller must free them (apriltag/common/matd.h).
-					matd_destroy(pose.R);
-					matd_destroy(pose.t);
+					// the estimator allocates every pose.R/pose.t it returns; the caller must free them (apriltag/common/matd.h).
+					matd_destroy(pose1.R);
+					matd_destroy(pose1.t);
+					if (haveSecond) {
+						matd_destroy(pose2.R);
+						matd_destroy(pose2.t);
+					}
 				}
 
 				jsonVector.push_back(detectionJson);
@@ -373,6 +429,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			nlohmann::json multiTagJson = SolveMultiTagPnP(
 				multiTagObjectPoints, multiTagImagePoints, m_CameraMatrix, m_DistCoeffs, multiTagCount);
+			if (!multiTagJson.is_null()) multiTagJson["fiducialIds"] = multiTagIds;
 
 			std::optional<Frame> outputFrame;
 			if (wantsFrame) outputFrame = Frame(colouredFrame, FrameFormat::BGR24, colourOwner);
