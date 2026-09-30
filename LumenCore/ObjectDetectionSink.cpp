@@ -79,11 +79,11 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 				{"frameHeight", sourceFrame.rows}
 			};
 			if (hasCalibration) {
-				// normalised image coordinates of the box centre (lens distortion removed): yaw = atan(x), pitch = atan(-y), as for tags
+				// normalised image coordinates of the box centre (lens distortion removed): yaw = atan(-x) (positive left), pitch = atan(-y), as for tags
 				std::vector<cv::Point2d> centre{ {box.x + box.width / 2.0, box.y + box.height / 2.0} };
 				std::vector<cv::Point2d> normalised;
 				cv::undistortPoints(centre, normalised, cameraMatrix, distCoeffs);
-				entry["yawDeg"] = std::atan(normalised[0].x) * 180.0 / CV_PI;
+				entry["yawDeg"] = std::atan(-normalised[0].x) * 180.0 / CV_PI;
 				entry["pitchDeg"] = std::atan(-normalised[0].y) * 180.0 / CV_PI;
 			}
 			jsonVector.push_back(entry);

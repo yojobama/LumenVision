@@ -36,6 +36,7 @@ set(LUMEN_CORE_SOURCES
     PixelUnpack.cpp
     RecordSink.cpp
     ResultPacket.cpp
+    CoordinateFrames.cpp
     RoiSource.cpp
     SourceResult.cpp
     SystemMonitor.cpp

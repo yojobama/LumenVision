@@ -1,5 +1,6 @@
 #ifdef LUMEN_WITH_NT4
 #include "NetworkTablesSink.h"
+#include "CoordinateFrames.h"
 #include "ResultPacket.h"
 #include "SystemMonitor.h"
 #include <opencv2/geometry/2d.hpp> // cv::minAreaRect (OpenCV 5 moved it out of imgproc)
@@ -25,50 +26,24 @@ namespace {
 		return std::abs(sum) / 2.0;
 	}
 
-	// Row-major 3x3 rotation matrix (ApriltagDetector.cpp's pose.R layout) to unit quaternion, via the largest-diagonal-term
-	// method (stable for small trace).
-	void RotationMatrixToQuaternion(const nlohmann::json& r, std::array<float, 4>& q) {
-		double m00 = r[0][0], m01 = r[0][1], m02 = r[0][2];
-		double m10 = r[1][0], m11 = r[1][1], m12 = r[1][2];
-		double m20 = r[2][0], m21 = r[2][1], m22 = r[2][2];
-		double trace = m00 + m11 + m22;
-		double w, x, y, z;
-		if (trace > 0.0) {
-			double s = std::sqrt(trace + 1.0) * 2.0;
-			w = 0.25 * s;
-			x = (m21 - m12) / s;
-			y = (m02 - m20) / s;
-			z = (m10 - m01) / s;
-		} else if (m00 > m11 && m00 > m22) {
-			double s = std::sqrt(1.0 + m00 - m11 - m22) * 2.0;
-			w = (m21 - m12) / s;
-			x = 0.25 * s;
-			y = (m01 + m10) / s;
-			z = (m02 + m20) / s;
-		} else if (m11 > m22) {
-			double s = std::sqrt(1.0 + m11 - m00 - m22) * 2.0;
-			w = (m02 - m20) / s;
-			x = (m01 + m10) / s;
-			y = 0.25 * s;
-			z = (m12 + m21) / s;
-		} else {
-			double s = std::sqrt(1.0 + m22 - m00 - m11) * 2.0;
-			w = (m10 - m01) / s;
-			x = (m02 + m20) / s;
-			y = (m12 + m21) / s;
-			z = 0.25 * s;
+	// The detector's "pose"/"altPose" object ({x, y, z, R}) holds libapriltag's raw camera-to-tag pose; this returns it in WPILib's
+	// frames (camera X forward / Y left / Z up, tag frame as in a field layout), or false when the object is absent.
+	bool PoseFromJson(const nlohmann::json& pose, frames::Pose3& wpilib) {
+		if (!pose.is_object()) return false;
+		frames::Pose3 openCv;
+		openCv.t = { pose.value("x", 0.0), pose.value("y", 0.0), pose.value("z", 0.0) };
+		if (pose.contains("R")) {
+			for (int row = 0; row < 3; row++)
+				for (int col = 0; col < 3; col++) openCv.R[row * 3 + col] = pose["R"][row][col].get<double>();
 		}
-		q = { static_cast<float>(w), static_cast<float>(x), static_cast<float>(y), static_cast<float>(z) };
+		wpilib = frames::AprilTagPoseToWpilib(openCv);
+		return true;
 	}
 
-	// translation + quaternion from a detector "pose"/"altPose" object ({x, y, z, R}); false when the object is absent
-	bool PoseFromJson(const nlohmann::json& pose, std::array<float, 3>& t, std::array<float, 4>& q) {
-		if (!pose.is_object()) return false;
-		t = { static_cast<float>(pose.value("x", 0.0)), static_cast<float>(pose.value("y", 0.0)), static_cast<float>(pose.value("z", 0.0)) };
-		static const std::array<double, 3> identityRow{ 0.0, 0.0, 0.0 };
-		auto rotation = pose.value("R", nlohmann::json::array({identityRow, identityRow, identityRow}));
-		RotationMatrixToQuaternion(rotation, q);
-		return true;
+	void SetPose(const frames::Pose3& pose, std::array<float, 3>& t, std::array<float, 4>& q) {
+		t = { static_cast<float>(pose.t[0]), static_cast<float>(pose.t[1]), static_cast<float>(pose.t[2]) };
+		std::array<double, 4> quaternion = frames::RotationToQuaternion(pose.R);
+		q = { static_cast<float>(quaternion[0]), static_cast<float>(quaternion[1]), static_cast<float>(quaternion[2]), static_cast<float>(quaternion[3]) };
 	}
 
 	// Minimum-area rectangle around the four corners, as x0,y0..x3,y3; `skewDeg` is its rotation angle.
@@ -85,7 +60,9 @@ namespace {
 		t.skewDeg = rect.angle;
 	}
 
-	std::vector<PacketTarget> ComputeTagTargets(const nlohmann::json& tagsArray, const nlohmann::json& calibration) {
+	// `poses` (optional) receives each tag's WPILib-frame camera-to-tag pose, or an identity pose for a tag without one, in the same order as the targets.
+	std::vector<PacketTarget> ComputeTagTargets(const nlohmann::json& tagsArray, const nlohmann::json& calibration,
+		std::vector<frames::Pose3>* poses = nullptr) {
 		bool hasFrameSize = calibration.is_object() && calibration.value("imageWidth", 0) > 0 && calibration.value("imageHeight", 0) > 0;
 		double frameArea = hasFrameSize ? static_cast<double>(calibration.value("imageWidth", 0)) * calibration.value("imageHeight", 0) : 0.0;
 
@@ -103,18 +80,23 @@ namespace {
 			m.areaPercent = hasFrameSize ? (pixelArea / frameArea) * 100.0 : 0.0;
 			FillMinAreaRect(m);
 
-			if (tag.contains("pose") && PoseFromJson(tag["pose"], m.bestT, m.bestQ)) {
+			frames::Pose3 bestPose;
+			if (tag.contains("pose") && PoseFromJson(tag["pose"], bestPose)) {
 				m.hasPose = true;
-				// apriltag camera-frame convention (also used for tags/x,y,z): +X right, +Y down, +Z forward. Yaw is the horizontal angle
-				// off boresight (positive = right), pitch the vertical angle (Y negated: positive = above, as PhotonVision). Not remapped
-				// to WPILib NWU; the robot-side vendordep applies its own conversion.
-				m.yawDeg = std::atan2(m.bestT[0], m.bestT[2]) * 180.0 / std::numbers::pi;
-				m.pitchDeg = std::atan2(-m.bestT[1], m.bestT[2]) * 180.0 / std::numbers::pi;
+				SetPose(bestPose, m.bestT, m.bestQ);
+				// PhotonLib's conventions: yaw is the horizontal angle off boresight, positive to the LEFT (standard maths, as the camera
+				// frame's Y axis); pitch is the vertical angle, positive up.
+				m.yawDeg = std::atan2(bestPose.t[1], bestPose.t[0]) * 180.0 / std::numbers::pi;
+				m.pitchDeg = std::atan2(bestPose.t[2], bestPose.t[0]) * 180.0 / std::numbers::pi;
 				m.bestReprojErr = static_cast<float>(tag.value("reprojErr", -1.0));
 				m.poseAmbiguity = tag.value("poseAmbiguity", -1.0);
-				if (tag.contains("altPose") && PoseFromJson(tag["altPose"], m.altT, m.altQ))
+				frames::Pose3 altPose;
+				if (tag.contains("altPose") && PoseFromJson(tag["altPose"], altPose)) {
+					SetPose(altPose, m.altT, m.altQ);
 					m.altReprojErr = static_cast<float>(tag.value("altReprojErr", -1.0));
+				}
 			}
+			if (poses != nullptr) poses->push_back(bestPose);
 			out.push_back(m);
 		}
 		return out;
@@ -412,22 +394,16 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 		z.reserve(tagsArray.size());
 		for (auto& ri : r) ri.reserve(tagsArray.size());
 
-		for (const auto& tag : tagsArray) {
-			ids.push_back(tag.value("id", -1));
-			// "pose" is only present when ApriltagDetector had a calibration (m_HasCalibration); otherwise tags publish ids/corners only,
-			// leaving x/y/z/R at their zeroed defaults.
-			nlohmann::json pose = tag.value("pose", nlohmann::json::object());
-			x.push_back(pose.value("x", 0.0));
-			y.push_back(pose.value("y", 0.0));
-			z.push_back(pose.value("z", 0.0));
-
-			static const std::array<double, 3> identityRow{ 0.0, 0.0, 0.0 };
-			auto rotation = pose.value("R", nlohmann::json::array({identityRow, identityRow, identityRow}));
-			for (int row = 0; row < 3; row++) {
-				for (int col = 0; col < 3; col++) {
-					r[row * 3 + col].push_back(rotation[row][col].get<double>());
-				}
-			}
+		std::vector<frames::Pose3> tagPoses;
+		targets = ComputeTagTargets(tagsArray, calibration, &tagPoses);
+		for (size_t i = 0; i < targets.size(); i++) {
+			// tags/x,y,z and r0..r8 hold the camera-to-tag pose in WPILib frames ("pose" is only present once the detector has a
+			// calibration; otherwise they keep their zero/identity defaults)
+			ids.push_back(tagsArray[i].value("id", -1));
+			x.push_back(tagPoses[i].t[0]);
+			y.push_back(tagPoses[i].t[1]);
+			z.push_back(tagPoses[i].t[2]);
+			for (int k = 0; k < 9; k++) r[k].push_back(tagPoses[i].R[k]);
 		}
 
 		putNumberArray("tags/ids", ids);
@@ -460,8 +436,6 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 			// rather than leaving a stale pose published.
 			putNumber("multitag/tagCount", 0);
 		}
-
-		targets = ComputeTagTargets(tagsArray, calibration);
 
 		if (calibration.is_object()) {
 			double fx = calibration.value("fx", 0.0), fy = calibration.value("fy", 0.0);

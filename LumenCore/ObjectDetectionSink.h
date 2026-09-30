@@ -19,7 +19,7 @@ public:
 	void SetDriverMode(bool enabled) { m_DriverMode = enabled; }
 	bool GetDriverMode() const { return m_DriverMode; }
 
-	// With a calibration each detection also reports the yaw/pitch of its box centre (degrees, positive right / up, as the
+	// With a calibration each detection also reports the yaw/pitch of its box centre (degrees, positive left / up, as the
 	// AprilTag targets); without one they are omitted.
 	void SetCalibration(const CameraCalibrationResult& calibration);
 

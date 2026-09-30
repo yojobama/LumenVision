@@ -1,6 +1,7 @@
 #include "ApriltagDetector.h"
 #include "ApriltagDetection.h"
 #include "CameraCalibrationResult.h"
+#include "CoordinateFrames.h"
 #include "CpuApriltagBackend.h"
 #include "FramePool.h"
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
@@ -319,19 +320,15 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				};
 
 				// Multi-tag PnP: field-frame 3D corners paired with the raw (distorted) pixels; solvePnP takes distCoeffs.
-				// Local corner order matches detection->p[0..3], with +Z as the tag's outward normal (apriltag.c).
+				// A layout pose is the tag's WPILib frame (X out of its face), so the tag lies in its local Y-Z plane; the corners
+				// follow detection->p[0..3]'s order (see frames::WpilibTagCorners).
 				AprilTagFieldPose fieldPose;
 				if (m_HasCalibration && m_FieldLayout.TryGetTagPose(detection->id, fieldPose)) {
-					double halfSize = m_DetectionInfo.tagsize / 2.0;
-					cv::Vec3d localCorners[4] = {
-						{-halfSize,  halfSize, 0},
-						{ halfSize,  halfSize, 0},
-						{ halfSize, -halfSize, 0},
-						{-halfSize, -halfSize, 0},
-					};
+					const auto localCorners = frames::WpilibTagCorners(m_DetectionInfo.tagsize);
 					cv::Vec3d fieldTranslation(fieldPose.translation.x, fieldPose.translation.y, fieldPose.translation.z);
 					for (int corner = 0; corner < 4; corner++) {
-						cv::Vec3d fieldPoint = fieldPose.rotation * localCorners[corner] + fieldTranslation;
+						cv::Vec3d fieldPoint = fieldPose.rotation * cv::Vec3d(localCorners[corner][0], localCorners[corner][1], localCorners[corner][2])
+							+ fieldTranslation;
 						multiTagObjectPoints.emplace_back(fieldPoint[0], fieldPoint[1], fieldPoint[2]);
 						multiTagImagePoints.emplace_back(detection->p[corner][0], detection->p[corner][1]);
 					}
@@ -372,7 +369,8 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					const double bestError = firstIsBest ? err1 : err2;
 					const double alternateError = firstIsBest ? err2 : err1;
 
-					// R is row-major 3x3 (pose.R->data[i*3+j]); published whole for WPILib's Rotation3d(Matrix).
+					// Raw libapriltag frames (OpenCV camera axes, libapriltag tag frame); NetworkTablesSink converts to WPILib's.
+					// R is row-major 3x3 (pose.R->data[i*3+j]).
 					detectionJson["pose"] = PoseToJson(best);
 					detectionJson["reprojErr"] = TagReprojectionErrorPixels(best, m_DetectionInfo.tagsize,
 						m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, poseDetection);
@@ -429,7 +427,20 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			nlohmann::json multiTagJson = SolveMultiTagPnP(
 				multiTagObjectPoints, multiTagImagePoints, m_CameraMatrix, m_DistCoeffs, multiTagCount);
-			if (!multiTagJson.is_null()) multiTagJson["fiducialIds"] = multiTagIds;
+			if (!multiTagJson.is_null()) {
+				// SolveMultiTagPnP reports the camera in OpenCV axes; publish it in WPILib's (X forward, Y left, Z up)
+				frames::Pose3 cameraInField;
+				cameraInField.t = { multiTagJson["x"], multiTagJson["y"], multiTagJson["z"] };
+				for (int row = 0; row < 3; row++)
+					for (int col = 0; col < 3; col++) cameraInField.R[row * 3 + col] = multiTagJson["R"][row][col];
+				frames::Pose3 wpilib = frames::OpenCvCameraInFieldToWpilib(cameraInField);
+				multiTagJson["x"] = wpilib.t[0];
+				multiTagJson["y"] = wpilib.t[1];
+				multiTagJson["z"] = wpilib.t[2];
+				multiTagJson["R"] = { { wpilib.R[0], wpilib.R[1], wpilib.R[2] }, { wpilib.R[3], wpilib.R[4], wpilib.R[5] },
+					{ wpilib.R[6], wpilib.R[7], wpilib.R[8] } };
+				multiTagJson["fiducialIds"] = multiTagIds;
+			}
 
 			std::optional<Frame> outputFrame;
 			if (wantsFrame) outputFrame = Frame(colouredFrame, FrameFormat::BGR24, colourOwner);
