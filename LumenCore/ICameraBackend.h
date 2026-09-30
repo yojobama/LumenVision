@@ -60,4 +60,9 @@ public:
 	// Default: unsupported, for a backend with no way to query it (OpenCvCameraBackend).
 	virtual CameraControlRange GetExposureRange() { return {}; }
 	virtual CameraControlRange GetGainRange() { return {}; }
+
+	// Every control the device exposes, with its current value; empty on a backend that cannot enumerate them.
+	virtual std::vector<CameraControlInfo> EnumerateControls() { return {}; }
+	// Writes one control by CameraControlInfo::id. Returns false if it does not exist or the device rejected the value.
+	virtual bool SetControl(int id, int value) { (void)id; (void)value; return false; }
 };

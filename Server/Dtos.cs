@@ -42,6 +42,14 @@ namespace Server
 
     public record struct CameraControlsDto(CameraControlRangeDto Exposure, CameraControlRangeDto Gain);
 
+    // one generic camera control (LumenCore's CameraControlInfo); Kind is 0 integer, 1 boolean, 2 menu (MenuValues/MenuLabels) or 3 button
+    public record struct CameraControlDto(int Id, string Name, int Kind, int Minimum, int Maximum, int Step, int Default, int Value,
+        bool ReadOnly, bool Inactive, string[] MenuLabels, int[] MenuValues)
+    {
+        public static CameraControlDto From(CameraControlInfo info) => new(info.id, info.name, (int)info.kind, info.minimum, info.maximum,
+            info.step, info.defaultValue, info.value, info.readOnly, info.inactive, info.menuLabels.ToArray(), info.menuValues.ToArray());
+    }
+
     public record struct CameraCalibrationResultDto(
         double Fx, double Fy, double Cx, double Cy, double Rms,
         double[] DistCoeffs, int ImageWidth, int ImageHeight)

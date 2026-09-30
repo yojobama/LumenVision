@@ -29,6 +29,8 @@ public:
 	bool SetGain(int gain) override;
 	CameraControlRange GetExposureRange() override;
 	CameraControlRange GetGainRange() override;
+	std::vector<CameraControlInfo> EnumerateControls() override;
+	bool SetControl(int id, int value) override;
 
 private:
 	struct MappedBuffer

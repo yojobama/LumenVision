@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -843,6 +843,19 @@ export class ApiService {
   async deleteProfile(sourceId: number, index: number): Promise<void> {
     const response = await fetch(`${this.baseUrl}/source/profiles?sourceId=${sourceId}&index=${index}`, { method: 'DELETE' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
+  async getCameraControlList(id: number): Promise<CameraControl[]> {
+    const response = await fetch(`${this.baseUrl}/cameraSource/${id}/controlList`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Resolves to whether the device accepted the value
+  async setCameraControl(id: number, controlId: number, value: number): Promise<boolean> {
+    const response = await fetch(`${this.baseUrl}/cameraSource/${id}/control?controlId=${controlId}&value=${value}`, { method: 'PATCH' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
   }
 
   // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)

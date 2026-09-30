@@ -72,6 +72,9 @@ public:
 	// the device's range/current value for the controls the setters above drive (supported=false if the camera has no such control)
 	CameraControlRange GetCameraExposureRange(int sourceId);
 	CameraControlRange GetCameraGainRange(int sourceId);
+	// every control the camera device exposes (brightness, white balance, ...) and a writer for one of them by CameraControlInfo::id
+	vector<CameraControlInfo> GetCameraControls(int sourceId);
+	bool SetCameraControl(int sourceId, int controlId, int value);
 
 	// splits one upstream source's frames into a fixed rectangular crop, zero-copy: create two against the same camera (one per eye)
 	// and bind each into StereoCalibrator/StereoDepthNode. Binds itself to upstreamSourceId; throws if it doesn't exist.

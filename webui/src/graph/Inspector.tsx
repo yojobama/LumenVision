@@ -5,6 +5,7 @@ import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, Calibra
 import { REFINE_EDGES_MODES } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
+import { CameraControlsPanel } from '../components/CameraControlsPanel';
 import { StreamView } from '../components/StreamView';
 
 const api = new ApiService();
@@ -491,6 +492,13 @@ export const Inspector: React.FC<{
                 <button onClick={applyGain} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Apply</button>
               </div>
             </div>
+
+            <details>
+              <summary className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">All camera controls</summary>
+              <div className="mt-2">
+                <CameraControlsPanel sourceId={source.Id} onToast={onToast} />
+              </div>
+            </details>
 
             <div className="flex gap-2">
               <button onClick={() => takeSnapshot('input')} className="flex-1 px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs">

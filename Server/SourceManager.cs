@@ -140,6 +140,35 @@ namespace Server
             DB.Instance.Save();
         }
 
+        // writes one camera control and, when the device accepted it, remembers the value for the next start
+        public bool SetCameraControl(int sourceId, int controlId, int value)
+        {
+            Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
+            if (!ManagerWrapper.Instance.SetCameraControl(sourceId, controlId, value)) return false;
+            source.ControlValues ??= new Dictionary<int, int>();
+            source.ControlValues[controlId] = value;
+            DB.Instance.Save();
+            return true;
+        }
+
+        // reapplies the remembered control values; a control the device no longer has is skipped
+        public void ApplyCameraControls(int sourceId)
+        {
+            Source? source = GetSourceById(sourceId);
+            if (source?.ControlValues == null) return;
+            foreach (var (controlId, value) in source.ControlValues)
+            {
+                try
+                {
+                    ManagerWrapper.Instance.SetCameraControl(sourceId, controlId, value);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Restoring camera control {controlId} on source {sourceId} failed: {ex.Message}");
+                }
+            }
+        }
+
         // deletes a source and unbinds it from any sinks referencing it
         public void DeleteSource(int sourceId)
         {

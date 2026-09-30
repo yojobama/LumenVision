@@ -81,5 +81,6 @@ namespace std {
     %template(VectorLog) vector<Log>;
     %template(VectorCameraHardwareInfo) vector<CameraHardwareInfo>;
     %template(VectorCameraMode) vector<CameraMode>;
+    %template(VectorCameraControlInfo) vector<CameraControlInfo>;
     %template(UniquePtrLog) unique_ptr<Log>;
 }

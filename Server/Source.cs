@@ -35,6 +35,9 @@ namespace Server
         // results per second this source publishes at most; null = unlimited (see ISource::SetFpsLimit)
         public int? FpsLimit { get; set; }
 
+        // generic camera control values the user has set (control id -> value), reapplied when the source is restored
+        public Dictionary<int, int>? ControlValues { get; set; }
+
         public SourceType Type
         {
             get { return type; }

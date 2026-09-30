@@ -614,3 +614,76 @@ CameraControlRange V4l2CameraBackend::GetGainRange()
 {
 	return QueryControlRange(FindControl({ V4L2_CID_GAIN, V4L2_CID_ANALOGUE_GAIN }));
 }
+
+std::vector<CameraControlInfo> V4l2CameraBackend::EnumerateControls()
+{
+	std::vector<CameraControlInfo> controls;
+	if (m_Fd < 0) return controls;
+
+	// V4L2_CTRL_FLAG_NEXT_CTRL walks every control in id order, including driver-specific ones, skipping none the device hides
+	v4l2_query_ext_ctrl query{};
+	query.id = V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND;
+	while (XIoctl(m_Fd, VIDIOC_QUERY_EXT_CTRL, &query) >= 0) {
+		const uint32_t cid = query.id;
+		query.id |= V4L2_CTRL_FLAG_NEXT_CTRL | V4L2_CTRL_FLAG_NEXT_COMPOUND;
+
+		if (query.flags & V4L2_CTRL_FLAG_DISABLED) continue;
+		// control classes are group headers, and compound controls (arrays, structs) have no single integer value
+		if (query.type == V4L2_CTRL_TYPE_CTRL_CLASS || (query.flags & V4L2_CTRL_FLAG_HAS_PAYLOAD)) continue;
+
+		CameraControlInfo info;
+		info.id = static_cast<int>(cid);
+		info.name = query.name;
+		info.minimum = static_cast<int>(query.minimum);
+		info.maximum = static_cast<int>(query.maximum);
+		info.step = query.step > 0 ? static_cast<int>(query.step) : 1;
+		info.defaultValue = static_cast<int>(query.default_value);
+		info.readOnly = (query.flags & V4L2_CTRL_FLAG_READ_ONLY) != 0;
+		info.inactive = (query.flags & V4L2_CTRL_FLAG_INACTIVE) != 0;
+
+		switch (query.type) {
+		case V4L2_CTRL_TYPE_INTEGER:
+		case V4L2_CTRL_TYPE_INTEGER64:
+			info.kind = CAMERA_CONTROL_INTEGER;
+			break;
+		case V4L2_CTRL_TYPE_BOOLEAN:
+			info.kind = CAMERA_CONTROL_BOOLEAN;
+			break;
+		case V4L2_CTRL_TYPE_BUTTON:
+			info.kind = CAMERA_CONTROL_BUTTON;
+			break;
+		case V4L2_CTRL_TYPE_MENU:
+		case V4L2_CTRL_TYPE_INTEGER_MENU:
+			info.kind = CAMERA_CONTROL_MENU;
+			for (int index = info.minimum; index <= info.maximum; index++) {
+				v4l2_querymenu item{};
+				item.id = cid;
+				item.index = static_cast<uint32_t>(index);
+				if (XIoctl(m_Fd, VIDIOC_QUERYMENU, &item) < 0) continue; // a gap in the menu
+				info.menuValues.push_back(index);
+				info.menuLabels.push_back(query.type == V4L2_CTRL_TYPE_MENU ? std::string(reinterpret_cast<const char*>(item.name))
+					: std::to_string(static_cast<long long>(item.value)));
+			}
+			break;
+		default:
+			continue; // bitmasks, strings and the like have no sensible generic widget
+		}
+
+		if (info.kind != CAMERA_CONTROL_BUTTON) {
+			v4l2_control ctrl{};
+			ctrl.id = cid;
+			info.value = XIoctl(m_Fd, VIDIOC_G_CTRL, &ctrl) >= 0 ? ctrl.value : info.defaultValue;
+		}
+		controls.push_back(std::move(info));
+	}
+	return controls;
+}
+
+bool V4l2CameraBackend::SetControl(int id, int value)
+{
+	if (m_Fd < 0) return false;
+	v4l2_control ctrl{};
+	ctrl.id = static_cast<uint32_t>(id);
+	ctrl.value = value;
+	return XIoctl(m_Fd, VIDIOC_S_CTRL, &ctrl) >= 0;
+}

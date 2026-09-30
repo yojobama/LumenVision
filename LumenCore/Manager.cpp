@@ -489,6 +489,22 @@ CameraControlRange Manager::GetCameraGainRange(int sourceId)
     return p_CameraSource->GetGainRange();
 }
 
+vector<CameraControlInfo> Manager::GetCameraControls(int sourceId)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    auto p_CameraSource = sourceIt == m_Sources.end() ? nullptr : std::dynamic_pointer_cast<CameraFrameSource>(sourceIt->second);
+    if (!p_CameraSource) throw std::runtime_error("GetCameraControls: id=" + std::to_string(sourceId) + " is not a camera source");
+    return p_CameraSource->GetControls();
+}
+
+bool Manager::SetCameraControl(int sourceId, int controlId, int value)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    auto p_CameraSource = sourceIt == m_Sources.end() ? nullptr : std::dynamic_pointer_cast<CameraFrameSource>(sourceIt->second);
+    if (!p_CameraSource) throw std::runtime_error("SetCameraControl: id=" + std::to_string(sourceId) + " is not a camera source");
+    return p_CameraSource->SetControl(controlId, value);
+}
+
 int Manager::CreateRoiSource(int upstreamSourceId, int x, int y, int width, int height)
 {
     m_Logger->EnterLog("CreateRoiSource called with upstreamSourceId=" + std::to_string(upstreamSourceId) +

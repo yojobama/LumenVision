@@ -99,6 +99,16 @@ CameraControlRange CameraFrameSource::GetGainRange()
     return m_Backend->GetGainRange();
 }
 
+std::vector<CameraControlInfo> CameraFrameSource::GetControls()
+{
+    return m_Backend->EnumerateControls();
+}
+
+bool CameraFrameSource::SetControl(int id, int value)
+{
+    return m_Backend->SetControl(id, value);
+}
+
 void CameraFrameSource::CaptureFrame()
 {
     if (m_Backend->IsOpened()) {

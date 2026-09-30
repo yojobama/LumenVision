@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <vector>
 #include "FrameFormat.h"
 
 // A capture mode a camera device can produce; isNative reports whether a request was honoured.
@@ -30,4 +31,34 @@ struct CameraControlRange
 	int defaultValue = 0;
 	// the control's value right now (VIDIOC_G_CTRL), so the UI starts from what's applied
 	int value = 0;
+};
+
+// One control a camera device exposes (V4L2 VIDIOC_QUERYCTRL), for a generic controls UI. `id` is the backend's own identifier (the
+// V4L2 control id) and is what SetControl takes.
+enum CameraControlKind
+{
+	CAMERA_CONTROL_INTEGER = 0,
+	CAMERA_CONTROL_BOOLEAN = 1,
+	// choose one of `menuLabels` (the value is the index into the device's menu; `menuValues` holds each entry's value)
+	CAMERA_CONTROL_MENU = 2,
+	// writing any value triggers it (V4L2 button controls, e.g. "restore defaults")
+	CAMERA_CONTROL_BUTTON = 3,
+};
+
+struct CameraControlInfo
+{
+	int id = 0;
+	std::string name;
+	CameraControlKind kind = CAMERA_CONTROL_INTEGER;
+	int minimum = 0;
+	int maximum = 0;
+	int step = 1;
+	int defaultValue = 0;
+	int value = 0;
+	// the control cannot be written at all (read-only) or is unavailable in the current configuration (e.g. manual exposure time
+	// while auto exposure is on)
+	bool readOnly = false;
+	bool inactive = false;
+	std::vector<std::string> menuLabels;
+	std::vector<int> menuValues;
 };

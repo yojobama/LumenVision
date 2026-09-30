@@ -99,6 +99,8 @@ namespace Server
                             restored.ActiveProfileIndex = source.ActiveProfileIndex;
                             restored.ActiveDetectionSinkId = source.ActiveDetectionSinkId;
                             if (source.FpsLimit.HasValue) SourceManager.Instance.SetFpsLimit(restored.Id, source.FpsLimit.Value);
+                            restored.ControlValues = source.ControlValues;
+                            if (source.Type == SourceType.Camera) SourceManager.Instance.ApplyCameraControls(restored.Id);
                         }
                     }
                     foreach (var sink in sinks)

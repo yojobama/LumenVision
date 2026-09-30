@@ -144,6 +144,20 @@ namespace Server.Controllers.sources
                 CameraControlRangeDto.From(ManagerWrapper.Instance.GetCameraGainRange(id))));
         }
 
+        // GET: every control the device exposes (brightness, contrast, white balance, ...) with range, menu entries and current value
+        [HttpGet("cameraSource/{id}/controlList")]
+        public Task<CameraControlDto[]> GetControlList(int id)
+        {
+            return Task.FromResult(ManagerWrapper.Instance.GetCameraControls(id).Select(CameraControlDto.From).ToArray());
+        }
+
+        // PATCH: write one control from controlList by its Id; remembered across restarts. Returns whether the device accepted it.
+        [HttpPatch("cameraSource/{id}/control")]
+        public Task<bool> SetControl(int id, [FromQuery] int controlId, [FromQuery] int value)
+        {
+            return Task.FromResult(SourceManager.Instance.SetCameraControl(id, controlId, value));
+        }
+
         // POST: publish a fixed crop of this camera's frame as an independent source (call twice on a side-by-side
         // camera for left/right).
         [HttpPost("cameraSource/{id}/roi")]

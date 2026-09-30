@@ -375,3 +375,20 @@ export interface SnapshotEntry {
   SizeBytes: number;
   CreatedUtc: string;
 }
+
+// mirrors Server/Dtos.cs's CameraControlDto: Kind 0 integer, 1 boolean, 2 menu (MenuValues/MenuLabels), 3 button
+export const CameraControlKind = { Integer: 0, Boolean: 1, Menu: 2, Button: 3 } as const;
+export interface CameraControl {
+  Id: number;
+  Name: string;
+  Kind: number;
+  Minimum: number;
+  Maximum: number;
+  Step: number;
+  Default: number;
+  Value: number;
+  ReadOnly: boolean;
+  Inactive: boolean;
+  MenuLabels: string[];
+  MenuValues: number[];
+}

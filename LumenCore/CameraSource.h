@@ -28,6 +28,8 @@ public:
 	bool SetGain(int gain);
 	CameraControlRange GetExposureRange();
 	CameraControlRange GetGainRange();
+	std::vector<CameraControlInfo> GetControls();
+	bool SetControl(int id, int value);
 
 private:
 	void CaptureFrame() override;
