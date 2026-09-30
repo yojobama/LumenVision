@@ -38,6 +38,17 @@ class LumenResultPacketTest {
     }
 
     @Test
+    void decodesTheGoldenConstrainedResult() throws IOException {
+        LumenConstrainedResult constrained = LumenResultPacket.decode(golden()).orElseThrow().constrained.orElseThrow();
+
+        assertEquals(3.25, constrained.getRobotPoseInLayoutFrame().getX(), 1e-12);
+        assertEquals(-1.5, constrained.getRobotPoseInLayoutFrame().getY(), 1e-12);
+        assertEquals(0.5, constrained.getRobotPoseInLayoutFrame().getRotation().getRadians(), 1e-12);
+        assertEquals(0.25, constrained.getReprojectionErrorPixels(), 1e-6);
+        assertEquals(2, constrained.getTagCount());
+    }
+
+    @Test
     void decodesTheGoldenTargetsLargestAreaFirst() throws IOException {
         List<LumenTrackedTarget> targets = LumenResultPacket.decode(golden()).orElseThrow().targets;
         assertEquals(2, targets.size());

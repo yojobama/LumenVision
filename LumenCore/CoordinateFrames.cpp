@@ -70,6 +70,21 @@ std::array<std::array<double, 3>, 4> WpilibTagCorners(double tagSize)
 	} };
 }
 
+std::array<double, 9> QuaternionToRotation(double w, double x, double y, double z)
+{
+	const double norm = std::sqrt(w * w + x * x + y * y + z * z);
+	if (norm == 0.0) return { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+	w /= norm;
+	x /= norm;
+	y /= norm;
+	z /= norm;
+	return {
+		1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
+		2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
+		2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y),
+	};
+}
+
 std::array<double, 4> RotationToQuaternion(const std::array<double, 9>& R)
 {
 	const double m00 = R[0], m01 = R[1], m02 = R[2];

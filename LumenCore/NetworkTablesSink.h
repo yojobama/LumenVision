@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 class SystemMonitor;
 
@@ -47,7 +48,8 @@ public:
 	std::string GetConnectionStatus() const;
 
 	// Drains "<sourceId>/config/pipelineIndex", ".../driverMode", ".../fpsLimit", ".../inputSnapshot" and ".../outputSnapshot" writes
-	// since the last call as a JSON array of {"sourceId", "pipelineIndex"?, "driverMode"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?};
+	// since the last call as a JSON array of {"sourceId", "pipelineIndex"?, "driverMode"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?,
+	// "constrainedSeed"? ([x, y, yaw]), "robotToCamera"? ([x, y, z, qw, qx, qy, qz])};
 	// the snapshot fields count the writes seen (each write is one request, whatever its value); each request is returned once.
 	std::string PollConfigRequests();
 
@@ -102,6 +104,8 @@ private:
 		std::optional<int> pipelineIndex;
 		std::optional<bool> driverMode;
 		std::optional<int> fpsLimit;
+		std::optional<std::vector<double>> constrainedSeed;   // [x, y, yaw]
+		std::optional<std::vector<double>> robotToCamera;     // [x, y, z, qw, qx, qy, qz]
 		int inputSnapshots = 0;
 		int outputSnapshots = 0;
 	};

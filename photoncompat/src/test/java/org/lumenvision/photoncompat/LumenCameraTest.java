@@ -1,10 +1,16 @@
 package org.lumenvision.photoncompat;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.wpi.first.math.Matrix;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Rotation3d;
+import edu.wpi.first.math.geometry.Transform3d;
+import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.numbers.N8;
@@ -18,6 +24,7 @@ import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.RawPublisher;
 import edu.wpi.first.networktables.BooleanSubscriber;
 import edu.wpi.first.networktables.DoubleArrayPublisher;
+import edu.wpi.first.networktables.DoubleArraySubscriber;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -198,6 +205,21 @@ class LumenCameraTest {
         input.close();
         output.close();
         led.close();
+    }
+
+    @Test
+    void theConstrainedSeedAndCameraMountArePublishedAsArrays() {
+        DoubleArraySubscriber seed = coprocessor.getDoubleArrayTopic("/" + ROOT + "/front/config/constrainedSeed").subscribe(new double[0]);
+        DoubleArraySubscriber mount = coprocessor.getDoubleArrayTopic("/" + ROOT + "/front/config/robotToCamera").subscribe(new double[0]);
+
+        camera.setConstrainedSeed(new Pose2d(3.0, 1.5, Rotation2d.fromRadians(0.3)),
+                new Transform3d(new Translation3d(0.3, 0.1, 0.2), new Rotation3d()));
+
+        assertTrue(waitFor(() -> seed.get().length == 3 && mount.get().length == 7));
+        assertArrayEquals(new double[] { 3.0, 1.5, 0.3 }, seed.get(), 1e-12);
+        assertArrayEquals(new double[] { 0.3, 0.1, 0.2, 1.0, 0.0, 0.0, 0.0 }, mount.get(), 1e-12);
+        seed.close();
+        mount.close();
     }
 
     @Test

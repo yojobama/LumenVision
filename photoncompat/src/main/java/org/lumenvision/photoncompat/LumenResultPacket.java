@@ -1,7 +1,9 @@
 package org.lumenvision.photoncompat;
 
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Quaternion;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
@@ -28,12 +30,15 @@ final class LumenResultPacket {
         final long sequenceId;
         final long latencyMicros;
         final Optional<LumenMultiTagResult> multiTag;
+        final Optional<LumenConstrainedResult> constrained;
         final List<LumenTrackedTarget> targets;
 
-        Decoded(long sequenceId, long latencyMicros, Optional<LumenMultiTagResult> multiTag, List<LumenTrackedTarget> targets) {
+        Decoded(long sequenceId, long latencyMicros, Optional<LumenMultiTagResult> multiTag, Optional<LumenConstrainedResult> constrained,
+                List<LumenTrackedTarget> targets) {
             this.sequenceId = sequenceId;
             this.latencyMicros = latencyMicros;
             this.multiTag = multiTag;
+            this.constrained = constrained;
             this.targets = targets;
         }
     }
@@ -56,6 +61,17 @@ final class LumenResultPacket {
                 fieldToCamera = new Pose3d(translation, new Rotation3d(q));
                 multiTagReprojError = in.getFloat();
             }
+
+            Optional<LumenConstrainedResult> constrained = Optional.empty();
+            if (in.get() != 0) {
+                double x = in.getDouble();
+                double y = in.getDouble();
+                double yaw = in.getDouble();
+                double reprojError = in.getFloat();
+                int tagCount = in.get() & 0xFF;
+                constrained = Optional.of(new LumenConstrainedResult(new Pose2d(x, y, new Rotation2d(yaw)), reprojError, tagCount));
+            }
+
             int idCount = in.get() & 0xFF;
             List<Integer> ids = new ArrayList<>(idCount);
             for (int i = 0; i < idCount; i++) ids.add(in.getShort() & 0xFFFF);
@@ -68,7 +84,7 @@ final class LumenResultPacket {
             Optional<LumenMultiTagResult> multiTag = hasMultiTag
                     ? Optional.of(new LumenMultiTagResult(fieldToCamera, ids, multiTagReprojError))
                     : Optional.empty();
-            return Optional.of(new Decoded(sequenceId, latencyMicros, multiTag, targets));
+            return Optional.of(new Decoded(sequenceId, latencyMicros, multiTag, constrained, targets));
         } catch (BufferUnderflowException e) {
             return Optional.empty();
         }

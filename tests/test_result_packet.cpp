@@ -19,6 +19,12 @@ PacketHeader GoldenHeader() {
 	header.multiTagT = { 1.5, -2.25, 0.5 };
 	header.multiTagQ = { 0.5, -0.5, 0.5, -0.5 };
 	header.multiTagReprojErr = 0.75f;
+	header.hasConstrained = true;
+	header.constrainedX = 3.25;
+	header.constrainedY = -1.5;
+	header.constrainedYaw = 0.5;
+	header.constrainedReprojErr = 0.25f;
+	header.constrainedTagCount = 2;
 	return header;
 }
 
@@ -69,6 +75,12 @@ TEST_CASE("a result packet survives a build and parse round trip", "[packet]") {
 	REQUIRE(header.multiTagT[1] == -2.25);
 	REQUIRE(header.multiTagQ[3] == -0.5);
 	REQUIRE(header.multiTagReprojErr == 0.75f);
+	REQUIRE(header.hasConstrained);
+	REQUIRE(header.constrainedX == 3.25);
+	REQUIRE(header.constrainedY == -1.5);
+	REQUIRE(header.constrainedYaw == 0.5);
+	REQUIRE(header.constrainedReprojErr == 0.25f);
+	REQUIRE(header.constrainedTagCount == 2);
 	REQUIRE(targets.size() == 2);
 
 	REQUIRE(targets[0].fiducialId == 3);

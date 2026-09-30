@@ -14,6 +14,8 @@ namespace Server
     //  <root>/<camera>/config/driverMode       (bool)  -> SetDriverMode on that camera's detector
     //  <root>/<camera>/config/pipelineIndex    (int)   -> activate that camera's pipeline profile
     //  <root>/<camera>/config/fpsLimit         (int)   -> cap that camera's published frames per second (<= 0: unlimited)
+    //  <root>/<camera>/config/constrainedSeed  (double[3]: x, y, yaw) and config/robotToCamera (double[7]: x, y, z, qw, qx, qy, qz)
+    //                                          -> the detector's floor-constrained solve (published in the result packet)
     //  <root>/<camera>/config/inputSnapshot    (any write) -> save a raw-frame snapshot
     //  <root>/<camera>/config/outputSnapshot   (any write) -> save the detector's annotated frame
     // and publishes the settings actually in effect back under status/ (recording, ledMode, and per camera pipelineIndex,
@@ -25,6 +27,10 @@ namespace Server
         private static readonly TimeSpan TickInterval = TimeSpan.FromMilliseconds(100);
         // status read-backs are re-published this often even when unchanged, so they survive an NT sink being recreated
         private static readonly TimeSpan StatusRefresh = TimeSpan.FromSeconds(2);
+
+        // the seed and the camera mount arrive as separate NT values, so each is remembered until both are known
+        private static readonly Dictionary<int, double[]> ConstrainedSeeds = new();
+        private static readonly Dictionary<int, double[]> ConstrainedMounts = new();
 
         private static readonly Dictionary<(int ntSinkId, int nodeId), string> AppliedAliases = new();
         private static readonly Dictionary<(int ntSinkId, int nodeId), (string status, DateTime at)> PublishedStatus = new();
@@ -206,6 +212,25 @@ namespace Server
                     catch (Exception ex)
                     {
                         Console.WriteLine($"NT driverMode request for {nodeId} ignored: {ex.Message}");
+                    }
+                }
+
+                if (entry.TryGetProperty("constrainedSeed", out JsonElement seedElement))
+                    ConstrainedSeeds[nodeId] = seedElement.EnumerateArray().Select(v => v.GetDouble()).ToArray();
+                if (entry.TryGetProperty("robotToCamera", out JsonElement mountElement))
+                    ConstrainedMounts[nodeId] = mountElement.EnumerateArray().Select(v => v.GetDouble()).ToArray();
+                if ((seedElement.ValueKind != JsonValueKind.Undefined || mountElement.ValueKind != JsonValueKind.Undefined)
+                    && ConstrainedSeeds.TryGetValue(nodeId, out double[]? seed) && ConstrainedMounts.TryGetValue(nodeId, out double[]? mount))
+                {
+                    try
+                    {
+                        var mountVector = new VectorDouble();
+                        foreach (double value in mount) mountVector.Add(value);
+                        ManagerWrapper.Instance.SetApriltagConstrainedSeed(nodeId, seed[0], seed[1], seed[2], mountVector);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"NT constrained seed for {nodeId} ignored: {ex.Message}");
                     }
                 }
 

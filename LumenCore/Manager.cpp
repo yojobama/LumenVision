@@ -512,6 +512,19 @@ int Manager::CreateRoiSource(int upstreamSourceId, int x, int y, int width, int 
     return id;
 }
 
+void Manager::SetApriltagConstrainedSeed(int sinkId, double x, double y, double yawRadians, vector<double> robotToCamera)
+{
+    auto sinkIt = m_Sinks.find(sinkId);
+    auto detector = sinkIt == m_Sinks.end() ? nullptr : std::dynamic_pointer_cast<ApriltagDetector>(sinkIt->second);
+    if (!detector) throw std::runtime_error("SetApriltagConstrainedSeed: no AprilTag detector with id=" + std::to_string(sinkId));
+    if (robotToCamera.size() != 7) throw std::runtime_error("SetApriltagConstrainedSeed: robotToCamera needs 7 values (x, y, z, qw, qx, qy, qz)");
+
+    frames::Pose3 mount;
+    mount.t = { robotToCamera[0], robotToCamera[1], robotToCamera[2] };
+    mount.R = frames::QuaternionToRotation(robotToCamera[3], robotToCamera[4], robotToCamera[5], robotToCamera[6]);
+    detector->SetConstrainedSeed(x, y, yawRadians, mount);
+}
+
 void Manager::SetObjectDetectionCalibration(int sinkId, CameraCalibrationResult calibrationResult)
 {
     auto sinkIt = m_Sinks.find(sinkId);

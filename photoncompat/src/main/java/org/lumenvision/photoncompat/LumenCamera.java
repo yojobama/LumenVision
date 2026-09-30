@@ -6,7 +6,11 @@ import edu.wpi.first.math.Nat;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.numbers.N8;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Quaternion;
+import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.networktables.BooleanPublisher;
+import edu.wpi.first.networktables.DoubleArrayPublisher;
 import edu.wpi.first.networktables.BooleanSubscriber;
 import edu.wpi.first.networktables.DoubleArraySubscriber;
 import edu.wpi.first.networktables.DoubleSubscriber;
@@ -51,6 +55,8 @@ public class LumenCamera implements AutoCloseable {
     private final IntegerPublisher inputSnapshotPub;
     private final IntegerPublisher outputSnapshotPub;
     private final IntegerPublisher ledModePub;
+    private final DoubleArrayPublisher constrainedSeedPub;
+    private final DoubleArrayPublisher robotToCameraPub;
     private long inputSnapshotCount;
     private long outputSnapshotCount;
 
@@ -88,6 +94,8 @@ public class LumenCamera implements AutoCloseable {
         inputSnapshotPub = instance.getIntegerTopic(base + "config/inputSnapshot").publish();
         outputSnapshotPub = instance.getIntegerTopic(base + "config/outputSnapshot").publish();
         ledModePub = instance.getIntegerTopic(root + "config/ledMode").publish();
+        constrainedSeedPub = instance.getDoubleArrayTopic(base + "config/constrainedSeed").publish();
+        robotToCameraPub = instance.getDoubleArrayTopic(base + "config/robotToCamera").publish();
 
         pipelineIndexSub = instance.getIntegerTopic(base + "status/pipelineIndex").subscribe(-1);
         driverModeSub = instance.getBooleanTopic(base + "status/driverMode").subscribe(false);
@@ -156,7 +164,7 @@ public class LumenCamera implements AutoCloseable {
         LumenResultPacket.Decoded packet = decoded.get();
         // the coprocessor stamps the topic with the frame's capture time; NT converts it into this instance's clock
         return Optional.of(new LumenPipelineResult(packet.targets, sample.timestamp / 1_000_000.0, packet.sequenceId,
-                packet.latencyMicros, packet.multiTag));
+                packet.latencyMicros, packet.multiTag, packet.constrained));
     }
 
     private static LumenPipelineResult emptyResult() {
@@ -192,6 +200,19 @@ public class LumenCamera implements AutoCloseable {
     }
 
     // ---- control (written to config/*, read back from status/*) ----
+
+    /**
+     * Starts (and keeps current) the coprocessor's floor-constrained solve: the starting robot pose, in the coprocessor's field-layout
+     * frame, and where the camera is mounted on the robot. Call every loop with the latest estimate; the result appears in
+     * {@link LumenPipelineResult#getConstrainedResult()}. {@link LumenPoseEstimator} does this for CONSTRAINED_SOLVEPNP.
+     */
+    public void setConstrainedSeed(Pose2d robotPoseInLayoutFrame, Transform3d robotToCamera) {
+        constrainedSeedPub.set(new double[] {
+                robotPoseInLayoutFrame.getX(), robotPoseInLayoutFrame.getY(), robotPoseInLayoutFrame.getRotation().getRadians() });
+        Quaternion q = robotToCamera.getRotation().getQuaternion();
+        robotToCameraPub.set(new double[] {
+                robotToCamera.getX(), robotToCamera.getY(), robotToCamera.getZ(), q.getW(), q.getX(), q.getY(), q.getZ() });
+    }
 
     /** Activates the pipeline profile with this index on the camera. */
     public void setPipelineIndex(int index) {
@@ -264,7 +285,7 @@ public class LumenCamera implements AutoCloseable {
     public void close() {
         for (AutoCloseable closeable : new AutoCloseable[] {
                 resultSub, pipelineIndexPub, driverModePub, fpsLimitPub, inputSnapshotPub, outputSnapshotPub,
-                ledModePub, pipelineIndexSub, driverModeSub, fpsLimitSub, ledModeSub, intrinsicsSub, distortionSub, heartbeatSub,
+                ledModePub, constrainedSeedPub, robotToCameraPub, pipelineIndexSub, driverModeSub, fpsLimitSub, ledModeSub, intrinsicsSub, distortionSub, heartbeatSub,
                 versionSub }) {
             try {
                 closeable.close();

@@ -32,4 +32,7 @@ std::array<std::array<double, 3>, 4> WpilibTagCorners(double tagSize);
 // unit quaternion (w, x, y, z) of a row-major rotation matrix
 std::array<double, 4> RotationToQuaternion(const std::array<double, 9>& R);
 
+// row-major rotation matrix of a quaternion (w, x, y, z), normalised first
+std::array<double, 9> QuaternionToRotation(double w, double x, double y, double z);
+
 }

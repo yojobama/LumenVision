@@ -7,6 +7,7 @@
 //
 //   header:  u16 schemaVersion, u64 sequenceId, u32 latencyUs,
 //            u8 hasMultiTag, [if 1: f64 t[3], f64 q[4](w,x,y,z), f32 reprojErr],
+//            u8 hasConstrained, [if 1: f64 x, f64 y, f64 yaw, f32 reprojErr, u8 tagCount],
 //            u8 multiTagIdCount, u16 multiTagIds[multiTagIdCount], u16 targetCount
 //   target:  i16 fiducialId, i16 objectClassId, f32 objectConfidence,
 //            f64 yaw, f64 pitch, f64 area, f64 skew, f64 poseAmbiguity,
@@ -15,6 +16,7 @@
 //
 // Every pose is in WPILib frames: a target's transforms are camera-to-tag (camera X forward / Y left / Z up, tag frame as in a field
 // layout) and the multi-tag pose is the camera's pose in the field in the same camera axes. yaw is positive to the left, pitch up.
+// The constrained result is the robot's own pose (x, y in metres, yaw in radians) from the floor-constrained solve.
 //
 // fiducialId / objectClassId are -1 and objectConfidence / poseAmbiguity / the reprojection errors are -1 when not applicable. A target
 // with no pose has zero translations and identity quaternions. The Java decoder in photoncompat follows this comment.
@@ -48,6 +50,11 @@ struct PacketHeader {
 	std::array<double, 4> multiTagQ{ 1.0, 0.0, 0.0, 0.0 };
 	float multiTagReprojErr = -1.0f;
 	std::vector<uint16_t> multiTagIds;
+	// the floor-constrained solve (see ConstrainedPnp.h): the robot's pose, not the camera's
+	bool hasConstrained = false;
+	double constrainedX = 0.0, constrainedY = 0.0, constrainedYaw = 0.0;
+	float constrainedReprojErr = -1.0f;
+	uint8_t constrainedTagCount = 0;
 };
 
 inline constexpr uint16_t RESULT_PACKET_SCHEMA_VERSION = 2;

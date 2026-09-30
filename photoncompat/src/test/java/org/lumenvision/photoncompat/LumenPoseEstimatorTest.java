@@ -183,6 +183,26 @@ class LumenPoseEstimatorTest {
     }
 
     @Test
+    void constrainedSolveReturnsTheCoprocessorsRobotPoseAndFallsBackWithoutOne() {
+        LumenConstrainedResult constrained = new LumenConstrainedResult(ROBOT.toPose2d(), 0.3, 1);
+        LumenTrackedTarget t = target(1, TAG1, ROBOT, 0.1, 1.0, new Transform3d());
+        LumenPipelineResult withConstrained = new LumenPipelineResult(new ArrayList<>(List.of(t)), 12.0, 7, 15000,
+                Optional.empty(), Optional.of(constrained));
+
+        LumenPoseEstimator estimator = estimator(LumenPoseStrategy.CONSTRAINED_SOLVEPNP);
+        LumenEstimatedRobotPose estimate = estimator.update(withConstrained).orElseThrow();
+        assertEquals(LumenPoseStrategy.CONSTRAINED_SOLVEPNP, estimate.getStrategy());
+        assertEquals(ROBOT.getX(), estimate.getEstimatedPose().getX(), 1e-9);
+        assertEquals(ROBOT.getY(), estimate.getEstimatedPose().getY(), 1e-9);
+        assertEquals(0.0, estimate.getEstimatedPose().getZ(), 1e-9);
+        assertEquals(0.3, estimate.getEstimatedPose().getRotation().getZ(), 1e-9);
+
+        // no constrained result (no seed published yet): falls back to the lowest-ambiguity strategy
+        LumenEstimatedRobotPose fallback = estimator.update(result(Optional.empty(), t)).orElseThrow();
+        assertEquals(LumenPoseStrategy.LOWEST_AMBIGUITY, fallback.getStrategy());
+    }
+
+    @Test
     void distanceTrigSolveUsesTheHeadingAndTheBestTagsRangeAndBearing() {
         LumenTrackedTarget t = target(1, TAG1, ROBOT, 0.1, 1.0, new Transform3d());
         LumenPoseEstimator estimator = estimator(LumenPoseStrategy.PNP_DISTANCE_TRIG_SOLVE);

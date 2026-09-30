@@ -11,14 +11,21 @@ public class LumenPipelineResult {
     private final long sequenceId;
     private final long latencyMicros;
     private final Optional<LumenMultiTagResult> multiTagResult;
+    private final Optional<LumenConstrainedResult> constrainedResult;
 
     LumenPipelineResult(List<LumenTrackedTarget> targets, double timestampSeconds, long sequenceId, long latencyMicros,
             Optional<LumenMultiTagResult> multiTagResult) {
+        this(targets, timestampSeconds, sequenceId, latencyMicros, multiTagResult, Optional.empty());
+    }
+
+    LumenPipelineResult(List<LumenTrackedTarget> targets, double timestampSeconds, long sequenceId, long latencyMicros,
+            Optional<LumenMultiTagResult> multiTagResult, Optional<LumenConstrainedResult> constrainedResult) {
         this.targets = Collections.unmodifiableList(targets);
         this.timestampSeconds = timestampSeconds;
         this.sequenceId = sequenceId;
         this.latencyMicros = latencyMicros;
         this.multiTagResult = multiTagResult;
+        this.constrainedResult = constrainedResult;
     }
 
     /** Targets, largest image area first. */
@@ -66,5 +73,10 @@ public class LumenPipelineResult {
     /** The coprocessor's multi-tag PnP result for this snapshot, if it produced one. */
     public Optional<LumenMultiTagResult> getMultiTagResult() {
         return multiTagResult;
+    }
+
+    /** The coprocessor's floor-constrained solve for this snapshot, if the robot has published a seed pose and camera mount and a tag was visible. */
+    public Optional<LumenConstrainedResult> getConstrainedResult() {
+        return constrainedResult;
     }
 }

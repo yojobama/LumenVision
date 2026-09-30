@@ -83,6 +83,15 @@ std::vector<uint8_t> BuildResultPacket(const PacketHeader& header, const std::ve
 		AppendF32(packet, header.multiTagReprojErr);
 	}
 
+	AppendU8(packet, header.hasConstrained ? 1 : 0);
+	if (header.hasConstrained) {
+		AppendF64(packet, header.constrainedX);
+		AppendF64(packet, header.constrainedY);
+		AppendF64(packet, header.constrainedYaw);
+		AppendF32(packet, header.constrainedReprojErr);
+		AppendU8(packet, header.constrainedTagCount);
+	}
+
 	size_t idCount = std::min<size_t>(header.multiTagIds.size(), 255);
 	AppendU8(packet, static_cast<uint8_t>(idCount));
 	for (size_t i = 0; i < idCount; i++) AppendU16(packet, header.multiTagIds[i]);
@@ -123,6 +132,14 @@ bool ParseResultPacket(const std::vector<uint8_t>& bytes, PacketHeader& header, 
 		for (double& v : header.multiTagT) v = in.F64();
 		for (double& v : header.multiTagQ) v = in.F64();
 		header.multiTagReprojErr = in.F32();
+	}
+	header.hasConstrained = in.U8() != 0;
+	if (header.hasConstrained) {
+		header.constrainedX = in.F64();
+		header.constrainedY = in.F64();
+		header.constrainedYaw = in.F64();
+		header.constrainedReprojErr = in.F32();
+		header.constrainedTagCount = in.U8();
 	}
 	uint8_t idCount = in.U8();
 	for (uint8_t i = 0; i < idCount; i++) header.multiTagIds.push_back(in.U16());

@@ -111,13 +111,15 @@ public class LumenPoseEstimator {
     /** Equivalent to {@code update(camera.getLatestResult())}; needs the camera given at construction. */
     public Optional<LumenEstimatedRobotPose> update() {
         if (camera == null) throw new IllegalStateException("this estimator has no camera; pass a result to update(result)");
+        if (primaryStrategy == LumenPoseStrategy.CONSTRAINED_SOLVEPNP) publishConstrainedSeed();
         return update(camera.getLatestResult());
     }
 
     /** Estimates the robot pose from a result of this estimator's camera using the primary strategy (and the fallback, if needed). */
     public Optional<LumenEstimatedRobotPose> update(LumenPipelineResult result) {
         Optional<LumenEstimatedRobotPose> estimate = estimate(result, primaryStrategy);
-        if (estimate.isEmpty() && primaryStrategy == LumenPoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR) {
+        if (estimate.isEmpty() && (primaryStrategy == LumenPoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR
+                || primaryStrategy == LumenPoseStrategy.CONSTRAINED_SOLVEPNP)) {
             estimate = estimate(result, multiTagFallbackStrategy);
         }
         estimate.ifPresent(e -> lastPose = e.getEstimatedPose());
@@ -141,10 +143,33 @@ public class LumenPoseEstimator {
             case PNP_DISTANCE_TRIG_SOLVE:
                 return estimatePnpDistanceTrigSolvePose(result);
             case CONSTRAINED_SOLVEPNP:
-                return Optional.empty(); // needs the coprocessor's constrained solve (added with LumenCamera's seed publishing)
+                return estimateConstrainedSolvePnpPose(result);
             default:
                 return Optional.empty();
         }
+    }
+
+    /** The seed is the last estimate, else the reference pose, expressed in the layout's own frame as the coprocessor solves there. */
+    private void publishConstrainedSeed() {
+        Pose3d seed = lastPose != null ? lastPose : referencePose;
+        if (fieldTags != null) seed = fieldTags.getOrigin().plus(new Transform3d(new Pose3d(), seed));
+        camera.setConstrainedSeed(seed.toPose2d(), robotToCamera);
+    }
+
+    /**
+     * The coprocessor's floor-constrained solve (robot flat on the floor, one visible tag is enough); empty until the robot has published a
+     * seed, which {@link #update()} does each call for this strategy. A result-only {@link #update(LumenPipelineResult)} does not publish one.
+     */
+    public Optional<LumenEstimatedRobotPose> estimateConstrainedSolvePnpPose(LumenPipelineResult result) {
+        return result.getConstrainedResult().map(constrained -> {
+            Pose3d robotPose = new Pose3d(constrained.getRobotPoseInLayoutFrame());
+            if (fieldTags != null) robotPose = robotPose.relativeTo(fieldTags.getOrigin());
+            List<LumenTrackedTarget> used = new ArrayList<>();
+            for (LumenTrackedTarget target : result.getTargets()) {
+                if (tagPose(target).isPresent()) used.add(target);
+            }
+            return new LumenEstimatedRobotPose(robotPose, result.getTimestampSeconds(), used, LumenPoseStrategy.CONSTRAINED_SOLVEPNP);
+        });
     }
 
     /** The coprocessor's multi-tag result composed with the camera mount; empty without one (fewer than 2 visible tags with known poses). */

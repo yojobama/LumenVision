@@ -1,6 +1,7 @@
 #include "ApriltagDetector.h"
 #include "ApriltagDetection.h"
 #include "CameraCalibrationResult.h"
+#include "ConstrainedPnp.h"
 #include "CoordinateFrames.h"
 #include "CpuApriltagBackend.h"
 #include "FramePool.h"
@@ -96,6 +97,16 @@ ApriltagDetector::ApriltagDetector(std::shared_ptr<Logger> logger, std::string i
 }
 
 ApriltagDetector::~ApriltagDetector() = default;
+
+void ApriltagDetector::SetConstrainedSeed(double x, double y, double yawRadians, const frames::Pose3& robotToCamera)
+{
+	std::lock_guard<std::mutex> lock(m_ConstrainedMutex);
+	m_HasConstrainedSeed = true;
+	m_ConstrainedSeedX = x;
+	m_ConstrainedSeedY = y;
+	m_ConstrainedSeedYaw = yawRadians;
+	m_RobotToCamera = robotToCamera;
+}
 
 CameraCalibrationResult ApriltagDetector::GetCalibration() const
 {
@@ -442,11 +453,39 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				multiTagJson["fiducialIds"] = multiTagIds;
 			}
 
+			// Constrained solve: the same tag corners, but only the robot's floor position and heading unknown.
+			nlohmann::json constrainedJson = nullptr;
+			if (m_HasCalibration && multiTagCount >= 1) {
+				ConstrainedPnpInput input;
+				bool hasSeed;
+				{
+					std::lock_guard<std::mutex> lock(m_ConstrainedMutex);
+					hasSeed = m_HasConstrainedSeed;
+					input.seedX = m_ConstrainedSeedX;
+					input.seedY = m_ConstrainedSeedY;
+					input.seedYaw = m_ConstrainedSeedYaw;
+					input.robotToCamera = m_RobotToCamera;
+				}
+				if (hasSeed) {
+					input.fieldPoints = multiTagObjectPoints;
+					input.imagePoints = multiTagImagePoints;
+					input.cameraMatrix = m_CameraMatrix;
+					input.distCoeffs = m_DistCoeffs;
+					ConstrainedPnpResult solved = SolveConstrainedPnp(input);
+					if (solved.ok) {
+						constrainedJson = {
+							{"x", solved.x}, {"y", solved.y}, {"yaw", solved.yaw},
+							{"reprojErrPixels", solved.reprojErrPixels}, {"tagCount", multiTagCount}, {"fiducialIds", multiTagIds},
+						};
+					}
+				}
+			}
+
 			std::optional<Frame> outputFrame;
 			if (wantsFrame) outputFrame = Frame(colouredFrame, FrameFormat::BGR24, colourOwner);
 
-			SetLatestResult(SourceResult(nlohmann::json{{"tags", jsonVector}, {"multiTag", multiTagJson}, {"calibration", BuildCalibrationJson()}},
-				outputFrame, result.captureTimeUs));
+			SetLatestResult(SourceResult(nlohmann::json{{"tags", jsonVector}, {"multiTag", multiTagJson}, {"constrained", constrainedJson},
+				{"calibration", BuildCalibrationJson()}}, outputFrame, result.captureTimeUs));
 		}
 	}
 }

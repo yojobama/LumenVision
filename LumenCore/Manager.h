@@ -79,6 +79,9 @@ public:
 
 	// Gives an ObjectDetectionSink the camera calibration it needs to report each detection's yaw/pitch; a no-op for other nodes
 	void SetObjectDetectionCalibration(int sinkId, CameraCalibrationResult calibrationResult);
+	// Gives an ApriltagDetector the starting robot pose (x, y in metres, yaw in radians) and camera mount (x, y, z, qw, qx, qy, qz in the
+	// robot frame, WPILib axes) for its floor-constrained solve; see ApriltagDetector::SetConstrainedSeed. Throws if sinkId is not a detector.
+	void SetApriltagConstrainedSeed(int sinkId, double x, double y, double yawRadians, vector<double> robotToCamera);
 
 	// Driver mode: throws if sinkId isn't a detection sink that supports it (ApriltagDetector/ObjectDetectionSink).
 	void SetDriverMode(int sinkId, bool enabled);

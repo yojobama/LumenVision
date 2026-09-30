@@ -4,6 +4,7 @@
 #include "IApriltagBackend.h"
 #include "AprilTagFieldLayout.h"
 #include "CameraCalibrationResult.h"
+#include "CoordinateFrames.h"
 #include <apriltag/apriltag_pose.h>
 #include <opencv2/opencv.hpp>
 #include <opencv2/calib3d.hpp> // cv::undistortPoints - not pulled in by <opencv2/opencv.hpp> alone
@@ -54,6 +55,11 @@ public:
 	bool LoadFieldLayout(const std::string& jsonPath) { return m_FieldLayout.LoadFromFile(jsonPath); }
 	size_t GetFieldLayoutTagCount() const { return m_FieldLayout.size(); }
 
+	// Enables the constrained solve: a robot flat on the floor, found from every visible tag with a known field pose, starting from
+	// this robot pose (x, y in metres, yaw in radians) and with the camera at `robotToCamera` (WPILib axes). Needs a calibration and a field
+	// layout; its result rides in the envelope as "constrained". Call again each loop to keep the seed current.
+	void SetConstrainedSeed(double x, double y, double yawRadians, const frames::Pose3& robotToCamera);
+
 	// The multi-tag PnP solve, public static so it can be unit-tested. Returns a null json if
 	// tagCount < 2 or solvePnP fails; see ApriltagDetector.cpp for the field-to-camera convention.
 	static nlohmann::json SolveMultiTagPnP(
@@ -99,4 +105,9 @@ private:
 	bool m_DriverMode = false;
 
 	AprilTagFieldLayout m_FieldLayout;
+
+	std::mutex m_ConstrainedMutex;
+	bool m_HasConstrainedSeed = false;
+	double m_ConstrainedSeedX = 0.0, m_ConstrainedSeedY = 0.0, m_ConstrainedSeedYaw = 0.0;
+	frames::Pose3 m_RobotToCamera;
 };

@@ -223,6 +223,12 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 		m_PendingConfig[sourceId].fpsLimit = valueData->value.IsInteger()
 			? static_cast<int>(valueData->value.GetInteger())
 			: static_cast<int>(valueData->value.GetDouble());
+	} else if (leaf == "constrainedSeed" && valueData->value.IsDoubleArray() && valueData->value.GetDoubleArray().size() == 3) {
+		auto seed = valueData->value.GetDoubleArray();
+		m_PendingConfig[sourceId].constrainedSeed = std::vector<double>(seed.begin(), seed.end());
+	} else if (leaf == "robotToCamera" && valueData->value.IsDoubleArray() && valueData->value.GetDoubleArray().size() == 7) {
+		auto transform = valueData->value.GetDoubleArray();
+		m_PendingConfig[sourceId].robotToCamera = std::vector<double>(transform.begin(), transform.end());
 	} else if (leaf == "inputSnapshot") {
 		m_PendingConfig[sourceId].inputSnapshots++;
 	} else if (leaf == "outputSnapshot") {
@@ -244,6 +250,8 @@ std::string NetworkTablesSink::PollConfigRequests()
 		if (request.pipelineIndex.has_value()) entry["pipelineIndex"] = request.pipelineIndex.value();
 		if (request.driverMode.has_value()) entry["driverMode"] = request.driverMode.value();
 		if (request.fpsLimit.has_value()) entry["fpsLimit"] = request.fpsLimit.value();
+		if (request.constrainedSeed.has_value()) entry["constrainedSeed"] = request.constrainedSeed.value();
+		if (request.robotToCamera.has_value()) entry["robotToCamera"] = request.robotToCamera.value();
 		if (request.inputSnapshots > 0) entry["inputSnapshots"] = request.inputSnapshots;
 		if (request.outputSnapshots > 0) entry["outputSnapshots"] = request.outputSnapshots;
 		out.push_back(entry);
@@ -443,6 +451,16 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 			// no multi-tag result this frame (fewer than 2 known-field-pose tags, no field layout, or no envelope): clear tagCount to 0
 			// rather than leaving a stale pose published.
 			putNumber("multitag/tagCount", 0);
+		}
+
+		nlohmann::json constrained = hasEnvelope ? json.value("constrained", nlohmann::json(nullptr)) : nlohmann::json(nullptr);
+		if (!constrained.is_null()) {
+			header.hasConstrained = true;
+			header.constrainedX = constrained.value("x", 0.0);
+			header.constrainedY = constrained.value("y", 0.0);
+			header.constrainedYaw = constrained.value("yaw", 0.0);
+			header.constrainedReprojErr = static_cast<float>(constrained.value("reprojErrPixels", 0.0));
+			header.constrainedTagCount = static_cast<uint8_t>(constrained.value("tagCount", 0));
 		}
 
 		if (calibration.is_object()) {
