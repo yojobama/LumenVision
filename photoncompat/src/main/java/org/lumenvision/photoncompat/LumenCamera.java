@@ -44,6 +44,7 @@ public class LumenCamera implements AutoCloseable {
     private static boolean versionCheckEnabled = true;
 
     private final NetworkTableInstance instance;
+    private final String rootTable;
     private final String name;
 
     // one subscription serves both: getAtomic() is the latest value and readQueue() the unread ones, independently
@@ -80,6 +81,7 @@ public class LumenCamera implements AutoCloseable {
      */
     public LumenCamera(NetworkTableInstance instance, String rootTable, String cameraName) {
         this.instance = instance;
+        this.rootTable = rootTable;
         this.name = cameraName;
         String base = "/" + rootTable + "/" + tableName(cameraName) + "/";
         String root = "/" + rootTable + "/";
@@ -126,6 +128,21 @@ public class LumenCamera implements AutoCloseable {
 
     public String getName() {
         return name;
+    }
+
+    /** The NetworkTables instance this camera reads and writes (the simulation publishes into the same one). */
+    public NetworkTableInstance getNetworkTableInstance() {
+        return instance;
+    }
+
+    /** The NT root table, e.g. "lumenvision". */
+    public String getRootTable() {
+        return rootTable;
+    }
+
+    /** This library's version, which the coprocessor's {@code .version} topic is compared with. */
+    public static String getLibraryVersion() {
+        return LumenVersionCheck.jarVersion();
     }
 
     /**

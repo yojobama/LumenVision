@@ -15,6 +15,10 @@ final class LumenVersionCheck {
 
     private LumenVersionCheck() {}
 
+    static String jarVersion() {
+        return JAR_VERSION;
+    }
+
     private static String loadJarVersion() {
         // built from the template under src/main/resources by processResources expand()
         try (InputStream in = LumenVersionCheck.class.getResourceAsStream("/photoncompat-version.properties")) {
