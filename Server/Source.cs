@@ -32,6 +32,9 @@ namespace Server
         public int ActiveProfileIndex { get; set; } = -1;
         public int? ActiveDetectionSinkId { get; set; }
 
+        // results per second this source publishes at most; null = unlimited (see ISource::SetFpsLimit)
+        public int? FpsLimit { get; set; }
+
         public SourceType Type
         {
             get { return type; }

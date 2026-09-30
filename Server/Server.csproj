@@ -34,6 +34,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Server.Tests" />
     <Folder Include="Interop\" />
   </ItemGroup>
 
@@ -41,6 +42,8 @@
        UseSystemd() provides sd_notify/SIGTERM handling under lumenvision.service. -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting.Systemd" Version="10.0.0" />
+    <!-- GPIO access (libgpiod) for the vision LED; unused unless an LED is configured -->
+    <PackageReference Include="System.Device.Gpio" Version="4.0.1" />
   </ItemGroup>
 
   <!--

@@ -130,6 +130,16 @@ namespace Server
             return sourceId;
         }
 
+        // caps how many results per second a source publishes (<= 0 removes the cap) and remembers it
+        public void SetFpsLimit(int sourceId, int fps)
+        {
+            Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
+            int limit = fps > 0 ? fps : -1;
+            ManagerWrapper.Instance.SetSourceFpsLimit(sourceId, limit);
+            source.FpsLimit = limit > 0 ? limit : null;
+            DB.Instance.Save();
+        }
+
         // deletes a source and unbinds it from any sinks referencing it
         public void DeleteSource(int sourceId)
         {

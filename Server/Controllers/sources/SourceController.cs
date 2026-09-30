@@ -48,6 +48,21 @@ namespace Server.Controllers.sources
             return Task.CompletedTask;
         }
 
+        // PATCH: cap how many results per second a source publishes; fps <= 0 removes the cap
+        [HttpPatch("source/fpsLimit")]
+        public Task SetFpsLimit([FromQuery] int SourceID, [FromQuery] int fps)
+        {
+            SourceManager.Instance.SetFpsLimit(SourceID, fps);
+            return Task.CompletedTask;
+        }
+
+        // GET: the source's FPS cap, or -1 when unlimited
+        [HttpGet("source/fpsLimit")]
+        public Task<int> GetFpsLimit([FromQuery] int SourceID)
+        {
+            return Task.FromResult(SourceManager.Instance.GetSourceById(SourceID)?.FpsLimit ?? -1);
+        }
+
         // POST: save the source's latest frame under snapshots/ (fileName only, no path). Returns false if no frame yet.
         [HttpPost("source/snapshot")]
         public Task<bool> SaveSnapshot([FromQuery] int SourceID, [FromQuery] string fileName)

@@ -98,6 +98,7 @@ namespace Server
                             restored.Profiles = source.Profiles ?? new List<PipelineProfile>();
                             restored.ActiveProfileIndex = source.ActiveProfileIndex;
                             restored.ActiveDetectionSinkId = source.ActiveDetectionSinkId;
+                            if (source.FpsLimit.HasValue) SourceManager.Instance.SetFpsLimit(restored.Id, source.FpsLimit.Value);
                         }
                     }
                     foreach (var sink in sinks)
