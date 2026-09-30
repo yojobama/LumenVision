@@ -366,3 +366,12 @@ export interface RecordSegment {
   SizeBytes: number;
   LastWriteTimeUtc: string;
 }
+
+// mirrors Server/SnapshotService.cs's SnapshotEntry; Path is relative to the snapshot root
+export interface SnapshotEntry {
+  Camera: string;
+  Path: string;
+  Kind: 'input' | 'output';
+  SizeBytes: number;
+  CreatedUtc: string;
+}

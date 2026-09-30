@@ -35,6 +35,7 @@ namespace Server
             typeof(CalibrationController),
             typeof(OpenApiController),
             typeof(LogController),
+            typeof(SnapshotController),
             typeof(GraphProfileController),
         };
     }

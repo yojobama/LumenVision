@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -842,6 +842,40 @@ export class ApiService {
 
   async deleteProfile(sourceId: number, index: number): Promise<void> {
     const response = await fetch(`${this.baseUrl}/source/profiles?sourceId=${sourceId}&index=${index}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
+  // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)
+  async listSnapshots(): Promise<SnapshotEntry[]> {
+    const response = await fetch(`${this.baseUrl}/snapshot/list`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Saves a still of the camera now; "output" is the detector's annotated frame. Resolves to the new path, or null when no frame exists yet.
+  async takeSnapshot(sourceId: number, kind: 'input' | 'output'): Promise<string | null> {
+    const response = await fetch(`${this.baseUrl}/snapshot/take?SourceID=${sourceId}&Kind=${kind}`, { method: 'POST' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  getSnapshotUrl(path: string): string {
+    return `${this.baseUrl}/snapshot/file?Path=${encodeURIComponent(path)}`;
+  }
+
+  async deleteSnapshot(path: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/snapshot?Path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
+  async getDriverMode(sinkId: number): Promise<boolean> {
+    const response = await fetch(`${this.baseUrl}/sink/driverMode?SinkID=${sinkId}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async setDriverMode(sinkId: number, enabled: boolean): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/sink/driverMode?SinkID=${sinkId}&Enabled=${enabled}`, { method: 'PATCH' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 

@@ -40,6 +40,7 @@ export const Inspector: React.FC<{
   const [exposureValue, setExposureValue] = useState(300);
   const [gainValue, setGainValue] = useState(0);
   const [cameraControls, setCameraControls] = useState<CameraControls | null>(null);
+  const [driverMode, setDriverMode] = useState(false);
   const [sinkBackend, setSinkBackend] = useState<number | null>(null);
   const [switchingBackend, setSwitchingBackend] = useState(false);
   // threads/quadDecimate/refineEdges are user-adjustable; Vulkan decimation is an integer that must
@@ -139,6 +140,26 @@ export const Inspector: React.FC<{
     }
   };
 
+  const toggleDriverMode = async (enabled: boolean) => {
+    if (!sink) return;
+    try {
+      await api.setDriverMode(sink.Id, enabled);
+      setDriverMode(enabled);
+    } catch {
+      onToast('Failed to change driver mode', 'error');
+    }
+  };
+
+  const takeSnapshot = async (kind: 'input' | 'output') => {
+    if (!source) return;
+    try {
+      const saved = await api.takeSnapshot(source.Id, kind);
+      onToast(saved ? `Snapshot saved: ${saved}` : 'No frame available yet', saved ? 'success' : 'error');
+    } catch {
+      onToast('Failed to take a snapshot', 'error');
+    }
+  };
+
   const isApriltagSink = sink != null && node.data.typeName === 'ApriltagSink';
   const isObjectDetectionSink = sink != null && node.data.typeName === 'ObjectDetectionSink';
   const [detectionBackendName, setDetectionBackendName] = useState<string | null>(null);
@@ -158,6 +179,9 @@ export const Inspector: React.FC<{
   useEffect(() => {
     if (!isApriltagSink || !sink) return;
     let cancelled = false;
+    api.getDriverMode(sink.Id)
+      .then(enabled => { if (!cancelled) setDriverMode(enabled); })
+      .catch(() => { /* a detector that cannot report driver mode keeps the toggle off */ });
     api.getApriltagBackendKind(sink.Id)
       .then(backend => { if (!cancelled) setSinkBackend(backend); })
       .catch(() => { if (!cancelled) onToast('Failed to load detector backend', 'error'); });
@@ -468,6 +492,16 @@ export const Inspector: React.FC<{
               </div>
             </div>
 
+            <div className="flex gap-2">
+              <button onClick={() => takeSnapshot('input')} className="flex-1 px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs">
+                Input snapshot
+              </button>
+              <button onClick={() => takeSnapshot('output')} className="flex-1 px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs"
+                title="The active detector's annotated frame (the raw frame when no detector runs)">
+                Output snapshot
+              </button>
+            </div>
+
             <p className="text-xs text-gray-400">
               Not every device/driver honours all of these - a control this camera doesn't support fails with a toast rather than silently doing nothing.
             </p>
@@ -480,6 +514,13 @@ export const Inspector: React.FC<{
               <span className="text-sm text-gray-700 dark:text-gray-300">Enabled</span>
               <ToggleSwitch enabled={isRunning ?? false} onChange={toggleEnabled} />
             </div>
+
+            {isApriltagSink && (
+              <div className="flex items-center justify-between" title="Driver mode streams the raw camera image and skips detection and result publishing.">
+                <span className="text-sm text-gray-700 dark:text-gray-300">Driver mode</span>
+                <ToggleSwitch enabled={driverMode} onChange={toggleDriverMode} />
+              </div>
+            )}
 
             {/* sets the backend directly on the sink (rebuilds the detector in place) */}
             {isApriltagSink && (
