@@ -37,6 +37,7 @@ set(LUMEN_CORE_SOURCES
     RecordSink.cpp
     ResultPacket.cpp
     CoordinateFrames.cpp
+    ConstrainedPnp.cpp
     RoiSource.cpp
     SourceResult.cpp
     SystemMonitor.cpp

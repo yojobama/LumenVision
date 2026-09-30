@@ -25,6 +25,7 @@ add_executable(LumenCoreTests
     test_apriltag_tuning.cpp
     test_result_packet.cpp
     test_coordinate_frames.cpp
+    test_constrained_pnp.cpp
     test_stereo_calibrator.cpp
 )
 
