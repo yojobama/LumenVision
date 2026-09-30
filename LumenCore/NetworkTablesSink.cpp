@@ -357,7 +357,6 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 		table->GetEntry(key).SetValue(nt::Value::MakeDoubleArray(v, captureNtUs));
 	};
 	auto putString = [&](const std::string& key, const std::string& v) { table->GetEntry(key).SetValue(nt::Value::MakeString(v, captureNtUs)); };
-	auto putRaw = [&](const std::string& key, const std::vector<uint8_t>& v) { table->GetEntry(key).SetValue(nt::Value::MakeRaw(v, captureNtUs)); };
 
 	// AprilTag detector shape: a bare array of {id, center, corners, pose:{x,y,z,R}} objects, or an object envelope
 	// {"tags": [...], "multiTag": {...} | null, "calibration": {...} | null}; ObjectDetectionSink publishes a bare array of
@@ -478,7 +477,15 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 
 		// pipeline latency (capture -> published-to-NT), independent of NT4's network timestamping
 		header.latencyUs = static_cast<uint32_t>(std::clamp<int64_t>(ageUs, 0, std::numeric_limits<uint32_t>::max()));
-		putRaw("result", BuildResultPacket(header, targets));
+		const std::string resultTopic = "/" + m_Config.rootTable + "/" + TableNameForNode(sourceId) + "/result";
+		auto publisher = m_ResultPublishers.find(resultTopic);
+		if (publisher == m_ResultPublishers.end()) {
+			nt::PubSubOptions options;
+			options.sendAll = true;
+			options.keepDuplicates = true;
+			publisher = m_ResultPublishers.emplace(resultTopic, m_Instance.GetRawTopic(resultTopic).Publish("raw", options)).first;
+		}
+		publisher->second.Set(BuildResultPacket(header, targets), captureNtUs);
 	}
 
 	double latencyMs = static_cast<double>(std::max<int64_t>(ageUs, 0)) / 1000.0;
@@ -500,6 +507,9 @@ void NetworkTablesSink::Process(const std::vector<SourceResult>& results)
 		if (!result.json.has_value()) continue;
 		PublishSourceResult(result);
 	}
+
+	// push this batch out now instead of waiting for the next send period: results are latency-critical
+	m_Instance.Flush();
 
 	auto rootTable = m_Instance.GetTable(m_Config.rootTable);
 	rootTable->PutNumber("heartbeat", static_cast<double>(m_Heartbeat++));

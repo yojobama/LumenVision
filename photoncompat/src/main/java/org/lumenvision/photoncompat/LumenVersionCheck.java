@@ -34,10 +34,17 @@ final class LumenVersionCheck {
     static void warnOnMismatch(String coprocessorVersion) {
         if (coprocessorVersion == null || coprocessorVersion.isEmpty()) return;
         if (coprocessorVersion.equals(JAR_VERSION)) return;
-        DriverStation.reportWarning(
-                "LumenVision: photoncompat-java version (" + JAR_VERSION
-                        + ") does not match the coprocessor's own reported version ("
-                        + coprocessorVersion + ") - update one to match the other.",
-                false);
+        report("LumenVision: photoncompat-java version (" + JAR_VERSION
+                + ") does not match the coprocessor's own reported version ("
+                + coprocessorVersion + ") - update one to match the other.");
+    }
+
+    /** A driver-station warning; falls back to stderr where the HAL is unavailable (unit tests, desktop tools). */
+    static void report(String message) {
+        try {
+            DriverStation.reportWarning(message, false);
+        } catch (Throwable t) {
+            System.err.println(message);
+        }
     }
 }

@@ -2,40 +2,41 @@ package org.lumenvision.photoncompat;
 
 import edu.wpi.first.math.geometry.Pose3d;
 
-/**
- * The robot's field-relative pose from one coprocessor multi-tag result, produced by {@link
- * LumenPoseEstimator}. Mirrors photonlib's {@code EstimatedRobotPose} without a {@code PoseStrategy}.
- */
+import java.util.Collections;
+import java.util.List;
+
+/** A robot pose estimated from one result by {@link LumenPoseEstimator}; shaped like photonlib's EstimatedRobotPose. */
 public class LumenEstimatedRobotPose {
     private final Pose3d estimatedPose;
     private final double timestampSeconds;
-    private final int tagCount;
-    private final double reprojectionErrorPixels;
+    private final List<LumenTrackedTarget> targetsUsed;
+    private final LumenPoseStrategy strategy;
 
-    LumenEstimatedRobotPose(Pose3d estimatedPose, double timestampSeconds, int tagCount, double reprojectionErrorPixels) {
+    LumenEstimatedRobotPose(Pose3d estimatedPose, double timestampSeconds, List<LumenTrackedTarget> targetsUsed,
+            LumenPoseStrategy strategy) {
         this.estimatedPose = estimatedPose;
         this.timestampSeconds = timestampSeconds;
-        this.tagCount = tagCount;
-        this.reprojectionErrorPixels = reprojectionErrorPixels;
+        this.targetsUsed = Collections.unmodifiableList(targetsUsed);
+        this.strategy = strategy;
     }
 
-    /** The robot's field-relative pose: the camera pose composed with {@code robotToCamera}. */
+    /** The robot's field-relative pose. */
     public Pose3d getEstimatedPose() {
         return estimatedPose;
     }
 
-    /** Same clock domain as {@link LumenPipelineResult#getTimestampSeconds()}; pass to {@code addVisionMeasurement}. */
+    /** The frame's capture time, same clock as {@link LumenPipelineResult#getTimestampSeconds()}; pass to {@code addVisionMeasurement}. */
     public double getTimestampSeconds() {
         return timestampSeconds;
     }
 
-    /** Number of tags in the multi-tag solve (always >= 2). */
-    public int getTagCount() {
-        return tagCount;
+    /** The targets that contributed to the estimate. */
+    public List<LumenTrackedTarget> getTargetsUsed() {
+        return targetsUsed;
     }
 
-    /** RMS reprojection error in pixels - see {@link LumenMultiTagResult#getReprojectionErrorPixels()}. */
-    public double getReprojectionErrorPixels() {
-        return reprojectionErrorPixels;
+    /** The strategy that produced this estimate (a fallback, if the primary one had no data). */
+    public LumenPoseStrategy getStrategy() {
+        return strategy;
     }
 }

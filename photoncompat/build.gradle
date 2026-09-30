@@ -33,11 +33,23 @@ repositories {
 // Must match the GradleRIO version in robot/.wpilib/wpilib_preferences.json
 ext.wpilibVersion = "2026.2.1"
 
+// WPILib's native artifact classifier for the machine running the tests
+def osName = System.getProperty("os.name").toLowerCase()
+ext.nativeClassifier = osName.contains("win") ? "windowsx86-64"
+        : osName.contains("mac") ? "osxuniversal"
+        : (System.getProperty("os.arch") == "aarch64" ? "linuxarm64" : "linuxx86-64")
+
+configurations {
+    testNatives
+}
+
 dependencies {
     // WPILib's published POMs declare no dependencies, so each artifact is listed explicitly.
     // api: the public API exposes WPIMath geometry and NetworkTables types to consumers.
     api "edu.wpi.first.wpimath:wpimath-java:${wpilibVersion}"
     api "edu.wpi.first.ntcore:ntcore-java:${wpilibVersion}"
+    // AprilTagFieldLayout, which the pose estimator takes (pure Java: its detector JNI is not loaded)
+    api "edu.wpi.first.apriltag:apriltag-java:${wpilibVersion}"
     implementation "edu.wpi.first.wpiutil:wpiutil-java:${wpilibVersion}"
     // DriverStation.reportWarning is used by LumenVersionCheck; implementation since it is not in the public API
     implementation "edu.wpi.first.wpilibj:wpilibj-java:${wpilibVersion}"
@@ -51,12 +63,29 @@ dependencies {
     // Translation2d/Translation3d static initialisers build a QuickBuffers protobuf schema
     implementation "us.hebi.quickbuf:quickbuf-runtime:1.4"
 
+    // A live NetworkTableInstance in tests needs ntcore's JNI libraries, which WPILib ships inside the native zips
+    testNatives "edu.wpi.first.ntcore:ntcore-cpp:${wpilibVersion}:${nativeClassifier}@zip"
+    testNatives "edu.wpi.first.wpinet:wpinet-cpp:${wpilibVersion}:${nativeClassifier}@zip"
+    testNatives "edu.wpi.first.wpiutil:wpiutil-cpp:${wpilibVersion}:${nativeClassifier}@zip"
+
     testImplementation "org.junit.jupiter:junit-jupiter:5.10.1"
     testRuntimeOnly "org.junit.platform:junit-platform-launcher"
 }
 
+// Flattens the shared libraries out of the native zips for the test JVM's java.library.path
+tasks.register("unpackTestNatives", Copy) {
+    from { configurations.testNatives.collect { zipTree(it) } }
+    include "**/*.dll", "**/*.so", "**/*.so.*", "**/*.dylib"
+    exclude "**/*static*/**", "**/*debug*/**"
+    eachFile { path = name }
+    includeEmptyDirs = false
+    into layout.buildDirectory.dir("test-natives")
+}
+
 test {
     useJUnitPlatform()
+    dependsOn "unpackTestNatives"
+    systemProperty "java.library.path", layout.buildDirectory.dir("test-natives").get().asFile.absolutePath
 }
 
 publishing {

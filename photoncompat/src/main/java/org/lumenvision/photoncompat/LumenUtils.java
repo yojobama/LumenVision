@@ -72,6 +72,36 @@ public final class LumenUtils {
         return fieldToTarget.transformBy(cameraToTarget.inverse()).transformBy(cameraToRobot);
     }
 
+    /**
+     * The 2D robot pose from mount geometry and a target measurement: the distance from the target's pitch (see {@link
+     * #calculateDistanceToTargetMeters}), its yaw, the gyro heading and the target's field pose.
+     */
+    public static Pose2d estimateFieldToRobot(
+            double cameraHeightMeters,
+            double targetHeightMeters,
+            double cameraPitchRadians,
+            double targetPitchRadians,
+            Rotation2d targetYaw,
+            Rotation2d gyroAngle,
+            Pose2d fieldToTarget,
+            Transform2d cameraToRobot) {
+        return estimateFieldToRobot(
+                estimateCameraToTarget(
+                        estimateCameraToTargetTranslation(
+                                calculateDistanceToTargetMeters(
+                                        cameraHeightMeters, targetHeightMeters, cameraPitchRadians, targetPitchRadians),
+                                targetYaw),
+                        fieldToTarget,
+                        gyroAngle),
+                fieldToTarget,
+                cameraToRobot);
+    }
+
+    /** The straight-line distance between the robot's pose and a target's field pose, in metres. */
+    public static double getDistanceToPose(Pose2d robotPose, Pose2d targetPose) {
+        return robotPose.getTranslation().getDistance(targetPose.getTranslation());
+    }
+
     /** The bearing from the robot's pose to a target's field pose, e.g. for a turn-to-face setpoint. */
     public static Rotation2d getYawToPose(Pose2d robotPose, Pose2d targetPose) {
         Translation2d relativeTrl = targetPose.relativeTo(robotPose).getTranslation();

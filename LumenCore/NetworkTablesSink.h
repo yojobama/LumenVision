@@ -5,6 +5,7 @@
 #include <networktables/NetworkTableInstance.h>
 #include <networktables/BooleanTopic.h>
 #include <networktables/IntegerTopic.h>
+#include <networktables/RawTopic.h>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -108,6 +109,9 @@ private:
 	std::unordered_map<std::string, PendingConfigRequest> m_PendingConfig;
 	std::optional<bool> m_PendingRecording; // guarded by m_ConfigMutex too
 	std::optional<int> m_PendingLed;        // guarded by m_ConfigMutex too
+
+	// one per camera topic; "send all" so a robot reading its queue sees every frame rather than only the latest per send period
+	std::unordered_map<std::string, nt::RawPublisher> m_ResultPublishers;
 
 	nt::BooleanPublisher m_RecordingStatusPublisher;
 	nt::IntegerPublisher m_LedStatusPublisher;

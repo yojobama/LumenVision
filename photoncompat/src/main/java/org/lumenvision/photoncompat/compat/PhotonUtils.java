@@ -41,6 +41,23 @@ public final class PhotonUtils {
         return LumenUtils.estimateFieldToRobot(cameraToTarget, fieldToTarget, cameraToRobot);
     }
 
+    public static Pose2d estimateFieldToRobot(
+            double cameraHeightMeters,
+            double targetHeightMeters,
+            double cameraPitchRadians,
+            double targetPitchRadians,
+            Rotation2d targetYaw,
+            Rotation2d gyroAngle,
+            Pose2d fieldToTarget,
+            Transform2d cameraToRobot) {
+        return LumenUtils.estimateFieldToRobot(cameraHeightMeters, targetHeightMeters, cameraPitchRadians, targetPitchRadians,
+                targetYaw, gyroAngle, fieldToTarget, cameraToRobot);
+    }
+
+    public static double getDistanceToPose(Pose2d robotPose, Pose2d targetPose) {
+        return LumenUtils.getDistanceToPose(robotPose, targetPose);
+    }
+
     public static Rotation2d getYawToPose(Pose2d robotPose, Pose2d targetPose) {
         return LumenUtils.getYawToPose(robotPose, targetPose);
     }

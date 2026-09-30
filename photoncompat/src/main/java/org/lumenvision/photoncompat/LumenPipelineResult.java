@@ -4,24 +4,24 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * One snapshot of a coprocessor node's detections, in the shape photonlib's
- * PhotonPipelineResult already has.
- */
+/** One snapshot of a coprocessor camera's detections, in the shape photonlib's PhotonPipelineResult has. */
 public class LumenPipelineResult {
     private final List<LumenTrackedTarget> targets;
     private final double timestampSeconds;
+    private final long sequenceId;
+    private final long latencyMicros;
     private final Optional<LumenMultiTagResult> multiTagResult;
 
-    LumenPipelineResult(
-            List<LumenTrackedTarget> targets,
-            double timestampSeconds,
+    LumenPipelineResult(List<LumenTrackedTarget> targets, double timestampSeconds, long sequenceId, long latencyMicros,
             Optional<LumenMultiTagResult> multiTagResult) {
         this.targets = Collections.unmodifiableList(targets);
         this.timestampSeconds = timestampSeconds;
+        this.sequenceId = sequenceId;
+        this.latencyMicros = latencyMicros;
         this.multiTagResult = multiTagResult;
     }
 
+    /** Targets, largest image area first. */
     public List<LumenTrackedTarget> getTargets() {
         return targets;
     }
@@ -30,18 +30,40 @@ public class LumenPipelineResult {
         return !targets.isEmpty();
     }
 
+    /** The largest target, or empty when there are none. */
+    public Optional<LumenTrackedTarget> getBestTarget() {
+        return targets.isEmpty() ? Optional.empty() : Optional.of(targets.get(0));
+    }
+
     /**
-     * The moment this result was published, in the local clock domain (the NT4 entry timestamp);
-     * feed this to a pose estimator's addVisionMeasurement.
+     * When the frame was captured, in seconds on the NetworkTables server clock (the roboRIO's FPGA time): feed this to a pose
+     * estimator's addVisionMeasurement. The coprocessor stamps every topic with the capture time, so this is not the arrival time.
      */
     public double getTimestampSeconds() {
         return timestampSeconds;
     }
 
-    /**
-     * The coprocessor's multi-tag PnP result for this snapshot, if published (see {@link
-     * LumenCamera#getMultiTagResult()}); read in the same NT4 poll as the targets.
-     */
+    /** The frame's capture time in microseconds (same clock as {@link #getTimestampSeconds()}). */
+    public long getCaptureTimestampMicros() {
+        return Math.round(timestampSeconds * 1_000_000.0);
+    }
+
+    /** When the coprocessor published the result, in microseconds (capture time plus {@link #getLatencyMillis()}). */
+    public long getPublishTimestampMicros() {
+        return getCaptureTimestampMicros() + latencyMicros;
+    }
+
+    /** Capture-to-publish latency in milliseconds. */
+    public double getLatencyMillis() {
+        return latencyMicros / 1000.0;
+    }
+
+    /** The coprocessor's per-camera frame counter, increasing with every published result. */
+    public long getSequenceId() {
+        return sequenceId;
+    }
+
+    /** The coprocessor's multi-tag PnP result for this snapshot, if it produced one. */
     public Optional<LumenMultiTagResult> getMultiTagResult() {
         return multiTagResult;
     }
