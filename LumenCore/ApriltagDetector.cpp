@@ -71,11 +71,16 @@ void ApriltagDetector::BuildBackendLocked(int frameWidth, int frameHeight)
 			if (m_Logger) {
 				std::string msg = "Vulkan AprilTag backend built for " + std::to_string(frameWidth) + "x" +
 					std::to_string(frameHeight) + ", decimation " + std::to_string(static_cast<int>(vk->GetQuadDecimate())) +
-					", refineEdges " + (vk->GetRefineEdges() ? "on" : "off");
+					", refineEdges " + (vk->GetRefineEdges() ? "on" : "off") +
+					", refineMode " + std::to_string(static_cast<int>(vk->GetRefineMode()));
 				if (m_Tuning.quadDecimate > 0.0f && vk->GetQuadDecimate() != m_Tuning.quadDecimate)
 					msg += " (requested decimation " + std::to_string(m_Tuning.quadDecimate) +
 						" isn't an integer that divides the frame size)";
 				m_Logger->EnterLog(msg);
+				std::string envOverride = VkApriltagBackend::RefineEnvOverride();
+				if (!envOverride.empty())
+					m_Logger->EnterLog(LogLevel::Warning, "APRILTAG_VK_REFINE=" + envOverride +
+						" overrides the requested refine mode");
 			}
 			m_Backend = std::move(vk);
 			m_ActiveBackendKind = APRILTAG_BACKEND_VULKAN;
@@ -130,6 +135,18 @@ bool ApriltagDetector::GetRefineEdges() const
 {
 	std::lock_guard<std::mutex> lock(m_BackendMutex);
 	return m_Backend ? m_Backend->GetRefineEdges() : m_Tuning.refineEdges;
+}
+
+RefineEdgesMode ApriltagDetector::GetRefineMode() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetRefineMode() : m_Tuning.refineMode;
+}
+
+bool ApriltagDetector::GetRefineModeSupported() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetRefineModeSupported() : true;
 }
 
 nlohmann::json ApriltagDetector::SolveMultiTagPnP(

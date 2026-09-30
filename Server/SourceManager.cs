@@ -158,7 +158,7 @@ namespace Server
         // so a robot program's stored index keeps meaning the same profile.
         public int AddApriltagProfile(int sourceId, string name, double tagSize,
             ApriltagBackendKind backend, int frameWidth, int frameHeight, bool driverMode,
-            int? threads = null, float? quadDecimate = null, bool? refineEdges = null)
+            int? threads = null, float? quadDecimate = null, bool? refineEdges = null, RefineEdgesMode? refineMode = null)
         {
             Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
             int index = source.Profiles.Count == 0 ? 0 : source.Profiles.Max(p => p.Index) + 1;
@@ -174,7 +174,8 @@ namespace Server
                 DriverMode = driverMode,
                 Threads = threads,
                 QuadDecimate = quadDecimate,
-                RefineEdges = refineEdges
+                RefineEdges = refineEdges,
+                RefineMode = refineMode
             });
             DB.Instance.Save();
             return index;

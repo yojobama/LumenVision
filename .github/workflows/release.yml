@@ -41,7 +41,7 @@ jobs:
             /usr/local/lib
             /usr/local/bin
             /opt/lumenvision-ffmpeg
-          key: lumen-deps-linux-arm64-${{ hashFiles('scripts/install-deps.sh') }}
+          key: lumen-deps-linux-arm64-${{ hashFiles('scripts/install-deps.sh', 'third_party/vkapriltag/apriltags_vulkan/library/**', 'third_party/vkapriltag/apriltags_vulkan/cmake/patches/*') }}
           restore-keys: |
             lumen-deps-linux-arm64-
 
@@ -106,7 +106,7 @@ jobs:
             /usr/local/include
             /usr/local/lib
             /usr/local/bin
-          key: lumen-deps-linux-x64-${{ hashFiles('scripts/install-deps.sh') }}
+          key: lumen-deps-linux-x64-${{ hashFiles('scripts/install-deps.sh', 'third_party/vkapriltag/apriltags_vulkan/library/**', 'third_party/vkapriltag/apriltags_vulkan/cmake/patches/*') }}
           restore-keys: |
             lumen-deps-linux-x64-
 

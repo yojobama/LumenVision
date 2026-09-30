@@ -111,6 +111,11 @@ public:
 	int CreateApriltagDetector(int id, CameraCalibrationResult calibrationResult, double tagSize,
 		ApriltagBackendKind backendKind, int frameWidth, int frameHeight,
 		int nthreads = 0, float quadDecimate = 0.0f, bool refineEdges = true);
+	// same, taking every tuning knob as one struct (ApriltagTuning, IApriltagBackend.h); new knobs are added there
+	int CreateApriltagDetector(CameraCalibrationResult calibrationResult, double tagSize,
+		ApriltagBackendKind backendKind, int frameWidth, int frameHeight, ApriltagTuning tuning);
+	int CreateApriltagDetector(int id, CameraCalibrationResult calibrationResult, double tagSize,
+		ApriltagBackendKind backendKind, int frameWidth, int frameHeight, ApriltagTuning tuning);
 	string GetApriltagDetectorBackendName(int sinkId);
 	// the requested/resolved backend (as an enum, not the display name) plus everything else needed to rebuild an equivalent detector
 	// (tag size, calibration, tuning).
@@ -121,6 +126,9 @@ public:
 	float GetApriltagDetectorQuadDecimate(int sinkId);
 	bool GetApriltagDetectorQuadDecimateSupported(int sinkId);
 	bool GetApriltagDetectorRefineEdges(int sinkId);
+	RefineEdgesMode GetApriltagDetectorRefineMode(int sinkId);
+	// false on the CPU backend, which always runs REFINE_UPSTREAM
+	bool GetApriltagDetectorRefineModeSupported(int sinkId);
 	// legacy no-model overloads: inference needs a model, so these only keep generated SWIG call sites compiling and throw a clear error
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider);
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider, int id);

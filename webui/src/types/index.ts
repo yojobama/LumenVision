@@ -94,6 +94,14 @@ export interface StoredStereoCalibration {
   CalibratedAtUnixMs: number;
 }
 
+// mirrors LumenCore's RefineEdgesMode (IApriltagBackend.h): which refine_edges implementation the Vulkan backend runs
+export const REFINE_EDGES_MODES = [
+  { value: 0, label: 'Upstream (reference)' },
+  { value: 1, label: 'Exact (bit-identical, default)' },
+  { value: 2, label: 'Fast (single precision)' },
+  { value: 3, label: 'Ultra-fast (refine only decodable quads)' },
+] as const;
+
 // An uploaded ONNX object detection model (YOLOv8/YOLOv11), as returned by /model/getAll
 export interface Model {
   id: number;

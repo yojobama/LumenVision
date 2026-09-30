@@ -96,6 +96,22 @@ resolution when it is activated, so calibrate first and the profile gets real-wo
 with no calibration at its current resolution runs uncalibrated (the graph shows a "Calibration
 stale" badge when a saved calibration is for a different resolution).
 
+## AprilTag detection
+
+`ApriltagSink` runs on the CPU (libapriltag) or on the GPU through the vkapriltag submodule (Vulkan compute,
+pinned to tag `v1.6.0`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
+`PATCH /api/apriltagSink/backend` (or `refine*` parameters on `createWithBackend` and
+`POST /api/source/profiles/apriltag`); `GET /api/apriltagSink/tuning` returns what is actually in effect.
+
+- **Refine edges** sharpens corner positions. On the Vulkan backend its implementation is selectable with `refineMode`
+  (`0` upstream, `1` exact — the default, bit-identical to upstream, `2` fast, `3` ultra-fast, which only refines quads
+  that already decode unrefined); `refineModeSupported` is false on the CPU backend, which always runs upstream's.
+  Setting the `APRILTAG_VK_REFINE` environment variable (`upstream|exact|fast|ultrafast`) overrides the mode inside the
+  library, and the log warns when it differs from the request.
+- Measured on the reference 1280x800 image (RX 9060 XT, Windows, 50 iterations, decimation 2): CPU 9.57 ms; Vulkan
+  upstream 1.22 ms, exact 1.12 ms, fast 1.01 ms, ultra-fast 0.76 ms. `lumen-bench --refine-mode=<mode|all>` reproduces
+  this on any machine.
+
 ## Object detection
 
 Upload a YOLOv8 or YOLOv11 export via `POST /api/model/upload` (multipart: `model`, optional
@@ -175,12 +191,15 @@ anything.
 
 - **C++ (`tests/`, Catch2):** configure with `-DLUMEN_BUILD_TESTS=ON` (the `ci-*` presets do) and build the
   `LumenCoreTests` target. The calibration tests (`[calibration]`) drive `CameraCalibrator` and
-  `StereoCalibrator` with synthetic checkerboard renders. The target links against the shared
-  LumenCore library, which only works where its symbols are exported by default (Linux/WSL); it does
-  not link on Windows.
+  `StereoCalibrator` with synthetic checkerboard renders; the AprilTag tests (`[apriltag]`) include a
+  Vulkan-versus-CPU agreement check in every refine mode, which needs a Vulkan device. The target links
+  against the shared LumenCore library; on Windows `LUMEN_BUILD_TESTS` makes LumenCore export all its
+  symbols so the test executable can link (production builds do not), and the native dependency
+  folders must be on `PATH`.
 - **C# (`Server.Tests/`, xUnit):** `dotnet test Server.Tests` after building LumenCore for your preset
   (pass `-p:LumenCorePreset=` as for `Server.csproj`). It covers calibration result persistence,
-  calibration session error paths and the legacy-record handling in `DB.Load`; on Windows the
+  calibration session error paths, the legacy-record handling in `DB.Load` and the AprilTag refine-mode
+  persistence and defaults; on Windows the
   native dependency folders must be on `PATH`, as when running the Server.
 
 ## Known gaps

@@ -31,14 +31,15 @@ namespace Server.Controllers.sinks
         }
 
         // POST: create an Apriltag sink with an explicit backend (cpu/vulkan) and no calibration.
-        // frameWidth/frameHeight/nthreads/quadDecimate/refineEdges are optional; omitted means backend default.
+        // frameWidth/frameHeight/nthreads/quadDecimate/refineEdges/refineMode are optional; omitted means backend default.
         [HttpPost("apriltagSink/createWithBackend")]
         public Task<int> CreateWithBackend([FromQuery] string name, [FromQuery] double tagSize,
             [FromQuery] ApriltagBackendKind backend, [FromQuery] int frameWidth = 0, [FromQuery] int frameHeight = 0,
-            [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null)
+            [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
+            [FromQuery] RefineEdgesMode? refineMode = null)
         {
             int sinkId = SinkManager.Instance.AddApriltagSinkWithBackend(name, tagSize, backend, frameWidth, frameHeight,
-                nthreads ?? 0, quadDecimate ?? 0.0f, refineEdges ?? true);
+                nthreads ?? 0, quadDecimate ?? 0.0f, refineEdges ?? true, refineMode ?? RefineEdgesMode.REFINE_EXACT);
             return Task.FromResult(sinkId);
         }
 
@@ -56,7 +57,7 @@ namespace Server.Controllers.sinks
             return Task.FromResult(ManagerWrapper.Instance.GetApriltagDetectorBackendKind(sinkId));
         }
 
-        // GET: the sink's effective tuning (threads, quad_decimate, refine_edges); on Vulkan QuadDecimate is
+        // GET: the sink's effective tuning (threads, quad_decimate, refine_edges and its method); on Vulkan QuadDecimate is
         // the integer the GPU pipeline runs, which may differ from the request.
         [HttpGet("apriltagSink/tuning")]
         public Task<ApriltagTuningDto> GetTuning([FromQuery] int sinkId)
@@ -67,16 +68,19 @@ namespace Server.Controllers.sinks
                 QuadDecimate = ManagerWrapper.Instance.GetApriltagDetectorQuadDecimate(sinkId),
                 QuadDecimateSupported = ManagerWrapper.Instance.GetApriltagDetectorQuadDecimateSupported(sinkId),
                 RefineEdges = ManagerWrapper.Instance.GetApriltagDetectorRefineEdges(sinkId),
+                RefineMode = ManagerWrapper.Instance.GetApriltagDetectorRefineMode(sinkId),
+                RefineModeSupported = ManagerWrapper.Instance.GetApriltagDetectorRefineModeSupported(sinkId),
             });
         }
 
         // PATCH: switch an existing sink between CPU/Vulkan in place, keeping its id, settings and bindings.
-        // nthreads/quadDecimate/refineEdges are optional; when omitted the current tuning is carried over.
+        // nthreads/quadDecimate/refineEdges/refineMode are optional; when omitted the current tuning is carried over.
         [HttpPatch("apriltagSink/backend")]
         public Task SetBackend([FromQuery] int sinkId, [FromQuery] ApriltagBackendKind backend,
-            [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null)
+            [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
+            [FromQuery] RefineEdgesMode? refineMode = null)
         {
-            SinkManager.Instance.SetApriltagBackend(sinkId, backend, nthreads, quadDecimate, refineEdges);
+            SinkManager.Instance.SetApriltagBackend(sinkId, backend, nthreads, quadDecimate, refineEdges, refineMode);
             return Task.CompletedTask;
         }
 

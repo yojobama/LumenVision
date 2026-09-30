@@ -147,7 +147,9 @@ namespace Server
 
     // Threads/QuadDecimate are user-adjustable; QuadDecimateSupported is false for Vulkan (fixed 2x decimation),
     // so the Inspector disables that control.
-    public record struct ApriltagTuningDto(int Threads, float QuadDecimate, bool QuadDecimateSupported, bool RefineEdges);
+    // RefineModeSupported is false on the CPU backend, which always runs upstream's refine_edges.
+    public record struct ApriltagTuningDto(int Threads, float QuadDecimate, bool QuadDecimateSupported, bool RefineEdges,
+        RefineEdgesMode RefineMode, bool RefineModeSupported);
 
     // Every saved snapshot/pair's detected corners for the calibration coverage heatmap;
     // each Snapshots entry is one snapshot flattened as [x0,y0,x1,y1,...].

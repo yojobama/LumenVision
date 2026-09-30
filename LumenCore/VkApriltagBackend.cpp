@@ -2,6 +2,7 @@
 #include "VkApriltagBackend.h"
 #include <apriltag/tag36h11.h>
 #include <cmath>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
@@ -17,8 +18,34 @@ uint32_t VkApriltagBackend::ResolveDecimation(float requested, int frameWidth, i
 	return static_cast<uint32_t>(d);
 }
 
+RefineEdgesMethod VkApriltagBackend::ToRefineMethod(RefineEdgesMode mode)
+{
+	switch (mode) {
+	case REFINE_UPSTREAM: return RefineEdgesMethod::kUpstream;
+	case REFINE_FAST: return RefineEdgesMethod::kFast;
+	case REFINE_ULTRAFAST: return RefineEdgesMethod::kUltraFast;
+	case REFINE_EXACT:
+	default: return RefineEdgesMethod::kExact;
+	}
+}
+
+std::string VkApriltagBackend::RefineEnvOverride()
+{
+#ifdef _MSC_VER
+	char* env = nullptr;
+	size_t length = 0;
+	std::string value;
+	if (_dupenv_s(&env, &length, "APRILTAG_VK_REFINE") == 0 && env != nullptr) value = env;
+	std::free(env);
+	return value;
+#else
+	const char* env = std::getenv("APRILTAG_VK_REFINE");
+	return env ? std::string(env) : std::string();
+#endif
+}
+
 VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTuning tuning)
-	: m_FrameWidth(frameWidth), m_FrameHeight(frameHeight)
+	: m_FrameWidth(frameWidth), m_FrameHeight(frameHeight), m_RefineMode(tuning.refineMode)
 {
 	if (frameWidth <= 0 || frameHeight <= 0) {
 		// the GPU pipeline's buffers are sized from these - there is no valid default
@@ -51,9 +78,9 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, config);
 	m_QuadDecode = std::make_unique<QuadDecode>(config);
 	// TagDecoder must be told the same decimation as the GPU pass: refine_edges derives its per-edge search radius from it.
-	// kExact matches upstream's refine_edges without libm modf(); APRILTAG_VK_REFINE overrides it at runtime.
+	// APRILTAG_VK_REFINE, if set, overrides the requested method inside the library.
 	m_TagDecoder = std::make_unique<TagDecoder>(m_Detector, m_Decimation, config.cpu_threads,
-		RefineEdgesMethod::kExact);
+		ToRefineMethod(tuning.refineMode));
 }
 
 VkApriltagBackend::~VkApriltagBackend()

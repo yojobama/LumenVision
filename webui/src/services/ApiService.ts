@@ -338,23 +338,24 @@ export class ApiService {
   }
 
   // Switches an existing sink between CPU/Vulkan in place, preserving id/tag size/calibration/bindings.
-  // Omitted nthreads/quadDecimate/refineEdges carry forward the sink's current tuning.
-  async setApriltagBackend(sinkId: number, backend: number, nthreads?: number, quadDecimate?: number, refineEdges?: boolean): Promise<void> {
+  // Omitted nthreads/quadDecimate/refineEdges/refineMode carry forward the sink's current tuning.
+  async setApriltagBackend(sinkId: number, backend: number, nthreads?: number, quadDecimate?: number, refineEdges?: boolean, refineMode?: number): Promise<void> {
     let url = `${this.baseUrl}/apriltagSink/backend?sinkId=${sinkId}&backend=${backend}`;
     if (nthreads !== undefined) url += `&nthreads=${nthreads}`;
     if (quadDecimate !== undefined) url += `&quadDecimate=${quadDecimate}`;
     if (refineEdges !== undefined) url += `&refineEdges=${refineEdges}`;
+    if (refineMode !== undefined) url += `&refineMode=${refineMode}`;
     const response = await fetch(url, { method: 'PATCH' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
   // Current threads/quad_decimate/refine_edges in effect; on Vulkan quadDecimate is the integer the
   // GPU pipeline actually runs.
-  async getApriltagTuning(sinkId: number): Promise<{ threads: number; quadDecimate: number; quadDecimateSupported: boolean; refineEdges: boolean }> {
+  async getApriltagTuning(sinkId: number): Promise<{ threads: number; quadDecimate: number; quadDecimateSupported: boolean; refineEdges: boolean; refineMode: number; refineModeSupported: boolean }> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/tuning?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const dto = await response.json();
-    return { threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges };
+    return { threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges, refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported };
   }
 
   // Object Detection Sink Controller routes
@@ -814,13 +815,14 @@ export class ApiService {
   }
 
   async createApriltagProfile(sourceId: number, name: string, tagSize: number, options?: {
-    backend?: number; frameWidth?: number; frameHeight?: number; driverMode?: boolean;
+    backend?: number; frameWidth?: number; frameHeight?: number; driverMode?: boolean; refineMode?: number;
   }): Promise<number> {
     const params = new URLSearchParams({ sourceId: String(sourceId), name, tagSize: String(tagSize) });
     if (options?.backend != null) params.set('backend', String(options.backend));
     if (options?.frameWidth != null) params.set('frameWidth', String(options.frameWidth));
     if (options?.frameHeight != null) params.set('frameHeight', String(options.frameHeight));
     if (options?.driverMode != null) params.set('driverMode', String(options.driverMode));
+    if (options?.refineMode != null) params.set('refineMode', String(options.refineMode));
     const response = await fetch(`${this.baseUrl}/source/profiles/apriltag?${params}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();

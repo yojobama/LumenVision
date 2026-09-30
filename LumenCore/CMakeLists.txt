@@ -129,6 +129,11 @@ if(LUMEN_WITH_MPP_JPEG)
 endif()
 
 # No PREFIX override: the default lib prefix on Linux and none on Windows lets one DllImport("LumenCore") resolve on both.
+# A Windows DLL exports nothing by default, but the test executable links LumenCore's internals (Logger, ISource, ...).
+if(WIN32 AND LUMEN_BUILD_TESTS)
+    set_target_properties(LumenCore PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
+
 set_target_properties(LumenCore PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON

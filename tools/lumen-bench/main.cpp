@@ -16,8 +16,11 @@
 #include <opencv2/opencv.hpp>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -57,9 +60,27 @@ void MakeSyntheticStereoPair(int width, int height, int shift, cv::Mat& left, cv
 	right = base(cv::Rect(0, 0, width, height)).clone();
 }
 
+// "--refine-mode=<upstream|exact|fast|ultrafast|all>" picks which Vulkan refine-edges methods are timed (default: all).
+std::vector<std::pair<std::string, RefineEdgesMode>> SelectedRefineModes(int argc, char** argv) {
+	const std::vector<std::pair<std::string, RefineEdgesMode>> all = {
+		{ "upstream", REFINE_UPSTREAM }, { "exact", REFINE_EXACT }, { "fast", REFINE_FAST }, { "ultrafast", REFINE_ULTRAFAST },
+	};
+	const char* prefix = "--refine-mode=";
+	for (int i = 1; i < argc; i++) {
+		if (std::strncmp(argv[i], prefix, std::strlen(prefix)) != 0) continue;
+		std::string value = argv[i] + std::strlen(prefix);
+		if (value == "all") return all;
+		for (const auto& entry : all)
+			if (entry.first == value) return { entry };
+		std::fprintf(stderr, "unknown --refine-mode '%s' (upstream|exact|fast|ultrafast|all)\n", value.c_str());
+		std::exit(2);
+	}
+	return all;
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
 	std::vector<BenchResult> results;
 
 	// --- AprilTag detection ---
@@ -68,21 +89,29 @@ int main() {
 		results.push_back(Skipped("CpuApriltagBackend", "grayimage.pgm fixture not found"));
 		results.push_back(Skipped("VkApriltagBackend", "grayimage.pgm fixture not found"));
 	} else {
-		CpuApriltagBackend cpuTag(1, 2.0f);
+		ApriltagTuning cpuTuning;
+		cpuTuning.nthreads = 1;
+		cpuTuning.quadDecimate = 2.0f;
+		CpuApriltagBackend cpuTag(cpuTuning);
 		results.push_back(RunBench("CpuApriltagBackend", [&] {
 			zarray_t* d = cpuTag.Detect(gray);
 			cpuTag.ReleaseResult(d);
 		}));
 
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
-		try {
-			VkApriltagBackend vkTag(gray.cols, gray.rows);
-			results.push_back(RunBench("VkApriltagBackend", [&] {
-				zarray_t* d = vkTag.Detect(gray);
-				vkTag.ReleaseResult(d);
-			}));
-		} catch (const std::exception& e) {
-			results.push_back(Skipped("VkApriltagBackend", std::string("no Vulkan compute device: ") + e.what()));
+		for (const auto& [modeName, mode] : SelectedRefineModes(argc, argv)) {
+			const std::string name = "VkApriltagBackend (refine " + modeName + ")";
+			try {
+				ApriltagTuning vkTuning;
+				vkTuning.refineMode = mode;
+				VkApriltagBackend vkTag(gray.cols, gray.rows, vkTuning);
+				results.push_back(RunBench(name, [&] {
+					zarray_t* d = vkTag.Detect(gray);
+					vkTag.ReleaseResult(d);
+				}));
+			} catch (const std::exception& e) {
+				results.push_back(Skipped(name, std::string("no Vulkan compute device: ") + e.what()));
+			}
 		}
 #else
 		results.push_back(Skipped("VkApriltagBackend", "not compiled in this build (LUMEN_WITH_VULKAN_APRILTAG off)"));

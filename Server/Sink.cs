@@ -105,6 +105,8 @@ namespace Server
         public int? ApriltagThreads { get; set; }
         public float? ApriltagQuadDecimate { get; set; }
         public bool? ApriltagRefineEdges { get; set; }
+        // which refine-edges implementation the Vulkan backend runs (null in older records: REFINE_EXACT)
+        public RefineEdgesMode? ApriltagRefineMode { get; set; }
 
         // No `source` constructor parameter: System.Text.Json would bind the JSON "Source" property to it instead of the Source setter.
         public Sink(int id, string name, SinkType type)

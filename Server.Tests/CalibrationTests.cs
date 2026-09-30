@@ -19,6 +19,7 @@ internal static class TestEnvironment
     }
 }
 
+[Collection("ServerSingletons")]
 public class CalibrationResultPersistenceTests
 {
     private static CameraCalibrationResult MonoResult(int width, int height, double fx) =>
@@ -70,6 +71,7 @@ public class CalibrationResultPersistenceTests
     }
 }
 
+[Collection("ServerSingletons")]
 public class CalibrationSessionTests
 {
     [Fact]
@@ -89,6 +91,7 @@ public class CalibrationSessionTests
     }
 }
 
+[Collection("ServerSingletons")]
 public class LegacyCalibrationSinkTests
 {
     // Calibration used to be a graph node (SinkType 3 and 6); older data.json files still contain those records.

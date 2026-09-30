@@ -26,6 +26,8 @@ namespace Server
         public int? Threads { get; set; }
         public float? QuadDecimate { get; set; }
         public bool? RefineEdges { get; set; }
+        // null = REFINE_EXACT (also what profiles saved before the option existed use)
+        public RefineEdgesMode? RefineMode { get; set; }
         // path to this profile's own WPILib field-layout JSON; keyed by profile because profiles on one source share the
         // ActiveDetectionSinkId slot, so a sink-id key would let one profile's upload overwrite another's
         public string? FieldLayoutPath { get; set; }

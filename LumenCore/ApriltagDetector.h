@@ -39,6 +39,8 @@ public:
 	float GetQuadDecimate() const;
 	bool GetQuadDecimateSupported() const;
 	bool GetRefineEdges() const;
+	RefineEdgesMode GetRefineMode() const;
+	bool GetRefineModeSupported() const;
 	// what was requested at construction
 	ApriltagTuning GetRequestedTuning() const { return m_Tuning; }
 

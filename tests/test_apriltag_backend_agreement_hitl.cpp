@@ -32,12 +32,15 @@ TEST_CASE("CpuApriltagBackend and VkApriltagBackend agree on the same real image
 	// decoded tag IDs, so they must agree at every setting.
 	const int decimation = GENERATE(1, 2, 4);
 	const bool refine = GENERATE(false, true);
-	INFO("decimation " << decimation << ", refineEdges " << refine);
+	// the CPU backend always runs upstream's refine_edges; the Vulkan backend must agree with it in every mode
+	const RefineEdgesMode mode = GENERATE(REFINE_UPSTREAM, REFINE_EXACT, REFINE_FAST, REFINE_ULTRAFAST);
+	INFO("decimation " << decimation << ", refineEdges " << refine << ", refineMode " << static_cast<int>(mode));
 
 	ApriltagTuning tuning;
 	tuning.nthreads = 1;
 	tuning.quadDecimate = static_cast<float>(decimation);
 	tuning.refineEdges = refine;
+	tuning.refineMode = mode;
 	CpuApriltagBackend cpuBackend(tuning);
 
 	std::unique_ptr<VkApriltagBackend> vkBackend;
@@ -50,6 +53,10 @@ TEST_CASE("CpuApriltagBackend and VkApriltagBackend agree on the same real image
 	REQUIRE(vkBackend->GetQuadDecimate() == static_cast<float>(decimation));
 	REQUIRE(vkBackend->GetRefineEdges() == refine);
 	REQUIRE(cpuBackend.GetRefineEdges() == refine);
+	REQUIRE(vkBackend->GetRefineModeSupported());
+	REQUIRE(vkBackend->GetRefineMode() == mode);
+	REQUIRE_FALSE(cpuBackend.GetRefineModeSupported());
+	REQUIRE(cpuBackend.GetRefineMode() == REFINE_UPSTREAM);
 
 	zarray_t* cpuDetections = cpuBackend.Detect(gray);
 	zarray_t* vkDetections = vkBackend->Detect(gray);

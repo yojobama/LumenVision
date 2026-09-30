@@ -35,6 +35,13 @@ public:
 	float GetQuadDecimate() const override { return static_cast<float>(m_Decimation); }
 	bool GetQuadDecimateSupported() const override { return true; }
 	bool GetRefineEdges() const override { return m_Detector->refine_edges; }
+	RefineEdgesMode GetRefineMode() const override { return m_RefineMode; }
+	bool GetRefineModeSupported() const override { return true; }
+
+	// vkapriltag's RefineEdgesMethod for a mode
+	static apriltag_vulkan::RefineEdgesMethod ToRefineMethod(RefineEdgesMode mode);
+	// the APRILTAG_VK_REFINE environment override ("" when unset); the library lets it win over the requested mode
+	static std::string RefineEnvOverride();
 
 	int GetFrameWidth() const { return m_FrameWidth; }
 	int GetFrameHeight() const { return m_FrameHeight; }
@@ -49,6 +56,7 @@ private:
 	int m_FrameWidth = 0;
 	int m_FrameHeight = 0;
 	uint32_t m_Decimation = 2;
+	RefineEdgesMode m_RefineMode = REFINE_EXACT;
 
 	std::unique_ptr<apriltag_vulkan::vk::Context> m_Context;
 	std::unique_ptr<apriltag_vulkan::GpuDetector> m_GpuDetector;

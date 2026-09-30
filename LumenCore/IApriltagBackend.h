@@ -9,6 +9,19 @@ enum ApriltagBackendKind {
 	APRILTAG_BACKEND_VULKAN
 };
 
+// Edge-refinement implementation (vkapriltag's RefineEdgesMethod). Plain (unscoped) enum for SWIG, as above. Only the Vulkan backend
+// honours it; the CPU backend always runs upstream's refine_edges.
+//   REFINE_UPSTREAM  upstream's compiled refine_edges() (the reference)
+//   REFINE_EXACT     upstream's arithmetic without libm modf(); bit-identical to REFINE_UPSTREAM
+//   REFINE_FAST      single-precision inner loop; not bit-identical
+//   REFINE_ULTRAFAST as REFINE_FAST, and only quads that already decode unrefined are refined
+enum RefineEdgesMode {
+	REFINE_UPSTREAM,
+	REFINE_EXACT,
+	REFINE_FAST,
+	REFINE_ULTRAFAST
+};
+
 // The runtime-tunable detector knobs, shared by both backends so a sink can be rebuilt (backend
 // switch, frame-size change) with exactly the same settings.
 //   nthreads     <= 0: the backend's own default (CPU: apriltag's 1; Vulkan: hardware_concurrency)
@@ -16,10 +29,12 @@ enum ApriltagBackendKind {
 //                      needs the frame to be divisible by it - see VkApriltagBackend.
 //   refineEdges:       libapriltag's refine_edges (gradient-based corner refinement). Default true; offsets
 //                      decimation's coarser quads.
+//   refineMode:        which implementation refineEdges uses (see RefineEdgesMode); ignored when refineEdges is false or on the CPU backend.
 struct ApriltagTuning {
 	int nthreads = 0;
 	float quadDecimate = 0.0f;
 	bool refineEdges = true;
+	RefineEdgesMode refineMode = REFINE_EXACT;
 };
 
 // Detection-only backend abstraction: both implementations return a zarray_t* of apriltag_detection_t* from the same
@@ -44,4 +59,7 @@ public:
 	virtual float GetQuadDecimate() const = 0;
 	virtual bool GetQuadDecimateSupported() const = 0;
 	virtual bool GetRefineEdges() const = 0;
+	// the refine implementation in effect, and whether the backend lets it be chosen (false: CPU always runs REFINE_UPSTREAM)
+	virtual RefineEdgesMode GetRefineMode() const = 0;
+	virtual bool GetRefineModeSupported() const = 0;
 };

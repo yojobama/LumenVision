@@ -17,6 +17,8 @@ public:
 	float GetQuadDecimate() const override { return m_Detector->quad_decimate; }
 	bool GetQuadDecimateSupported() const override { return true; }
 	bool GetRefineEdges() const override { return m_Detector->refine_edges; }
+	RefineEdgesMode GetRefineMode() const override { return REFINE_UPSTREAM; }
+	bool GetRefineModeSupported() const override { return false; }
 
 private:
 	apriltag_detector_t* m_Detector;

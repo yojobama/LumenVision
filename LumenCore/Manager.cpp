@@ -695,12 +695,25 @@ int Manager::CreateApriltagDetector(CameraCalibrationResult calibrationResult, d
 int Manager::CreateApriltagDetector(int id, CameraCalibrationResult calibrationResult, double tagSize,
     ApriltagBackendKind backendKind, int frameWidth, int frameHeight, int nthreads, float quadDecimate, bool refineEdges)
 {
-    m_Logger->EnterLog("CreateApriltagDetector called with id=" + std::to_string(id) + ", backend=" + std::to_string(backendKind));
-
     ApriltagTuning tuning;
     tuning.nthreads = nthreads;
     tuning.quadDecimate = quadDecimate;
     tuning.refineEdges = refineEdges;
+    return CreateApriltagDetector(id, calibrationResult, tagSize, backendKind, frameWidth, frameHeight, tuning);
+}
+
+int Manager::CreateApriltagDetector(CameraCalibrationResult calibrationResult, double tagSize,
+    ApriltagBackendKind backendKind, int frameWidth, int frameHeight, ApriltagTuning tuning)
+{
+    int id = GenerateUUID();
+    return CreateApriltagDetector(id, calibrationResult, tagSize, backendKind, frameWidth, frameHeight, tuning);
+}
+
+int Manager::CreateApriltagDetector(int id, CameraCalibrationResult calibrationResult, double tagSize,
+    ApriltagBackendKind backendKind, int frameWidth, int frameHeight, ApriltagTuning tuning)
+{
+    m_Logger->EnterLog("CreateApriltagDetector called with id=" + std::to_string(id) + ", backend=" + std::to_string(backendKind));
+
     auto p_Detector = std::make_shared<ApriltagDetector>(m_Logger, std::to_string(id), calibrationResult, tagSize,
         backendKind, frameWidth, frameHeight, tuning);
 
@@ -795,6 +808,28 @@ bool Manager::GetApriltagDetectorRefineEdges(int sinkId)
     if (p_Detector == nullptr) return false;
 
     return p_Detector->GetRefineEdges();
+}
+
+RefineEdgesMode Manager::GetApriltagDetectorRefineMode(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return REFINE_EXACT;
+
+    ApriltagDetector* p_Detector = dynamic_cast<ApriltagDetector*>(sink->second.get());
+    if (p_Detector == nullptr) return REFINE_EXACT;
+
+    return p_Detector->GetRefineMode();
+}
+
+bool Manager::GetApriltagDetectorRefineModeSupported(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return false;
+
+    ApriltagDetector* p_Detector = dynamic_cast<ApriltagDetector*>(sink->second.get());
+    if (p_Detector == nullptr) return false;
+
+    return p_Detector->GetRefineModeSupported();
 }
 
 namespace {

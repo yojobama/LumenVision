@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
 import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment } from '../types';
+import { REFINE_EDGES_MODES } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { StreamView } from '../components/StreamView';
@@ -47,6 +48,8 @@ export const Inspector: React.FC<{
   const [quadDecimateValue, setQuadDecimateValue] = useState(0);
   const [quadDecimateSupported, setQuadDecimateSupported] = useState(true);
   const [refineEdgesValue, setRefineEdgesValue] = useState(true);
+  const [refineModeValue, setRefineModeValue] = useState(1);
+  const [refineModeSupported, setRefineModeSupported] = useState(false);
   const [applyingTuning, setApplyingTuning] = useState(false);
 
   useEffect(() => {
@@ -165,6 +168,8 @@ export const Inspector: React.FC<{
         setQuadDecimateValue(tuning.quadDecimate);
         setQuadDecimateSupported(tuning.quadDecimateSupported);
         setRefineEdgesValue(tuning.refineEdges);
+        setRefineModeValue(tuning.refineMode);
+        setRefineModeSupported(tuning.refineModeSupported);
       })
       .catch(() => { if (!cancelled) onToast('Failed to load detector tuning', 'error'); });
     return () => { cancelled = true; };
@@ -177,8 +182,11 @@ export const Inspector: React.FC<{
     if (!sink) return;
     setSwitchingBackend(true);
     try {
-      await api.setApriltagBackend(sink.Id, backend, threadsValue, quadDecimateValue, refineEdgesValue);
+      await api.setApriltagBackend(sink.Id, backend, threadsValue, quadDecimateValue, refineEdgesValue, refineModeValue);
       setSinkBackend(backend);
+      const actual = await api.getApriltagTuning(sink.Id);
+      setRefineModeValue(actual.refineMode);
+      setRefineModeSupported(actual.refineModeSupported);
       onToast('Backend switched', 'success');
     } catch {
       onToast('Failed to switch backend', 'error');
@@ -192,11 +200,13 @@ export const Inspector: React.FC<{
     if (!sink || sinkBackend === null) return;
     setApplyingTuning(true);
     try {
-      await api.setApriltagBackend(sink.Id, sinkBackend, threadsValue, quadDecimateSupported ? quadDecimateValue : undefined, refineEdgesValue);
+      await api.setApriltagBackend(sink.Id, sinkBackend, threadsValue, quadDecimateSupported ? quadDecimateValue : undefined, refineEdgesValue, refineModeValue);
       const actual = await api.getApriltagTuning(sink.Id);
       setThreadsValue(actual.threads);
       setQuadDecimateValue(actual.quadDecimate);
       setRefineEdgesValue(actual.refineEdges);
+      setRefineModeValue(actual.refineMode);
+      setRefineModeSupported(actual.refineModeSupported);
       onToast('Tuning applied', 'success');
     } catch {
       onToast('Failed to apply tuning', 'error');
@@ -488,7 +498,7 @@ export const Inspector: React.FC<{
             )}
 
             {/* Threads maps to libapriltag nthreads / vkapriltag cpu_threads; Vulkan decimation is integer-only
-                and must divide the frame size; Refine Edges is identical on both backends. */}
+                and must divide the frame size; the refine method is chosen on Vulkan only (the CPU backend always runs upstream's). */}
             {isApriltagSink && (
               <div className="space-y-2">
                 <div>
@@ -511,6 +521,15 @@ export const Inspector: React.FC<{
                   <input type="checkbox" checked={refineEdgesValue} onChange={e => setRefineEdgesValue(e.target.checked)} />
                   Refine edges
                 </label>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Refine edges method</label>
+                  <select value={refineModeValue} disabled={!refineEdgesValue || !refineModeSupported}
+                    title={refineModeSupported ? 'Exact matches upstream bit for bit; Fast and Ultra-fast trade a little accuracy for speed.' : 'Only the Vulkan backend can choose a refine method; the CPU backend always uses upstream\'s.'}
+                    onChange={e => setRefineModeValue(parseInt(e.target.value))}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white disabled:opacity-50">
+                    {REFINE_EDGES_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
                 <button onClick={applyTuning} disabled={applyingTuning}
                   className="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">Apply Tuning</button>
               </div>

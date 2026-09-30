@@ -1644,6 +1644,8 @@ export interface components {
             QuadDecimate: number;
             QuadDecimateSupported: boolean;
             RefineEdges: boolean;
+            RefineMode: number;
+            RefineModeSupported: boolean;
         };
         CalibrationSessionDto: {
             SessionId: number;
@@ -1720,6 +1722,7 @@ export interface components {
             Threads?: number;
             QuadDecimate?: number;
             RefineEdges?: boolean;
+            RefineMode?: number;
             FieldLayoutPath?: string;
             DriverMode: boolean;
             ModelId?: number;
@@ -1854,6 +1857,7 @@ export interface components {
             ApriltagThreads?: number;
             ApriltagQuadDecimate?: number;
             ApriltagRefineEdges?: boolean;
+            ApriltagRefineMode?: number;
         };
         StereoDepthStatsDto: {
             ValidFraction: number;
@@ -1931,6 +1935,7 @@ export interface operations {
                 nthreads?: number;
                 quadDecimate?: number;
                 refineEdges?: boolean;
+                refineMode?: number;
             };
             header?: never;
             path?: never;
@@ -1979,6 +1984,7 @@ export interface operations {
                 nthreads?: number;
                 quadDecimate?: number;
                 refineEdges?: boolean;
+                refineMode?: number;
             };
             header?: never;
             path?: never;
@@ -3295,6 +3301,7 @@ export interface operations {
                 nthreads?: number;
                 quadDecimate?: number;
                 refineEdges?: boolean;
+                refineMode?: number;
             };
             header?: never;
             path?: never;

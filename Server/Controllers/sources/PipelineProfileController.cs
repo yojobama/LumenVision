@@ -20,10 +20,11 @@ namespace Server.Controllers.sources
             [FromQuery] ApriltagBackendKind backend = ApriltagBackendKind.APRILTAG_BACKEND_CPU,
             [FromQuery] int frameWidth = 0, [FromQuery] int frameHeight = 0,
             [FromQuery] bool driverMode = false,
-            [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null)
+            [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
+            [FromQuery] RefineEdgesMode? refineMode = null)
         {
             int index = SourceManager.Instance.AddApriltagProfile(sourceId, name, tagSize,
-                backend, frameWidth, frameHeight, driverMode, nthreads, quadDecimate, refineEdges);
+                backend, frameWidth, frameHeight, driverMode, nthreads, quadDecimate, refineEdges, refineMode);
             return Task.FromResult(index);
         }
 
