@@ -108,3 +108,43 @@ TEST_CASE("calling Toggle(true) twice does not leak a second capture thread", "[
 
     REQUIRE(elapsed < std::chrono::seconds(2));
 }
+
+TEST_CASE("the FPS limit drops results published faster than it allows", "[ISource][fpslimit]") {
+    auto source = std::make_shared<TestSource>(nullptr, "test-source-fps-limit");
+    source->SetFpsLimit(20);
+    REQUIRE(source->GetFpsLimit() == 20);
+    source->Toggle(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    source->Toggle(false);
+
+    const uint64_t published = source->GetCurrentFrameCount();
+    // 20 fps over half a second is about 10 results; the source itself kept capturing at full rate
+    REQUIRE(published >= 4);
+    REQUIRE(published <= 13);
+    REQUIRE(static_cast<uint64_t>(source->captureCount.load()) > published);
+}
+
+TEST_CASE("without a limit every result is published", "[ISource][fpslimit]") {
+    auto source = std::make_shared<TestSource>(nullptr, "test-source-no-limit");
+    REQUIRE(source->GetFpsLimit() <= 0);
+    source->Toggle(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    source->Toggle(false);
+    REQUIRE(source->GetCurrentFrameCount() == static_cast<uint64_t>(source->captureCount.load()));
+}
+
+TEST_CASE("a one-shot frame request counts as a frame consumer until a frame is published", "[ISource][snapshot]") {
+    auto source = std::make_shared<TestSource>(nullptr, "test-source-frame-request");
+    REQUIRE_FALSE(source->HasActiveFrameConsumer());
+    REQUIRE_FALSE(source->HasActiveColorFrameConsumer());
+
+    source->RequestFrameOnce();
+    REQUIRE(source->HasActiveFrameConsumer());
+    REQUIRE(source->HasActiveColorFrameConsumer());
+
+    source->Toggle(true);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    source->Toggle(false);
+    REQUIRE_FALSE(source->HasActiveFrameConsumer());
+    REQUIRE_FALSE(source->HasActiveColorFrameConsumer());
+}

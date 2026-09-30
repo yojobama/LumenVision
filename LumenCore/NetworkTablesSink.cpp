@@ -181,6 +181,8 @@ NetworkTablesSink::NetworkTablesSink(std::shared_ptr<Logger> logger, std::string
 
 	m_RecordingStatusPublisher = m_Instance.GetBooleanTopic("/" + m_Config.rootTable + "/status/recording").Publish();
 	m_RecordingStatusPublisher.Set(false);
+	m_LedStatusPublisher = m_Instance.GetIntegerTopic("/" + m_Config.rootTable + "/status/ledMode").Publish();
+	m_LedStatusPublisher.Set(-1);
 }
 
 NetworkTablesSink::~NetworkTablesSink()
@@ -209,6 +211,15 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 		}
 		return;
 	}
+	if (rest == "config/ledMode") {
+		if (valueData->value.IsInteger() || valueData->value.IsDouble()) {
+			std::lock_guard<std::mutex> lock(m_ConfigMutex);
+			m_PendingLed = valueData->value.IsInteger()
+				? static_cast<int>(valueData->value.GetInteger())
+				: static_cast<int>(valueData->value.GetDouble());
+		}
+		return;
+	}
 
 	size_t firstSlash = rest.find('/');
 	size_t secondSlash = rest.find('/', firstSlash == std::string::npos ? std::string::npos : firstSlash + 1);
@@ -226,6 +237,14 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 			: static_cast<int>(valueData->value.GetDouble());
 	} else if (leaf == "driverMode" && valueData->value.IsBoolean()) {
 		m_PendingConfig[sourceId].driverMode = valueData->value.GetBoolean();
+	} else if (leaf == "fpsLimit" && (valueData->value.IsInteger() || valueData->value.IsDouble())) {
+		m_PendingConfig[sourceId].fpsLimit = valueData->value.IsInteger()
+			? static_cast<int>(valueData->value.GetInteger())
+			: static_cast<int>(valueData->value.GetDouble());
+	} else if (leaf == "inputSnapshot") {
+		m_PendingConfig[sourceId].inputSnapshots++;
+	} else if (leaf == "outputSnapshot") {
+		m_PendingConfig[sourceId].outputSnapshots++;
 	}
 }
 
@@ -242,6 +261,9 @@ std::string NetworkTablesSink::PollConfigRequests()
 		nlohmann::json entry{ {"sourceId", sourceId} };
 		if (request.pipelineIndex.has_value()) entry["pipelineIndex"] = request.pipelineIndex.value();
 		if (request.driverMode.has_value()) entry["driverMode"] = request.driverMode.value();
+		if (request.fpsLimit.has_value()) entry["fpsLimit"] = request.fpsLimit.value();
+		if (request.inputSnapshots > 0) entry["inputSnapshots"] = request.inputSnapshots;
+		if (request.outputSnapshots > 0) entry["outputSnapshots"] = request.outputSnapshots;
 		out.push_back(entry);
 	}
 	return out.dump();
@@ -259,6 +281,28 @@ int NetworkTablesSink::PollRecordingRequest()
 void NetworkTablesSink::SetRecordingStatus(bool recording)
 {
 	m_RecordingStatusPublisher.Set(recording);
+}
+
+int NetworkTablesSink::PollLedRequest()
+{
+	std::lock_guard<std::mutex> lock(m_ConfigMutex);
+	if (!m_PendingLed.has_value()) return -2;
+	int value = m_PendingLed.value();
+	m_PendingLed.reset();
+	return value;
+}
+
+void NetworkTablesSink::SetLedStatus(int mode)
+{
+	m_LedStatusPublisher.Set(mode);
+}
+
+void NetworkTablesSink::PublishNodeStatus(const std::string& nodeId, int pipelineIndex, bool driverMode, int fpsLimit)
+{
+	auto table = m_Instance.GetTable(m_Config.rootTable + "/" + TableNameForNode(nodeId));
+	table->PutNumber("status/pipelineIndex", pipelineIndex);
+	table->PutBoolean("status/driverMode", driverMode);
+	table->PutNumber("status/fpsLimit", fpsLimit);
 }
 
 bool NetworkTablesSink::IsConnected() const

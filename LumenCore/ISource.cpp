@@ -71,6 +71,7 @@ void ISource::UnregisterFrameConsumer(const std::string& sinkId)
 
 bool ISource::HasActiveFrameConsumer() const
 {
+	if (m_FrameRequests > 0) return true;
 	std::lock_guard<std::mutex> guard(m_FrameConsumersMutex);
 	for (const auto& [id, consumer] : m_FrameConsumers) {
 		if (consumer.requiresFrame && consumer.isActive()) return true;
@@ -80,6 +81,7 @@ bool ISource::HasActiveFrameConsumer() const
 
 bool ISource::HasActiveColorFrameConsumer() const
 {
+	if (m_FrameRequests > 0) return true;
 	std::lock_guard<std::mutex> guard(m_FrameConsumersMutex);
 	for (const auto& [id, consumer] : m_FrameConsumers) {
 		if (consumer.requiresFrame && consumer.requiresColor && consumer.isActive()) return true;
@@ -89,9 +91,19 @@ bool ISource::HasActiveColorFrameConsumer() const
 
 void ISource::SetLatestResult(SourceResult result)
 {
+	const bool hasFrame = result.frame.has_value();
 	{
 		std::lock_guard<std::mutex> guard(m_ResultLock);
 		result.producedTimeUs = SourceResult::NowUs();
+
+		// FPS limiter: drop a result that follows the last published one by less than ~the limit's interval (the 0.9
+		// keeps a source running exactly at the limit from losing every other frame to timing jitter)
+		const int fpsLimit = m_FpsLimit;
+		if (fpsLimit > 0 && m_LastPublishedUs != 0 &&
+			static_cast<double>(result.producedTimeUs - m_LastPublishedUs) < 0.9 * 1'000'000.0 / fpsLimit) {
+			return;
+		}
+		m_LastPublishedUs = result.producedTimeUs;
 		// a producer without an explicit capture timestamp gets producedTimeUs as captureTimeUs (see SourceResult.h)
 		if (result.captureTimeUs == 0) result.captureTimeUs = result.producedTimeUs;
 		result.frameNumber = m_FrameCount + 1; // matches the m_FrameCount++ below
@@ -100,6 +112,7 @@ void ISource::SetLatestResult(SourceResult result)
 		// bumped here on every published result rather than in each subclass.
 		m_FrameCount++;
 	}
+	if (hasFrame) m_FrameRequests = 0;
 
 	// notify bound sinks outside the result lock so a listener can safely call back
 	// into this source (e.g. GetLatestResult) without deadlocking

@@ -273,3 +273,58 @@ TEST_CASE("NetworkTablesSink publishes both pose solutions, ambiguity and captur
 	client.StopClient();
 	server.StopServer();
 }
+
+TEST_CASE("NetworkTablesSink surfaces the robot's fps, snapshot and LED requests and publishes status read-backs", "[nt4]") {
+	constexpr unsigned int TEST_NT3_PORT = 17841;
+	constexpr unsigned int TEST_NT4_PORT = 17842;
+
+	nt::NetworkTableInstance server = nt::NetworkTableInstance::Create();
+	server.StartServer("", "127.0.0.1", TEST_NT3_PORT, TEST_NT4_PORT);
+
+	auto logger = std::make_shared<Logger>("LumenCoreTests-nt4-controls.log");
+	NetworkTablesConfig config;
+	config.serverAddress = "127.0.0.1";
+	config.port = TEST_NT4_PORT;
+	config.rootTable = "lumenvision";
+	config.clientIdentity = "LumenCoreTests-nt4-controls-sink";
+	auto ntSink = std::make_shared<NetworkTablesSink>(logger, "nt4-controls-sink", config);
+	ntSink->SetNodeAlias("node-7", "front");
+
+	REQUIRE(ntSink->PollLedRequest() == -2);
+
+	nt::NetworkTableInstance robot = nt::NetworkTableInstance::Create();
+	robot.SetServer("127.0.0.1", TEST_NT4_PORT);
+	robot.StartClient4("LumenCoreTests-nt4-controls-robot");
+	auto front = robot.GetTable("lumenvision/front");
+	front->PutNumber("config/fpsLimit", 15);
+	front->PutNumber("config/inputSnapshot", 1);
+	front->PutNumber("config/outputSnapshot", 1);
+	robot.GetTable("lumenvision")->PutNumber("config/ledMode", 2);
+
+	nlohmann::json requests;
+	REQUIRE(WaitUntil([&] {
+		requests = nlohmann::json::parse(ntSink->PollConfigRequests(), nullptr, false);
+		return !requests.is_discarded() && !requests.empty() && requests[0].size() >= 4;
+	}));
+	// the robot addressed the camera by name; the request comes back keyed by the node id behind it
+	REQUIRE(requests[0]["sourceId"] == "node-7");
+	REQUIRE(requests[0]["fpsLimit"] == 15);
+	REQUIRE(requests[0]["inputSnapshots"] == 1);
+	REQUIRE(requests[0]["outputSnapshots"] == 1);
+
+	int led = -2;
+	REQUIRE(WaitUntil([&] { led = ntSink->PollLedRequest(); return led != -2; }));
+	REQUIRE(led == 2);
+	REQUIRE(ntSink->PollLedRequest() == -2);
+
+	ntSink->PublishNodeStatus("node-7", 3, true, 15);
+	ntSink->SetLedStatus(2);
+	REQUIRE(WaitUntil([&] { return front->GetNumber("status/pipelineIndex", -1.0) == 3.0; }));
+	// NT4 has no cross-topic ordering, so each read-back is awaited on its own
+	REQUIRE(WaitUntil([&] { return front->GetBoolean("status/driverMode", false); }));
+	REQUIRE(WaitUntil([&] { return front->GetNumber("status/fpsLimit", -1.0) == 15.0; }));
+	REQUIRE(WaitUntil([&] { return robot.GetTable("lumenvision")->GetNumber("status/ledMode", -5.0) == 2.0; }));
+
+	robot.StopClient();
+	server.StopServer();
+}

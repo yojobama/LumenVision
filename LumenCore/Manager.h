@@ -92,6 +92,12 @@ public:
 	// saves sourceId's most recently published frame to a file (format from the extension, via cv::imwrite). Returns false if no frame
 	// was published yet or the write fails; throws only if sourceId doesn't exist.
 	bool SaveSnapshot(int sourceId, string path);
+	// Like SaveSnapshot, but asks the node for a new frame first (colour, and annotated for a detector) and waits up to a second for it,
+	// so it works with nothing streaming that node. Falls back to its latest frame if none arrives (e.g. the source is stopped).
+	bool SaveFreshSnapshot(int sourceId, string path);
+	// Caps how many results per second the node publishes (<= 0: unlimited); see ISource::SetFpsLimit
+	void SetSourceFpsLimit(int sourceId, int fps);
+	int GetSourceFpsLimit(int sourceId);
 	int CreateVideoFileSource(string path, int fps);
 	int CreateVideoFileSource(string path, int fps, int id);
 	int CreateImageFileSource(string path);
@@ -244,6 +250,11 @@ public:
 	int PollNetworkTablesSinkRecordingRequest(int sinkId);
 	// publishes "<root>/status/recording" on that sink's NT connection
 	void SetNetworkTablesSinkRecordingStatus(int sinkId, bool recording);
+	// the coprocessor-wide robot-writable "<root>/config/ledMode": -2 = no new write since the last call, else -1 default / 0 off / 1 on / 2 blink
+	int PollNetworkTablesSinkLedRequest(int sinkId);
+	void SetNetworkTablesSinkLedStatus(int sinkId, int mode);
+	// publishes "<root>/<node>/status/{pipelineIndex,driverMode,fpsLimit}" (see NetworkTablesSink::PublishNodeStatus)
+	void SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int pipelineIndex, bool driverMode, int fpsLimit);
 	// publishes a node's topics under `alias` instead of its id (see NetworkTablesSink::SetNodeAlias); "" clears it
 	void SetNetworkTablesSinkNodeAlias(int sinkId, string nodeId, string alias);
 

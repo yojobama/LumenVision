@@ -4,6 +4,7 @@
 #include "ISink.h"
 #include <networktables/NetworkTableInstance.h>
 #include <networktables/BooleanTopic.h>
+#include <networktables/IntegerTopic.h>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -44,9 +45,19 @@ public:
 	// small JSON status blob (connected, server, identity, latency)
 	std::string GetConnectionStatus() const;
 
-	// Drains "<sourceId>/config/pipelineIndex" and ".../driverMode" writes since the last call as a JSON
-	// array of {"sourceId", "pipelineIndex"?, "driverMode"?}; each request is returned once.
+	// Drains "<sourceId>/config/pipelineIndex", ".../driverMode", ".../fpsLimit", ".../inputSnapshot" and ".../outputSnapshot" writes
+	// since the last call as a JSON array of {"sourceId", "pipelineIndex"?, "driverMode"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?};
+	// the snapshot fields count the writes seen (each write is one request, whatever its value); each request is returned once.
 	std::string PollConfigRequests();
+
+	// Drains the coprocessor-wide robot-writable "<rootTable>/config/ledMode": -2 if unwritten since the last call, else the written
+	// value (-1 default, 0 off, 1 on, 2 blink).
+	int PollLedRequest();
+	// Publishes "<rootTable>/status/ledMode": the LED mode actually applied.
+	void SetLedStatus(int mode);
+	// Publishes "<rootTable>/<node>/status/{pipelineIndex,driverMode,fpsLimit}": the settings actually in effect, so robot code can read
+	// them back without a separate request.
+	void PublishNodeStatus(const std::string& nodeId, int pipelineIndex, bool driverMode, int fpsLimit);
 
 	// Drains the coprocessor-wide "<rootTable>/config/recording" boolean: -1 if unwritten since the last
 	// call, else 0/1. Desired state, not a toggle.
@@ -89,12 +100,17 @@ private:
 	struct PendingConfigRequest {
 		std::optional<int> pipelineIndex;
 		std::optional<bool> driverMode;
+		std::optional<int> fpsLimit;
+		int inputSnapshots = 0;
+		int outputSnapshots = 0;
 	};
 	// guarded by m_ConfigMutex; OnConfigValueChanged runs on ntcore's listener thread
 	std::unordered_map<std::string, PendingConfigRequest> m_PendingConfig;
 	std::optional<bool> m_PendingRecording; // guarded by m_ConfigMutex too
+	std::optional<int> m_PendingLed;        // guarded by m_ConfigMutex too
 
 	nt::BooleanPublisher m_RecordingStatusPublisher;
+	nt::IntegerPublisher m_LedStatusPublisher;
 };
 
 #endif // LUMEN_WITH_NT4

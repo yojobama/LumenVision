@@ -43,6 +43,15 @@ public:
 	// true if at least one bound, active consumer needs its frame in COLOUR (WebRTC/Mjpeg/Record; see ISink requireColor).
 	// ApriltagDetector opts out since it only calls AsGray(), letting CameraSource request a straight-to-gray decode.
 	bool HasActiveColorFrameConsumer() const;
+
+	// Publishes at most `fps` results per second (<= 0: unlimited); the rest are dropped in SetLatestResult, so a detector
+	// downstream does no work for them. Capture itself is not slowed, which keeps the frames that do get through fresh.
+	void SetFpsLimit(int fps) { m_FpsLimit = fps; }
+	int GetFpsLimit() const { return m_FpsLimit; }
+
+	// Makes HasActiveFrameConsumer/HasActiveColorFrameConsumer true until the next published result that carries a frame, so a
+	// detector draws its annotated output (and a camera decodes colour) for one snapshot even with nothing streaming it.
+	void RequestFrameOnce() { m_FrameRequests++; }
 protected:
 	void SetLatestResult(SourceResult result);
 	// Written under m_ResultLock (SetLatestResult) but read without it by GetCurrentFrameCount() from another thread.
@@ -73,6 +82,10 @@ private:
 	};
 	mutable std::mutex m_FrameConsumersMutex;
 	std::unordered_map<std::string, FrameConsumer> m_FrameConsumers;
+
+	std::atomic<int> m_FpsLimit{ -1 };
+	std::atomic<int> m_FrameRequests{ 0 };
+	uint64_t m_LastPublishedUs = 0; // guarded by m_ResultLock
 
 	std::string m_ID;
 };

@@ -600,6 +600,41 @@ bool Manager::SaveSnapshot(int sourceId, string path)
     return ok;
 }
 
+bool Manager::SaveFreshSnapshot(int sourceId, string path)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    if (sourceIt == m_Sources.end()) {
+        throw std::runtime_error("SaveFreshSnapshot: no source with id=" + std::to_string(sourceId));
+    }
+
+    std::shared_ptr<ISource> source = sourceIt->second;
+    const uint64_t framesBefore = source->GetCurrentFrameCount();
+    source->RequestFrameOnce();
+    for (int waitedMs = 0; waitedMs < 1000; waitedMs += 10) {
+        if (source->GetCurrentFrameCount() > framesBefore) {
+            SourceResult fresh = source->GetLatestResult();
+            if (fresh.frame.has_value() && !fresh.frame->empty()) break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return SaveSnapshot(sourceId, path);
+}
+
+void Manager::SetSourceFpsLimit(int sourceId, int fps)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    if (sourceIt == m_Sources.end()) {
+        throw std::runtime_error("SetSourceFpsLimit: no source with id=" + std::to_string(sourceId));
+    }
+    sourceIt->second->SetFpsLimit(fps);
+}
+
+int Manager::GetSourceFpsLimit(int sourceId)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    return sourceIt == m_Sources.end() ? -1 : sourceIt->second->GetFpsLimit();
+}
+
 int Manager::CreateVideoFileSource(string path, int fps)
 {
     m_Logger->EnterLog("CreateVideoFileSource called with path=" + path);
@@ -1378,6 +1413,30 @@ void Manager::SetNetworkTablesSinkRecordingStatus(int sinkId, bool recording)
         p_NtSink->SetRecordingStatus(recording);
 }
 
+int Manager::PollNetworkTablesSinkLedRequest(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return -2;
+    NetworkTablesSink* p_NtSink = dynamic_cast<NetworkTablesSink*>(sink->second.get());
+    return p_NtSink ? p_NtSink->PollLedRequest() : -2;
+}
+
+void Manager::SetNetworkTablesSinkLedStatus(int sinkId, int mode)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return;
+    if (NetworkTablesSink* p_NtSink = dynamic_cast<NetworkTablesSink*>(sink->second.get()))
+        p_NtSink->SetLedStatus(mode);
+}
+
+void Manager::SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int pipelineIndex, bool driverMode, int fpsLimit)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return;
+    if (NetworkTablesSink* p_NtSink = dynamic_cast<NetworkTablesSink*>(sink->second.get()))
+        p_NtSink->PublishNodeStatus(nodeId, pipelineIndex, driverMode, fpsLimit);
+}
+
 void Manager::SetNetworkTablesSinkNodeAlias(int sinkId, string nodeId, string alias)
 {
     auto sink = m_Sinks.find(sinkId);
@@ -1408,6 +1467,9 @@ string Manager::PollNetworkTablesSinkConfigRequests(int) { return "[]"; }
 int Manager::PollNetworkTablesSinkRecordingRequest(int) { return -1; }
 void Manager::SetNetworkTablesSinkRecordingStatus(int, bool) {}
 void Manager::SetNetworkTablesSinkNodeAlias(int, string, string) {}
+int Manager::PollNetworkTablesSinkLedRequest(int) { return -2; }
+void Manager::SetNetworkTablesSinkLedStatus(int, int) {}
+void Manager::SetNetworkTablesSinkNodeStatus(int, string, int, bool, int) {}
 #endif
 
 // Declared unconditionally with an #ifdef'd body, as in the NT4 block above.
