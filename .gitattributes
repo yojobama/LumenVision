@@ -3,3 +3,4 @@
 # Debian maintainer scripts: a shebang with a trailing CR is rejected by dpkg
 scripts/deb/postinst text eol=lf
 scripts/deb/prerm text eol=lf
+scripts/deb/postrm text eol=lf
