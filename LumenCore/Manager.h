@@ -78,6 +78,8 @@ public:
 	bool SetCameraControl(int sourceId, int controlId, int value);
 	// the LumenCore build's version (the project version it was compiled from), as published on NetworkTables' ".version" topic
 	string GetLumenCoreVersion();
+	// How big each log file may grow before it rotates and how many rotated copies are kept (every Logger, including this one's); see Logger::SetRotation.
+	void SetLogRotation(long long maxFileBytes, int filesKept);
 	// Crops, rotates and flips the frames a camera publishes; identity (the default FrameTransform) removes it. A change shows in the next frame.
 	void SetCameraTransform(int sourceId, FrameTransform transform);
 	FrameTransform GetCameraTransform(int sourceId);

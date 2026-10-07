@@ -5,6 +5,8 @@
 #include <iostream>
 #include <mutex>
 #include <memory>
+#include <atomic>
+#include <cstdint>
 #include <fstream>
 
 enum class LogLevel {
@@ -38,6 +40,14 @@ private:
 
 class Logger {
 public:
+	// How big a log file may grow before it is rotated (name -> name.1 -> name.2 ...), and how many rotated files are kept. Shared by every
+	// Logger, adjustable at any time; the defaults keep a file under 10 MB and three older ones (about 40 MB per log in total).
+	static void SetRotation(int64_t maxFileBytes, int filesKept);
+	static int64_t GetMaxFileBytes();
+	static int GetFilesKept();
+
+	// Logging is a file, never stdout: a log file that has grown past the size limit before this process started (one written before rotation existed)
+	// is cut down to its newest lines when the Logger first opens it.
     Logger();
     Logger(std::string filePath);
     ~Logger();
@@ -47,7 +57,12 @@ public:
     void ClearAllLogs();
     void FlushLogs();
 private:
+    // closes the file and shifts name -> name.1 -> ... once it is over the size limit; the caller holds m_ResultLock
+    void RotateIfNeededLocked();
+    void TrimOversizedFileLocked();
+
     std::string m_FilePath;
+    bool m_Trimmed = false;
     std::recursive_mutex m_ResultLock;
     std::vector<Log*> m_Logs;
     // opened once (append mode) rather than on every FlushLogs() call

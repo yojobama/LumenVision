@@ -472,9 +472,26 @@ export interface DeviceLedSettings {
   Line: number;
   ActiveLow: boolean;
 }
+// mirrors Server/LogRetention.cs's LogSettings: how much log history the device keeps
+export interface DeviceLogSettings {
+  MaxFileMb: number;
+  FilesKept: number;
+  ServerBudgetMb: number;
+  KeepDays: number;
+}
 export interface DeviceSettingsData {
   Led: DeviceLedSettings;
   NetworkTables: DeviceNetworkTablesSettings;
+  Logs: DeviceLogSettings;
+}
+
+// mirrors Server/LogRetention.cs's LogUsage (bytes)
+export interface LogUsage {
+  CoreBytes: number;
+  DatabaseBytes: number;
+  ServerBytes: number;
+  TotalBytes: number;
+  Files: number;
 }
 
 // mirrors Server/NetworkService.cs

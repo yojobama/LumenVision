@@ -518,6 +518,11 @@ CameraCalibrationResult Manager::TransformCameraCalibration(CameraCalibrationRes
     return TransformCalibration(calibration, transform);
 }
 
+void Manager::SetLogRotation(long long maxFileBytes, int filesKept)
+{
+    Logger::SetRotation(maxFileBytes, filesKept);
+}
+
 string Manager::GetLumenCoreVersion()
 {
 #ifdef LUMEN_VERSION_STRING

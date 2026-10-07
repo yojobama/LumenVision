@@ -43,6 +43,20 @@ namespace Server.Controllers
             return Task.FromResult(LogHub.Instance.Recent(lines, ParseLevel(level), ParseSince(since)).ToArray());
         }
 
+        // GET: how much disk each kind of log uses
+        [HttpGet("log/usage")]
+        public Task<LogUsage> Usage()
+        {
+            return Task.FromResult(LogRetention.Usage(Directory.GetCurrentDirectory(), LogHub.Instance));
+        }
+
+        // DELETE: erase every log (the server's files, LumenCore's and the store's, including their rotated copies); returns how many files it touched
+        [HttpDelete("log")]
+        public Task<int> Clear()
+        {
+            return Task.FromResult(LogRetention.Clear(Directory.GetCurrentDirectory(), LogHub.Instance));
+        }
+
         // GET: every log file as one ZIP (the daily files under logs/ plus LumenCore's and the store's own logs)
         [HttpGet("log/download")]
         public async Task<IActionResult> Download()
@@ -51,7 +65,7 @@ namespace Server.Controllers
             await using (var file = new FileStream(temporary, FileMode.Create, FileAccess.ReadWrite))
             using (var zip = new ZipArchive(file, ZipArchiveMode.Create, leaveOpen: false))
             {
-                foreach (string path in LogHub.Instance.File.Files().Concat(new[] { "LumenVision.log", "DBLog.txt" }.Where(System.IO.File.Exists)))
+                foreach (string path in LogHub.Instance.File.Files().Concat(LogRetention.NativeFiles(Directory.GetCurrentDirectory())))
                 {
                     ZipArchiveEntry entry = zip.CreateEntry(Path.GetFileName(path), CompressionLevel.Optimal);
                     await using Stream destination = entry.Open();

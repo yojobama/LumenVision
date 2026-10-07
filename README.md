@@ -287,6 +287,11 @@ The Settings page (`/settings`) manages the coprocessor itself. Everything is st
   install it. The install runs as root in its own systemd unit, so it survives the server restarting, and its output is shown on the page.
 - **Logs**: the server's own output, LumenCore's log and the store's log are gathered in one place (`GET /api/log/tail|entries|download` with `level` and
   `since` filters, `/ws/logs` live) and written to daily files under `logs/`. Press the backtick key anywhere in the UI for the log drawer.
+  **Nothing is logged to stdout**, every log call is kept, and disk use is bounded: LumenCore's and the store's log files (`LumenVision.log`,
+  `DBLog.txt`) rotate at 10 MB keeping 3 older copies each, a file that outgrew that before this existed is cut to its newest lines at start, and
+  the server's `logs/` folder rolls into numbered parts at 10 MB, deletes the oldest files beyond a 50 MB budget and keeps 7 days. All four
+  numbers are under Settings -> Logs, which also shows the disk use and can clear every log (`GET /api/log/usage`, `DELETE /api/log`). The package
+  also caps the systemd journal at 20 MB.
 - **Accelerators and version**: GPU, memory-controller and NPU frequency, governor and load on the Dashboard and Match pages (from devfreq; the NPU's
   load is read from `/sys/kernel/debug/rknpu/load` as root), and the server, LumenCore and operating system versions under About.
 

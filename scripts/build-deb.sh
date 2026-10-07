@@ -39,7 +39,7 @@ DEB_FILE="$REPO_ROOT/${PKG_NAME}_${VERSION}_${DEB_ARCH}.deb"
 echo "==> Cleaning previous stage"
 rm -rf "$STAGE_DIR" "$DEB_FILE"
 mkdir -p "$STAGE_DIR/DEBIAN" "$STAGE_DIR/opt/lumenvision" \
-         "$STAGE_DIR/etc/systemd/system" "$STAGE_DIR/etc/udev/rules.d"
+         "$STAGE_DIR/etc/systemd/system" "$STAGE_DIR/etc/udev/rules.d" "$STAGE_DIR/etc/systemd/journald.conf.d"
 
 echo "==> Building webui"
 (cd webui && npm ci && npm run build)
@@ -66,6 +66,7 @@ cp -r webui/dist/. "$STAGE_DIR/opt/lumenvision/wwwroot/"
 chmod +x "$STAGE_DIR/opt/lumenvision/Server"
 
 cp scripts/lumenvision.service "$STAGE_DIR/etc/systemd/system/lumenvision.service"
+cp scripts/journald-lumenvision.conf "$STAGE_DIR/etc/systemd/journald.conf.d/lumenvision.conf"
 
 # Same device permissions as install-deps.sh --with-mpp
 cat > "$STAGE_DIR/etc/udev/rules.d/99-lumenvision-rockchip.rules" <<'EOF'

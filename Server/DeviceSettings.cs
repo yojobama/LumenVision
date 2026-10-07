@@ -32,6 +32,7 @@ namespace Server
     {
         public LedSettings Led { get; set; } = new LedSettings();
         public NetworkTablesSettings NetworkTables { get; set; } = new NetworkTablesSettings();
+        public LogSettings Logs { get; set; } = new LogSettings();
     }
 
     // Device-level settings persisted to settings.json next to the server.
@@ -78,6 +79,8 @@ namespace Server
             if (nt.Port < 0 || nt.Port > 65535) return "the port must be 0 to 65535";
             if (!IsTopicName(nt.RootTable)) return "the root table may only contain letters, digits, '-', '_' and '.'";
             if (!IsTopicName(nt.ClientIdentity)) return "the client identity may only contain letters, digits, '-', '_' and '.'";
+            string? logProblem = LogRetention.Validate(candidate.Logs ?? new LogSettings());
+            if (logProblem != null) return logProblem;
             LedSettings led = candidate.Led ?? new LedSettings();
             if (led.Chip < 0 || led.Line < 0) return "the LED chip and line must not be negative";
             return null;

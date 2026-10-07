@@ -45,6 +45,7 @@ namespace Server.Controllers
             DeviceSettings.Instance.Replace(next);
             if (ntChanged) SinkManager.Instance.ReapplyNetworkTablesSettings();
             LedController.Instance.SettingsChanged();
+            LogRetention.Apply(next.Logs ?? new LogSettings(), LogHub.Instance);
             return next;
         }
     }

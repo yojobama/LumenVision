@@ -8,6 +8,7 @@ import { PowerSection } from '../components/PowerSection';
 import { DataSection } from '../components/DataSection';
 import { AboutSection } from '../components/AboutSection';
 import { UpdateSection } from '../components/UpdateSection';
+import { LogRetentionSection } from '../components/LogRetentionSection';
 
 const api = new ApiService();
 
@@ -98,6 +99,8 @@ export const SettingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error
               </div>
             )}
           </SettingsSection>
+
+          <LogRetentionSection logs={settings.Logs} onChange={logs => setSettings({ ...settings, Logs: logs })} onToast={onToast} />
 
           <div className="flex justify-end">
             <button onClick={save} disabled={saving} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">

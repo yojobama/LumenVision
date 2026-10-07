@@ -14,12 +14,15 @@ namespace Server
     public sealed class ConsoleTee : TextWriter
     {
         private readonly TextWriter original;
+        private readonly bool passThrough;
         private readonly LogHub hub;
         private readonly LogSeverity level;
         private readonly StringBuilder line = new StringBuilder();
 
-        public ConsoleTee(TextWriter original, LogHub hub, LogSeverity level)
+        // passThrough false: the text goes to the hub (and so to the log files) only, never to the process's stdout
+        public ConsoleTee(TextWriter original, LogHub hub, LogSeverity level, bool passThrough = true)
         {
+            this.passThrough = passThrough;
             this.original = original;
             this.hub = hub;
             this.level = level;
@@ -29,7 +32,7 @@ namespace Server
 
         public override void Write(char value)
         {
-            original.Write(value);
+            if (passThrough) original.Write(value);
             lock (line)
             {
                 if (value == '\n') Emit();
@@ -40,7 +43,7 @@ namespace Server
         public override void Write(string? value)
         {
             if (value == null) return;
-            original.Write(value);
+            if (passThrough) original.Write(value);
             lock (line)
             {
                 foreach (char c in value)
@@ -51,7 +54,7 @@ namespace Server
             }
         }
 
-        public override void Flush() => original.Flush();
+        public override void Flush() { if (passThrough) original.Flush(); }
 
         // ASP.NET's console logger prints "info: Category[0]" plus an indented message; those arrive through LogHubLoggerProvider instead
         // under systemd the console logger prints "<6>Category[0] message" (a syslog priority prefix) instead
@@ -176,7 +179,7 @@ namespace Server
             {
                 if (text.Length == 0) continue;
                 var (level, message) = ParseLine(text);
-                hub.Add(level, source, message);
+                hub.Add(level, source, message, persist: false); // already in its own file
                 added++;
             }
             position = stream.Length;

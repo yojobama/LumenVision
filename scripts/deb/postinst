@@ -32,6 +32,9 @@ case "$1" in
             echo "lumenvision: could not validate the sudoers rule; device settings that need root will not work" >&2
         fi
 
+        # picks up the journal size limit packaged in journald.conf.d
+        systemctl restart systemd-journald || true
+
         systemctl daemon-reload
         systemctl enable lumenvision.service
         # restart so an upgrade picks up the new binary

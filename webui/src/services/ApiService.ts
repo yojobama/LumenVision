@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -1090,6 +1090,19 @@ export class ApiService {
   // Log entries from the server, LumenCore and the store (see /ws/logs for the live feed); level is the minimum: debug, info, warning or error
   async getLogEntries(lines: number, level: string): Promise<LogEntry[]> {
     const response = await fetch(`${this.baseUrl}/log/entries?lines=${lines}&level=${level}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async getLogUsage(): Promise<LogUsage> {
+    const response = await fetch(`${this.baseUrl}/log/usage`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Erases every log; resolves to how many files it touched
+  async clearLogs(): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/log`, { method: 'DELETE' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }

@@ -111,6 +111,8 @@ TEST_CASE("NetworkTablesSink publishes the real NT4 schema end to end over a loo
 
 	client.StopClient();
 	server.StopServer();
+	nt::NetworkTableInstance::Destroy(client);
+	nt::NetworkTableInstance::Destroy(server);
 }
 
 TEST_CASE("NetworkTablesSink surfaces robot-writable config/pipelineIndex and config/driverMode writes", "[nt4]") {
@@ -153,6 +155,8 @@ TEST_CASE("NetworkTablesSink surfaces robot-writable config/pipelineIndex and co
 
 	robot.StopClient();
 	server.StopServer();
+	nt::NetworkTableInstance::Destroy(robot);
+	nt::NetworkTableInstance::Destroy(server);
 }
 
 TEST_CASE("NetworkTablesSink surfaces the robot's config/recording request and publishes status/recording", "[nt4]") {
@@ -199,6 +203,8 @@ TEST_CASE("NetworkTablesSink surfaces the robot's config/recording request and p
 
 	robot.StopClient();
 	server.StopServer();
+	nt::NetworkTableInstance::Destroy(robot);
+	nt::NetworkTableInstance::Destroy(server);
 }
 
 TEST_CASE("NetworkTablesSink publishes both pose solutions, ambiguity and capture-time stamps for a calibrated detector", "[nt4][e2e]") {
@@ -272,6 +278,8 @@ TEST_CASE("NetworkTablesSink publishes both pose solutions, ambiguity and captur
 
 	client.StopClient();
 	server.StopServer();
+	nt::NetworkTableInstance::Destroy(client);
+	nt::NetworkTableInstance::Destroy(server);
 }
 
 TEST_CASE("NetworkTablesSink surfaces the robot's fps, snapshot and LED requests and publishes status read-backs", "[nt4]") {
@@ -327,6 +335,8 @@ TEST_CASE("NetworkTablesSink surfaces the robot's fps, snapshot and LED requests
 
 	robot.StopClient();
 	server.StopServer();
+	nt::NetworkTableInstance::Destroy(robot);
+	nt::NetworkTableInstance::Destroy(server);
 }
 
 // A NetworkTablesSink the server rebuilds in place (the NT settings changed) must keep publishing its bound detector's results.
@@ -337,8 +347,8 @@ TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bo
 	cv::Mat bgr;
 	cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);
 
-	constexpr unsigned int NT3_PORT = 17811;
-	constexpr unsigned int NT4_PORT = 17812;
+	constexpr unsigned int NT3_PORT = 17851;
+	constexpr unsigned int NT4_PORT = 17852;
 	nt::NetworkTableInstance server = nt::NetworkTableInstance::Create();
 	server.StartServer("", "127.0.0.1", NT3_PORT, NT4_PORT);
 	nt::NetworkTableInstance client = nt::NetworkTableInstance::Create();
@@ -365,6 +375,9 @@ TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bo
 	static_cast<ISink&>(*ntSink).Toggle(true);
 	REQUIRE(WaitUntil([&] { return detectorTable->GetNumberArray("tags/ids", {}).size() > 0; }, 200, 50));
 
+	REQUIRE(WaitUntil([&] { return clientTable->GetString(".status", "").find("uptimeSeconds") != std::string::npos; }, 200, 50));
+	const double uptimeBeforeRebuild = nlohmann::json::parse(clientTable->GetString(".status", "{}"), nullptr, false).value("uptimeSeconds", 1e9) + 0.5;
+
 	// rebuilt the way Manager::DeleteSink + CreateNetworkTablesSinkForServer(id, ...) do it: the old sink is toggled off and destroyed first
 	static_cast<ISink&>(*ntSink).Toggle(false);
 	ntSink.reset();
@@ -373,14 +386,20 @@ TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bo
 	REQUIRE(ntSink->BindSource(detector));
 	static_cast<ISink&>(*ntSink).Toggle(true);
 
-	// the old sink's values are gone with its client; only the rebuilt sink can publish them again
-	REQUIRE(WaitUntil([&] { return clientTable->GetNumber("heartbeat", -1.0) >= 0.0; }, 200, 50));
-	detectorTable->GetEntry("tags/ids").SetDoubleArray({});
-	REQUIRE(WaitUntil([&] { return detectorTable->GetNumberArray("tags/ids", {}).size() > 0; }, 200, 50));
+	// the rebuilt sink publishes its own ".status" (uptime restarts at zero, nodeCount is how many bound nodes' results it processed), so a status that
+	// is younger than the old sink's and counts a node proves the new sink is processing the detector's results
+	auto status = [&] { return nlohmann::json::parse(clientTable->GetString(".status", "{}"), nullptr, false); };
+	REQUIRE(WaitUntil([&] {
+		nlohmann::json s = status();
+		return s.is_object() && s.value("uptimeSeconds", 1e9) < uptimeBeforeRebuild && s.value("nodeCount", 0) >= 1;
+	}, 200, 50));
+	REQUIRE(detectorTable->GetNumberArray("tags/ids", {}).size() > 0);
 
 	static_cast<ISink&>(*ntSink).Toggle(false);
 	static_cast<ISink&>(*detector).Toggle(false);
 	imageSource->Toggle(false);
 	client.StopClient();
 	server.StopServer();
+	nt::NetworkTableInstance::Destroy(client);
+	nt::NetworkTableInstance::Destroy(server);
 }

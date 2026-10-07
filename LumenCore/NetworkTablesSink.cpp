@@ -171,6 +171,8 @@ NetworkTablesSink::~NetworkTablesSink()
 {
 	m_Instance.RemoveListener(m_ConfigListener);
 	m_Instance.StopClient();
+	// ntcore allows a small fixed number of instances; a sink rebuilt on every settings change would exhaust them
+	nt::NetworkTableInstance::Destroy(m_Instance);
 }
 
 void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
