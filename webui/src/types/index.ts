@@ -197,6 +197,7 @@ export interface DeviceStats {
   cpuUsage: number;
   ramUsage: number;
   diskUsage: number;
+  accelerators: AcceleratorInfo[];
 }
 
 // --- Stereo depth ---
@@ -350,11 +351,21 @@ export interface WsNodeStats {
   Fps: number;
   LatencyUs: number;
 }
+// mirrors Server/AcceleratorMonitor.cs: Kind is GPU, Memory, NPU or Other; LoadPercent is null when the driver reports none
+export interface AcceleratorInfo {
+  Kind: string;
+  Name: string;
+  FreqMhz: number;
+  MaxFreqMhz: number;
+  Governor: string;
+  LoadPercent: number | null;
+}
 export interface WsDeviceStats {
   CpuUsagePercent: number;
   RamUsageMb: number;
   DiskUsagePercent: number;
   TemperatureC: number;
+  Accelerators?: AcceleratorInfo[];
 }
 // mirrors Server/Dtos.cs's NetworkTablesStatusDto; the match view reads Connected from it
 export interface NetworkTablesStatus {

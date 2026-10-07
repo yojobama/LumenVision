@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import type { Source, Sink, SystemStats, DeviceStats } from '../types';
 import { StreamView } from '../components/StreamView';
+import { AcceleratorCards } from '../components/AcceleratorCards';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 
 const SystemStatus: React.FC<{ systemStats: SystemStats; deviceStats: DeviceStats }> = ({ systemStats, deviceStats }) => (
@@ -87,6 +88,8 @@ export const DashboardPage: React.FC<{
   return (
   <div className="space-y-6">
     <SystemStatus systemStats={systemStats} deviceStats={deviceStats} />
+
+    <AcceleratorCards accelerators={deviceStats.accelerators} />
 
     {/* Device Stats Row */}
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

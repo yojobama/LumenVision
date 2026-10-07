@@ -29,6 +29,13 @@ namespace Server.Controllers
             return Task.FromResult((int)LinuxResourceMonitor.Instance.GetLatestResourceInfo().RootDiskUsage.UsedPercent);
         }
 
+        // GET: frequency, governor and load of the GPU, memory controller and NPU where the board reports them (empty elsewhere)
+        [HttpGet("device/accelerators")]
+        public Task<AcceleratorInfo[]> GetAccelerators()
+        {
+            return Task.FromResult(AcceleratorMonitor.Instance.Latest);
+        }
+
         // GET: CPU temperature; one native call per request (not cached like the other device stats).
         [HttpGet("device/temperature")]
         public Task<int> GetDeviceTemperature()

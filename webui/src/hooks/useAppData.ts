@@ -80,6 +80,7 @@ export const useAppData = () => {
     cpuUsage: snapshot?.Device.CpuUsagePercent ?? 0,
     ramUsage: snapshot?.Device.RamUsageMb ?? 0,
     diskUsage: snapshot?.Device.DiskUsagePercent ?? 0,
+    accelerators: snapshot?.Device.Accelerators ?? [],
   }), [snapshot]);
 
   const systemStats: SystemStats = useMemo(() => ({

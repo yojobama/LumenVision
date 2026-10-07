@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 namespace Server.WebSockets
 {
     public record struct NodeStatsDto(double Fps, long LatencyUs);
-    public record struct DeviceStatsDto(int CpuUsagePercent, int RamUsageMb, int DiskUsagePercent, int TemperatureC);
+    public record struct DeviceStatsDto(int CpuUsagePercent, int RamUsageMb, int DiskUsagePercent, int TemperatureC, AcceleratorInfo[] Accelerators);
     public record struct SinkStateDto(Sink Sink, bool IsRunning);
     public record struct StateSnapshotDto(Source[] Sources, SinkStateDto[] Sinks, DeviceStatsDto Device, Dictionary<int, NodeStatsDto> NodeStats);
 
@@ -144,7 +144,8 @@ namespace Server.WebSockets
                 (int)resourceInfo.CpuUsagePercent,
                 (int)resourceInfo.UsedMemoryMB,
                 (int)resourceInfo.RootDiskUsage.UsedPercent,
-                ManagerWrapper.Instance.GetCpuTemperature());
+                ManagerWrapper.Instance.GetCpuTemperature(),
+                AcceleratorMonitor.Instance.Latest);
 
             return new StateSnapshotDto(sources, sinks, device, nodeStats);
         }

@@ -3,6 +3,7 @@ import { Gauge, Wifi, WifiOff, Thermometer, Cpu, HardDrive, MemoryStick, Circle,
 import { useStateSocket } from '../hooks/useStateSocket';
 import { ApiService } from '../services/ApiService';
 import { sinkTypeName } from '../graph/model';
+import { AcceleratorCards } from '../components/AcceleratorCards';
 import type { NetworkTablesStatus } from '../types';
 
 const api = new ApiService();
@@ -105,6 +106,8 @@ export const MatchPage: React.FC = () => {
           <div><div className="text-xs text-gray-500 dark:text-gray-400">Temperature</div><div className="text-lg font-bold text-gray-900 dark:text-white">{snapshot.Device.TemperatureC > 0 ? `${snapshot.Device.TemperatureC}°C` : '—'}</div></div>
         </div>
       </div>
+
+      <AcceleratorCards accelerators={snapshot.Device.Accelerators ?? []} compact />
 
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
         <table className="w-full text-sm">
