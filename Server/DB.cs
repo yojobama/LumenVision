@@ -112,6 +112,11 @@ namespace Server
                             SinkManager.Instance.RestoreApriltagSink(sink);
                         else if (sink.Type == SinkType.ObjectDetectionSink)
                             SinkManager.Instance.RestoreObjectDetectionSink(sink);
+                        else if (sink.Type == SinkType.NetworkTablesSink)
+                        {
+                            try { SinkManager.Instance.RestoreNetworkTablesSink(sink); }
+                            catch (Exception ex) { logger.EnterLog($"NetworkTables sink {sink.Id} not restored: {ex.Message}"); }
+                        }
                         else if (sink.Type == SinkType.MjpegSink)
                             SinkManager.Instance.RestoreMjpegSink(sink);
                         else if (sink.Type == SinkType.WebRTCSink)

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
-import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings, Model } from '../types';
+import type { WsSource, WsSink, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings, Model } from '../types';
 import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED, PipelineProfileKind } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
@@ -27,8 +27,7 @@ export const Inspector: React.FC<{
   onClose: () => void;
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   onDeleted: () => void;
-  nt4Settings: NT4Defaults;
-}> = ({ node, onClose, onToast, onDeleted, nt4Settings }) => {
+}> = ({ node, onClose, onToast, onDeleted }) => {
   const { kind, raw, webrtcSink, mjpegSink, nt4Sink, recordSink, isRunning } = node.data;
   const [name, setName] = useState(node.data.label);
   const [resultJson, setResultJson] = useState<string | null>(null);
@@ -366,17 +365,11 @@ export const Inspector: React.FC<{
         await api.toggleSink(nt4Sink.Sink.Id, !nt4Sink.IsRunning);
         return;
       }
-      if (nt4Settings.mode === 'team' && !nt4Settings.teamNumber) {
-        onToast('Set a NetworkTables team number in Settings first', 'error');
-        return;
-      }
-      const ntId = nt4Settings.mode === 'team'
-        ? await api.createNetworkTablesSinkForTeam(`${sink.Name}-nt4`, nt4Settings.teamNumber!, nt4Settings.rootTable)
-        : await api.createNetworkTablesSinkForServer(`${sink.Name}-nt4`, nt4Settings.serverAddress!, nt4Settings.port, nt4Settings.rootTable);
+      const ntId = await api.createNetworkTablesSinkFromSettings(`${sink.Name}-nt4`);
       await api.bindSinkToSource(ntId, sink.Id);
       await api.toggleSink(ntId, true);
-    } catch {
-      onToast('Failed to toggle NT4 publish', 'error');
+    } catch (error) {
+      onToast(error instanceof Error && error.message ? error.message : 'Failed to toggle NT4 publish', 'error');
     }
   };
 

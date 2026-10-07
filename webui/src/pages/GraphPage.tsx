@@ -16,13 +16,13 @@ import { BottomStrip } from '../graph/BottomStrip';
 import { AddSourceModal } from '../components/AddSourceModal';
 import { AddSinkModal } from '../components/AddSinkModal';
 import { deleteNode, duplicateNode } from '../graph/nodeActions';
-import type { AddSinkOptions, NodeTypesResponse, NT4Defaults, CameraHardwareInfo } from '../types';
+import type { AddSinkOptions, NodeTypesResponse, CameraHardwareInfo } from '../types';
 
 const api = new ApiService();
 
 // The pipeline graph: sources and graph-shaped sinks are nodes, edges are live bindings from
 // /ws/state, and dragging a connection performs the bind via REST.
-const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info') => void; nt4Settings: NT4Defaults; darkMode: boolean }> = ({ onToast, nt4Settings, darkMode }) => {
+const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info') => void; darkMode: boolean }> = ({ onToast, darkMode }) => {
   const { snapshot, connected } = useStateSocket();
   const [capabilities, setCapabilities] = useState<NodeTypesResponse | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNode>([]);
@@ -260,7 +260,6 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
           onClose={() => setSelectedId(null)}
           onToast={onToast}
           onDeleted={() => setSelectedId(null)}
-          nt4Settings={nt4Settings}
         />
       )}
 
@@ -270,7 +269,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   );
 };
 
-export const GraphPage: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info') => void; nt4Settings: NT4Defaults; darkMode: boolean }> = (props) => (
+export const GraphPage: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info') => void; darkMode: boolean }> = (props) => (
   <ReactFlowProvider>
     <GraphPageInner {...props} />
   </ReactFlowProvider>

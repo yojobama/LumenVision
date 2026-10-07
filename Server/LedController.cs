@@ -48,16 +48,19 @@ namespace Server
     {
         private static readonly TimeSpan BlinkPeriod = TimeSpan.FromMilliseconds(500);
 
-        public static LedController Instance { get; } = new LedController(OpenConfiguredOutput());
+        public static LedController Instance { get; } = new LedController(OpenConfiguredOutput(), followsSettings: true);
 
-        private readonly ILedOutput? output;
+        private ILedOutput? output;
+        // the shared instance re-opens its GPIO when the LED settings change; one built around a given output keeps it
+        private readonly bool followsSettings;
         private readonly object sync = new object();
         private readonly Timer blinkTimer;
         private bool blinkState;
 
-        public LedController(ILedOutput? output)
+        public LedController(ILedOutput? output, bool followsSettings = false)
         {
             this.output = output;
+            this.followsSettings = followsSettings;
             blinkTimer = new Timer(_ => Toggle(), null, Timeout.Infinite, Timeout.Infinite);
             Mode = LedMode.Default;
             Apply(false);
@@ -67,6 +70,21 @@ namespace Server
         public bool Available => output != null;
 
         public LedMode Mode { get; private set; }
+
+        // The LED settings changed: re-opens the GPIO (or releases it) and puts the current mode back on the new output.
+        public void SettingsChanged()
+        {
+            if (!followsSettings) return;
+            lock (sync)
+            {
+                ILedOutput? old = output;
+                output = null;
+                try { old?.Set(false); } catch (Exception) { /* the old line may already be gone */ }
+                old?.Dispose();
+                output = OpenConfiguredOutput();
+                Apply(Mode == LedMode.On || (Mode == LedMode.Blink && blinkState));
+            }
+        }
 
         public void SetMode(LedMode mode)
         {

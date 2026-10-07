@@ -445,3 +445,23 @@ export interface FieldLayoutInfo {
   Name: string;
   TagCount: number;
 }
+
+// mirrors Server/DeviceSettings.cs: how the coprocessor reaches the robot's NetworkTables server, and the LED GPIO
+export interface DeviceNetworkTablesSettings {
+  Mode: 'team' | 'server';
+  TeamNumber: number | null;
+  ServerAddress: string | null;
+  Port: number;
+  RootTable: string;
+  ClientIdentity: string;
+}
+export interface DeviceLedSettings {
+  Enabled: boolean;
+  Chip: number;
+  Line: number;
+  ActiveLow: boolean;
+}
+export interface DeviceSettingsData {
+  Led: DeviceLedSettings;
+  NetworkTables: DeviceNetworkTablesSettings;
+}

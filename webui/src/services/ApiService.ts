@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -978,6 +978,28 @@ export class ApiService {
 
   async uploadProfileFieldLayout(sourceId: number, index: number, json: string): Promise<number> {
     const response = await fetch(`${this.baseUrl}/source/profiles/fieldLayout?sourceId=${sourceId}&index=${index}`, { method: 'POST', body: json });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Device settings (settings.json on the coprocessor); a rejected value comes back as the server's explanation
+  async getDeviceSettings(): Promise<DeviceSettingsData> {
+    const response = await fetch(`${this.baseUrl}/device/settings`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async putDeviceSettings(settings: DeviceSettingsData): Promise<DeviceSettingsData> {
+    const response = await fetch(`${this.baseUrl}/device/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings),
+    });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // A NetworkTablesSink that connects the way the device's settings say
+  async createNetworkTablesSinkFromSettings(name: string): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/networkTablesSink/createFromSettings?name=${encodeURIComponent(name)}`, { method: 'POST' });
     if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
     return response.json();
   }

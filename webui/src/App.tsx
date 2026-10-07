@@ -32,7 +32,7 @@ import { CalibrationPage } from './pages/CalibrationPage';
 import { CalibrationWizardPage } from './pages/CalibrationWizardPage';
 import { StereoCalibrationWizardPage } from './pages/StereoCalibrationWizardPage';
 
-import type { SystemStats, Settings as SettingsType } from './types';
+import type { SystemStats } from './types';
 
 import { Toast } from './components/Toast';
 import { useAppData } from './hooks/useAppData';
@@ -117,6 +117,7 @@ const NAV_ITEMS = [
   { to: '/recordings', label: 'Recordings', icon: Film, end: false },
   { to: '/snapshots', label: 'Snapshots', icon: Camera, end: false },
   { to: '/models', label: 'Models', icon: Box, end: false },
+  { to: '/settings', label: 'Settings', icon: Settings, end: false },
 ];
 
 const Navigation: React.FC<{ streamingCount: number }> = ({ streamingCount }) => (
@@ -145,18 +146,6 @@ const Navigation: React.FC<{ streamingCount: number }> = ({ streamingCount }) =>
 function App() {
   const navigate = useNavigate();
   const [darkMode, setDarkMode] = useDarkMode();
-  const [settings, setSettingsState] = useState<SettingsType>(() => {
-    try {
-      const saved = localStorage.getItem('lumenSettings');
-      if (saved) return { ...JSON.parse(saved), serverUrl: window.location.origin };
-    } catch { /* ignore malformed/unavailable localStorage, fall through to defaults */ }
-    return { serverUrl: window.location.origin, nt4: { mode: 'team', rootTable: 'lumenvision' } };
-  });
-  // Persist NT4 connection details across reloads.
-  const setSettings = (next: SettingsType) => {
-    setSettingsState(next);
-    try { localStorage.setItem('lumenSettings', JSON.stringify(next)); } catch { /* ignore */ }
-  };
   const {
     sources,
     sinks,
@@ -191,7 +180,7 @@ function App() {
             <RefreshCw className="w-32 h-32 text-blue-600" />
           </div>
           <p className="text-gray-600 dark:text-gray-400 text-lg">Loading LumenVision...</p>
-          <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">Connecting to {settings.serverUrl}</p>
+          <p className="text-gray-500 dark:text-gray-500 text-sm mt-2">Connecting to {window.location.origin}</p>
         </div>
       </div>
     );
@@ -233,7 +222,7 @@ function App() {
                 onToggleSink={handleToggleSink}
               />
             } />
-            <Route path="/graph" element={<GraphPage onToast={showToast} nt4Settings={settings.nt4} darkMode={darkMode} />} />
+            <Route path="/graph" element={<GraphPage onToast={showToast} darkMode={darkMode} />} />
             <Route path="/stereo" element={
               <StereoPage sources={sources} sinks={sinks} onToast={showToast} onRefresh={loadData} />
             } />
@@ -241,7 +230,7 @@ function App() {
             <Route path="/recordings" element={<RecordingsPage onToast={showToast} />} />
             <Route path="/snapshots" element={<SnapshotsPage onToast={showToast} />} />
             <Route path="/models" element={<ModelsPage onToast={showToast} />} />
-            <Route path="/settings" element={<SettingsPage settings={settings} onSave={setSettings} />} />
+            <Route path="/settings" element={<SettingsPage onToast={showToast} />} />
             <Route path="/calibration" element={<CalibrationPage sources={sources} onToast={showToast} />} />
             <Route path="/calibration/stereo/:sessionId" element={<StereoCalibrationWizardPage onToast={showToast} />} />
             <Route path="/calibration/camera/:sessionId" element={<CalibrationWizardPage onToast={showToast} />} />

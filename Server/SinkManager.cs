@@ -672,6 +672,65 @@ namespace Server
             return id;
         }
 
+        // The native NetworkTablesSink for the device's saved NT settings (DeviceSettings), created under `id` when given.
+        private int CreateNativeNetworkTablesSink(int? id)
+        {
+            NetworkTablesSettings nt = DeviceSettings.Instance.Data.NetworkTables;
+            if (nt.Mode == "server")
+            {
+                return id.HasValue
+                    ? ManagerWrapper.Instance.CreateNetworkTablesSinkForServer(id.Value, nt.ServerAddress ?? "", nt.Port, nt.RootTable, nt.ClientIdentity)
+                    : ManagerWrapper.Instance.CreateNetworkTablesSinkForServer(nt.ServerAddress ?? "", nt.Port, nt.RootTable, nt.ClientIdentity);
+            }
+            if (nt.TeamNumber is not int team) throw Server.Web.ApiException.BadRequest("set a NetworkTables team number or server address in Settings first");
+            return id.HasValue
+                ? ManagerWrapper.Instance.CreateNetworkTablesSinkForTeam(id.Value, team, nt.RootTable, nt.ClientIdentity)
+                : ManagerWrapper.Instance.CreateNetworkTablesSinkForTeam(team, nt.RootTable, nt.ClientIdentity);
+        }
+
+        // creates a NetworkTablesSink that connects the way the device's Settings say
+        public int AddNetworkTablesSinkFromSettings(string name)
+        {
+            int id = CreateNativeNetworkTablesSink(null);
+            sinks.Add(new Sink(id, name, SinkType.NetworkTablesSink));
+            DB.Instance.Save();
+            return id;
+        }
+
+        // DB.Load() restore path: the same id, connecting the way the saved Settings say
+        public int RestoreNetworkTablesSink(Sink persisted)
+        {
+            int id = CreateNativeNetworkTablesSink(persisted.Id);
+            sinks.Add(new Sink(id, persisted.Name, SinkType.NetworkTablesSink));
+            return id;
+        }
+
+        // After the NT settings changed: rebuilds every NetworkTablesSink at its own id so they connect the new way, keeping each one's source binding
+        // and whether it was running.
+        public void ReapplyNetworkTablesSettings()
+        {
+            foreach (Sink sink in sinks.Where(s => s.Type == SinkType.NetworkTablesSink).ToList())
+            {
+                bool wasRunning = IsSinkRunning(sink.Id);
+                int? sourceId = sink.Source?.Id;
+                ManagerWrapper.Instance.DeleteSink(sink.Id);
+                try
+                {
+                    CreateNativeNetworkTablesSink(sink.Id);
+                }
+                catch (Exception ex)
+                {
+                    // settings that cannot build a sink (no team number yet): drop the node's record instead of leaving a dead one
+                    Console.WriteLine($"NetworkTablesSink {sink.Id} not rebuilt: {ex.Message}");
+                    sinks.Remove(sink);
+                    continue;
+                }
+                if (sourceId.HasValue) ManagerWrapper.Instance.BindSourceToSink(sourceId.Value, sink.Id);
+                if (wasRunning) EnableSinkById(sink.Id);
+            }
+            DB.Instance.Save();
+        }
+
         public bool IsNetworkTablesSinkConnected(int sinkId)
         {
             return ManagerWrapper.Instance.IsNetworkTablesSinkConnected(sinkId);

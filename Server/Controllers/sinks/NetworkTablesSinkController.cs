@@ -25,6 +25,13 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinkId);
         }
 
+        // POST: Create a NetworkTablesSink that connects the way the device's Settings say (GET/PUT /api/device/settings)
+        [HttpPost("networkTablesSink/createFromSettings")]
+        public Task<int> CreateFromSettings([FromQuery] string name)
+        {
+            return Task.FromResult(SinkManager.Instance.AddNetworkTablesSinkFromSettings(name));
+        }
+
         // GET: NT4 connection status for a given sink
         [HttpGet("networkTablesSink/status")]
         public Task<NetworkTablesStatusDto> GetStatus([FromQuery] int sinkId)
