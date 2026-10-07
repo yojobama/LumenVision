@@ -107,7 +107,8 @@ EOF
 
 cp scripts/deb/postinst "$STAGE_DIR/DEBIAN/postinst"
 cp scripts/deb/prerm "$STAGE_DIR/DEBIAN/prerm"
-chmod 755 "$STAGE_DIR/DEBIAN/postinst" "$STAGE_DIR/DEBIAN/prerm"
+cp scripts/deb/postrm "$STAGE_DIR/DEBIAN/postrm"
+chmod 755 "$STAGE_DIR/DEBIAN/postinst" "$STAGE_DIR/DEBIAN/prerm" "$STAGE_DIR/DEBIAN/postrm"
 
 echo "==> Building $DEB_FILE"
 dpkg-deb --build --root-owner-group "$STAGE_DIR" "$DEB_FILE"

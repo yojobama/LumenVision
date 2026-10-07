@@ -1,0 +1,11 @@
+#!/bin/sh
+# lumenvision-backend .deb postrm - removes the sudoers rule when the package is purged
+set -e
+
+case "$1" in
+    purge)
+        rm -f /etc/sudoers.d/lumenvision
+        ;;
+esac
+
+exit 0
