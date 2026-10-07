@@ -18,6 +18,7 @@ import {
   Grid3x3,
   Camera,
   Box,
+  ScrollText,
 } from 'lucide-react';
 import './App.css';
 import StereoPage from './components/StereoPage';
@@ -28,6 +29,7 @@ import { MatchPage } from './pages/MatchPage';
 import { RecordingsPage } from './pages/RecordingsPage';
 import { SnapshotsPage } from './pages/SnapshotsPage';
 import { ModelsPage } from './pages/ModelsPage';
+import { LogDrawer } from './components/LogDrawer';
 import { CalibrationPage } from './pages/CalibrationPage';
 import { CalibrationWizardPage } from './pages/CalibrationWizardPage';
 import { StereoCalibrationWizardPage } from './pages/StereoCalibrationWizardPage';
@@ -146,6 +148,19 @@ const Navigation: React.FC<{ streamingCount: number }> = ({ streamingCount }) =>
 function App() {
   const navigate = useNavigate();
   const [darkMode, setDarkMode] = useDarkMode();
+  const [logsOpen, setLogsOpen] = useState(false);
+  // the backtick key opens and closes the log drawer, except while typing in a field
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (e.key !== '`' || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      e.preventDefault();
+      setLogsOpen(open => !open);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const {
     sources,
     sinks,
@@ -236,6 +251,14 @@ function App() {
             <Route path="/calibration/camera/:sessionId" element={<CalibrationWizardPage onToast={showToast} />} />
           </Routes>
         </main>
+
+        <LogDrawer open={logsOpen} onClose={() => setLogsOpen(false)} />
+        {!logsOpen && (
+          <button onClick={() => setLogsOpen(true)} title="Show the logs (`)"
+            className="fixed bottom-3 left-3 z-30 px-3 py-1.5 text-xs rounded-full bg-gray-800 text-white opacity-80 hover:opacity-100 flex items-center gap-1">
+            <ScrollText className="w-3.5 h-3.5" />Logs
+          </button>
+        )}
 
         {toast && <Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)} />}
       </div>

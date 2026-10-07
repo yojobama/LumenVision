@@ -78,6 +78,11 @@ namespace Server
                     o.JsonSerializerOptions.NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals;
                 });
 
+            // every log line (the server's, LumenCore's and the store's) goes to the LogHub: the UI's log drawer, the live feed and the daily files
+            builder.Logging.AddProvider(new LogHubLoggerProvider(LogHub.Instance));
+            builder.Services.AddHostedService(_ => new LogFileFollower(LogHub.Instance, "LumenVision.log", "core"));
+            builder.Services.AddHostedService(_ => new LogFileFollower(LogHub.Instance, "DBLog.txt", "db"));
+
             builder.Services.AddHostedService<StateChannelBroadcaster>();
             builder.Services.AddHostedService<NetworkTablesControlService>();
 
@@ -104,6 +109,7 @@ namespace Server
 
             // push channel broadcasting state to the webui (see StateChannel)
             app.Map("/ws/state", StateChannel.Instance.HandleAsync);
+            app.Map("/ws/logs", LogChannel.HandleAsync);
             // Outside /api: a long-lived response, not a REST call.
             app.MapGet("/stream/mjpeg", MjpegStreamModule.HandleAsync);
             app.MapControllers();
@@ -120,6 +126,10 @@ namespace Server
 
         static void Main(string[] args)
         {
+            // from the first line on: what the server prints is also logged (see LogHub)
+            Console.SetOut(new ConsoleTee(Console.Out, LogHub.Instance, LogSeverity.Info));
+            Console.SetError(new ConsoleTee(Console.Error, LogHub.Instance, LogSeverity.Error));
+
             LinuxResourceMonitor.Instance.StartMonitoring();
             Thread.Sleep(3000); 
 

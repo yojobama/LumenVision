@@ -520,3 +520,12 @@ export interface UpdateStatus {
   State: 'idle' | 'running' | 'succeeded' | 'failed';
   Log: string;
 }
+
+// mirrors Server/LogHub.cs's LogEntry; Level is 0 debug, 1 info, 2 warning, 3 error
+export interface LogEntry {
+  Id: number;
+  TimeUtc: string;
+  Level: number;
+  Source: string;
+  Message: string;
+}
