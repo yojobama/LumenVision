@@ -7,6 +7,7 @@ import { SettingsSection } from '../components/SettingsSection';
 import { PowerSection } from '../components/PowerSection';
 import { DataSection } from '../components/DataSection';
 import { AboutSection } from '../components/AboutSection';
+import { UpdateSection } from '../components/UpdateSection';
 
 const api = new ApiService();
 
@@ -111,6 +112,8 @@ export const SettingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error
       <DataSection onToast={onToast} />
 
       <PowerSection onToast={onToast} />
+
+      <UpdateSection onToast={onToast} />
 
       <AboutSection />
     </div>

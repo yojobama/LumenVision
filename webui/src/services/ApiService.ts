@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -1066,6 +1066,24 @@ export class ApiService {
   async importSettings(file: File): Promise<ImportResult> {
     const response = await fetch(`${this.baseUrl}/device/settings/import`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
     if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Offline update: upload a lumenvision-backend .deb (checked, not installed), install it, and follow the installer
+  async uploadUpdatePackage(file: File): Promise<StagedPackage> {
+    const response = await fetch(`${this.baseUrl}/device/update/upload`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async installUpdate(): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/device/update/install`, { method: 'POST' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  async getUpdateStatus(): Promise<UpdateStatus> {
+    const response = await fetch(`${this.baseUrl}/device/update/status`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
 

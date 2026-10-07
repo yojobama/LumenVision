@@ -508,3 +508,15 @@ export interface ImportResult {
   Groups: string[];
   BackupPath: string | null;
 }
+
+// mirrors Server/UpdateService.cs
+export interface StagedPackage {
+  Package: string;
+  Version: string;
+  Architecture: string;
+  SizeBytes: number;
+}
+export interface UpdateStatus {
+  State: 'idle' | 'running' | 'succeeded' | 'failed';
+  Log: string;
+}
