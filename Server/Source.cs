@@ -38,6 +38,9 @@ namespace Server
         // generic camera control values the user has set (control id -> value), reapplied when the source is restored
         public Dictionary<int, int>? ControlValues { get; set; }
 
+        // crop/rotate/mirror applied to every frame this camera publishes; null = none
+        public FrameTransformDto? Transform { get; set; }
+
         public SourceType Type
         {
             get { return type; }

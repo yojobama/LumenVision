@@ -38,6 +38,7 @@ set(LUMEN_CORE_SOURCES
     ResultPacket.cpp
     CoordinateFrames.cpp
     ConstrainedPnp.cpp
+    FrameTransform.cpp
     RoiSource.cpp
     SourceResult.cpp
     SystemMonitor.cpp

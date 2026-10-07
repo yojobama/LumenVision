@@ -158,6 +158,23 @@ namespace Server.Controllers.sources
             return Task.FromResult(SourceManager.Instance.SetCameraControl(id, controlId, value));
         }
 
+        // GET: the crop/rotation/mirroring applied to this camera's frames (all defaults when none)
+        [HttpGet("cameraSource/{id}/transform")]
+        public Task<FrameTransformDto> GetTransform(int id)
+        {
+            return Task.FromResult(SourceManager.Instance.GetCameraTransform(id));
+        }
+
+        // PATCH: set the frame transform from the JSON body {Rotation, FlipHorizontal, FlipVertical, CropX, CropY, CropWidth, CropHeight};
+        // saved calibrations follow it automatically. An all-default body removes the transform.
+        [HttpPatch("cameraSource/{id}/transform")]
+        public async Task SetTransform(int id)
+        {
+            string body = await HttpContext.GetRequestBodyAsStringAsync();
+            FrameTransformDto transform = System.Text.Json.JsonSerializer.Deserialize<FrameTransformDto>(body);
+            SourceManager.Instance.SetCameraTransform(id, transform);
+        }
+
         // POST: publish a fixed crop of this camera's frame as an independent source (call twice on a side-by-side
         // camera for left/right).
         [HttpPost("cameraSource/{id}/roi")]

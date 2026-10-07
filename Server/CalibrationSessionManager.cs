@@ -83,6 +83,8 @@ namespace Server
             float squareSizeMeters, float markerSizeMeters, int arucoDictionaryId)
         {
             string cameraPath = RequireCameraPath(sourceId);
+            if (SourceManager.Instance.GetSourceById(sourceId)?.Transform is { IsIdentity: false })
+                throw ApiException.BadRequest("clear this camera's frame transform before calibrating it; the calibration is stored for the camera's own pixels and is carried across the transform automatically");
             bool wasActive = SourceManager.Instance.IsSourceActive(sourceId);
 
             int id = ManagerWrapper.Instance.CreateCameraCalibrator(boardType, rows, cols, squareSizeMeters, markerSizeMeters, arucoDictionaryId);

@@ -109,6 +109,18 @@ bool CameraFrameSource::SetControl(int id, int value)
     return m_Backend->SetControl(id, value);
 }
 
+void CameraFrameSource::SetTransform(const FrameTransform& transform)
+{
+    std::lock_guard<std::mutex> lock(m_TransformMutex);
+    m_Transform = transform;
+}
+
+FrameTransform CameraFrameSource::GetTransform()
+{
+    std::lock_guard<std::mutex> lock(m_TransformMutex);
+    return m_Transform;
+}
+
 void CameraFrameSource::CaptureFrame()
 {
     if (m_Backend->IsOpened()) {
@@ -118,7 +130,16 @@ void CameraFrameSource::CaptureFrame()
         if (grab.success) {
             // Carries grab.poolOwner explicitly: the bare-cv::Mat overload has no pool owner, so the buffer
             // could be recycled while sinks still use it (see CameraGrabResult::poolOwner).
-            SetLatestResult(SourceResult(std::nullopt, Frame(grab.frame, grab.format, grab.poolOwner), grab.captureTimeUs));
+            cv::Mat image = grab.frame;
+            std::shared_ptr<void> owner = grab.poolOwner;
+            const FrameTransform transform = GetTransform();
+            if (!transform.IsIdentity()) {
+                bool viewOfInput = true;
+                image = transform.Apply(image, viewOfInput);
+                // a transformed image is a fresh copy, so it no longer needs the pooled buffer
+                if (!viewOfInput) owner.reset();
+            }
+            SetLatestResult(SourceResult(std::nullopt, Frame(image, grab.format, owner), grab.captureTimeUs));
         } else {
             m_Logger->EnterLog(LogLevel::Error, "camera grab failed for " + m_DevicePath);
         }

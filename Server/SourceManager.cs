@@ -179,10 +179,44 @@ namespace Server
             return true;
         }
 
+        // reshapes a camera's frames; the transform is remembered across restarts. Validates the rotation and crop.
+        public void SetCameraTransform(int sourceId, FrameTransformDto transform)
+        {
+            Source source = GetSourceById(sourceId) ?? throw Server.Web.ApiException.NotFound($"no source with id {sourceId}");
+            if (source.Type != SourceType.Camera) throw Server.Web.ApiException.BadRequest("only camera sources can be transformed");
+            if (transform.Rotation % 90 != 0) throw Server.Web.ApiException.BadRequest("rotation must be a multiple of 90 degrees");
+            if (transform.CropX < 0 || transform.CropY < 0 || transform.CropWidth < 0 || transform.CropHeight < 0)
+                throw Server.Web.ApiException.BadRequest("the crop must not be negative");
+            if ((transform.CropWidth == 0) != (transform.CropHeight == 0))
+                throw Server.Web.ApiException.BadRequest("set both the crop width and height, or neither");
+
+            transform = transform with { Rotation = ((transform.Rotation % 360) + 360) % 360 };
+            ManagerWrapper.Instance.SetCameraTransform(sourceId, transform.ToNative());
+            source.Transform = transform.IsIdentity ? null : transform;
+            DB.Instance.Save();
+        }
+
+        public FrameTransformDto GetCameraTransform(int sourceId)
+        {
+            Source source = GetSourceById(sourceId) ?? throw Server.Web.ApiException.NotFound($"no source with id {sourceId}");
+            return source.Transform ?? default;
+        }
+
         // reapplies the remembered control values; a control the device no longer has is skipped
         public void ApplyCameraControls(int sourceId)
         {
             Source? source = GetSourceById(sourceId);
+            if (source?.Transform is FrameTransformDto transform)
+            {
+                try
+                {
+                    ManagerWrapper.Instance.SetCameraTransform(sourceId, transform.ToNative());
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Restoring the frame transform on source {sourceId} failed: {ex.Message}");
+                }
+            }
             if (source?.ControlValues == null) return;
             foreach (var (controlId, value) in source.ControlValues)
             {

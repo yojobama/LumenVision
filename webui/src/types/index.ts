@@ -392,3 +392,14 @@ export interface CameraControl {
   MenuLabels: string[];
   MenuValues: number[];
 }
+
+// mirrors Server/Dtos.cs's FrameTransformDto: crop (camera pixels; 0 width/height = none), then a clockwise rotation, then mirrors
+export interface FrameTransform {
+  Rotation: number;
+  FlipHorizontal: boolean;
+  FlipVertical: boolean;
+  CropX: number;
+  CropY: number;
+  CropWidth: number;
+  CropHeight: number;
+}

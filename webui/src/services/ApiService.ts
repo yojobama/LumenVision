@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -856,6 +856,20 @@ export class ApiService {
     const response = await fetch(`${this.baseUrl}/cameraSource/${id}/control?controlId=${controlId}&value=${value}`, { method: 'PATCH' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
+  }
+
+  async getCameraTransform(id: number): Promise<FrameTransform> {
+    const response = await fetch(`${this.baseUrl}/cameraSource/${id}/transform`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Rejects with the server's explanation when the transform is invalid
+  async setCameraTransform(id: number, transform: FrameTransform): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/cameraSource/${id}/transform`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(transform),
+    });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   }
 
   // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)

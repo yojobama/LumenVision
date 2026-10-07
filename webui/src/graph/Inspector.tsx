@@ -6,6 +6,7 @@ import { REFINE_EDGES_MODES } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
+import { CameraTransformPanel } from '../components/CameraTransformPanel';
 import { deleteNode } from './nodeActions';
 import { StreamView } from '../components/StreamView';
 
@@ -495,6 +496,13 @@ export const Inspector: React.FC<{
                 <button onClick={applyGain} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Apply</button>
               </div>
             </div>
+
+            <details>
+              <summary className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">Rotate, mirror and crop</summary>
+              <div className="mt-2">
+                <CameraTransformPanel sourceId={source.Id} onToast={onToast} />
+              </div>
+            </details>
 
             <details>
               <summary className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">All camera controls</summary>

@@ -100,6 +100,7 @@ namespace Server
                             restored.ActiveDetectionSinkId = source.ActiveDetectionSinkId;
                             if (source.FpsLimit.HasValue) SourceManager.Instance.SetFpsLimit(restored.Id, source.FpsLimit.Value);
                             restored.ControlValues = source.ControlValues;
+                            restored.Transform = source.Transform;
                             if (source.Type == SourceType.Camera) SourceManager.Instance.ApplyCameraControls(restored.Id);
                         }
                     }

@@ -69,6 +69,7 @@
 %include "StereoFrameOutput.h"
 %include "FrameFormat.h"
 %include "CameraMode.h"
+%include "FrameTransform.h"
 %include "Manager.h"
 %include "CameraCalibrationResult.h"
 %include "StereoCalibrationResult.h"

@@ -40,6 +40,22 @@ namespace Server
             new(range.supported, range.minimum, range.maximum, range.step, range.defaultValue, range.value);
     }
 
+    // a camera's frame transform (LumenCore's FrameTransform): crop in the camera's own pixels (0 width/height = none), then a clockwise
+    // rotation of 0/90/180/270 degrees, then mirrors
+    public record struct FrameTransformDto(int Rotation, bool FlipHorizontal, bool FlipVertical, int CropX, int CropY, int CropWidth, int CropHeight)
+    {
+        public bool IsIdentity => Rotation % 360 == 0 && !FlipHorizontal && !FlipVertical && CropWidth <= 0 && CropHeight <= 0;
+
+        public static FrameTransformDto From(FrameTransform t) =>
+            new(t.rotation, t.flipHorizontal, t.flipVertical, t.cropX, t.cropY, t.cropWidth, t.cropHeight);
+
+        public FrameTransform ToNative() => new()
+        {
+            rotation = Rotation, flipHorizontal = FlipHorizontal, flipVertical = FlipVertical,
+            cropX = CropX, cropY = CropY, cropWidth = CropWidth, cropHeight = CropHeight,
+        };
+    }
+
     public record struct CameraControlsDto(CameraControlRangeDto Exposure, CameraControlRangeDto Gain);
 
     // one generic camera control (LumenCore's CameraControlInfo); Kind is 0 integer, 1 boolean, 2 menu (MenuValues/MenuLabels) or 3 button

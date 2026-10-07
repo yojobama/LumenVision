@@ -497,6 +497,27 @@ vector<CameraControlInfo> Manager::GetCameraControls(int sourceId)
     return p_CameraSource->GetControls();
 }
 
+void Manager::SetCameraTransform(int sourceId, FrameTransform transform)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    auto p_CameraSource = sourceIt == m_Sources.end() ? nullptr : std::dynamic_pointer_cast<CameraFrameSource>(sourceIt->second);
+    if (!p_CameraSource) throw std::runtime_error("SetCameraTransform: id=" + std::to_string(sourceId) + " is not a camera source");
+    p_CameraSource->SetTransform(transform);
+}
+
+FrameTransform Manager::GetCameraTransform(int sourceId)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    auto p_CameraSource = sourceIt == m_Sources.end() ? nullptr : std::dynamic_pointer_cast<CameraFrameSource>(sourceIt->second);
+    if (!p_CameraSource) throw std::runtime_error("GetCameraTransform: id=" + std::to_string(sourceId) + " is not a camera source");
+    return p_CameraSource->GetTransform();
+}
+
+CameraCalibrationResult Manager::TransformCameraCalibration(CameraCalibrationResult calibration, FrameTransform transform)
+{
+    return TransformCalibration(calibration, transform);
+}
+
 bool Manager::SetCameraControl(int sourceId, int controlId, int value)
 {
     auto sourceIt = m_Sources.find(sourceId);

@@ -17,6 +17,7 @@
 #include "StereoDepthBackendKind.h"
 #include "StereoFrameOutput.h"
 #include "CameraMode.h"
+#include "FrameTransform.h"
 
 using namespace std;
 
@@ -75,6 +76,11 @@ public:
 	// every control the camera device exposes (brightness, white balance, ...) and a writer for one of them by CameraControlInfo::id
 	vector<CameraControlInfo> GetCameraControls(int sourceId);
 	bool SetCameraControl(int sourceId, int controlId, int value);
+	// Crops, rotates and flips the frames a camera publishes; identity (the default FrameTransform) removes it. A change shows in the next frame.
+	void SetCameraTransform(int sourceId, FrameTransform transform);
+	FrameTransform GetCameraTransform(int sourceId);
+	// the calibration of a camera's transformed frames, from its calibration at the camera's own resolution
+	CameraCalibrationResult TransformCameraCalibration(CameraCalibrationResult calibration, FrameTransform transform);
 
 	// splits one upstream source's frames into a fixed rectangular crop, zero-copy: create two against the same camera (one per eye)
 	// and bind each into StereoCalibrator/StereoDepthNode. Binds itself to upstreamSourceId; throws if it doesn't exist.
