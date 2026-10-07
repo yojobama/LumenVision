@@ -8,6 +8,13 @@ namespace Server.Controllers
     // The device-level settings kept in settings.json: how to reach the robot's NetworkTables server and the LED GPIO.
     internal class DeviceSettingsController : ControllerBase
     {
+        // GET: the server, LumenCore, operating system and runtime versions
+        [HttpGet("device/version")]
+        public Task<VersionInfo> GetVersion()
+        {
+            return Task.FromResult(VersionInfo.Current());
+        }
+
         [HttpGet("device/settings")]
         public Task<DeviceSettingsData> Get()
         {

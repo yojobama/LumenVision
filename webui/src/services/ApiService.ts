@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -1047,6 +1047,24 @@ export class ApiService {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ Confirmation: confirmation, KeepCalibrations: keep.calibrations, KeepModels: keep.models, KeepMedia: keep.media }),
     });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async getVersion(): Promise<VersionInfo> {
+    const response = await fetch(`${this.baseUrl}/device/version`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // URL of the settings ZIP (graph, settings, profiles, layouts, calibrations; optionally models and the log)
+  getSettingsExportUrl(includeModels: boolean, includeLog: boolean): string {
+    return `${this.baseUrl}/device/settings/export?models=${includeModels}&log=${includeLog}`;
+  }
+
+  // Replaces the saved data with the archive's; the server restarts afterwards
+  async importSettings(file: File): Promise<ImportResult> {
+    const response = await fetch(`${this.baseUrl}/device/settings/import`, { method: 'POST', headers: { 'Content-Type': 'application/zip' }, body: file });
     if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
     return response.json();
   }

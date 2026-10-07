@@ -76,6 +76,8 @@ public:
 	// every control the camera device exposes (brightness, white balance, ...) and a writer for one of them by CameraControlInfo::id
 	vector<CameraControlInfo> GetCameraControls(int sourceId);
 	bool SetCameraControl(int sourceId, int controlId, int value);
+	// the LumenCore build's version (the project version it was compiled from), as published on NetworkTables' ".version" topic
+	string GetLumenCoreVersion();
 	// Crops, rotates and flips the frames a camera publishes; identity (the default FrameTransform) removes it. A change shows in the next frame.
 	void SetCameraTransform(int sourceId, FrameTransform transform);
 	FrameTransform GetCameraTransform(int sourceId);

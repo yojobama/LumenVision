@@ -490,3 +490,21 @@ export interface NetworkStatus {
   Connections: NetworkConnectionInfo[];
   Pending: PendingNetworkChange | null;
 }
+
+// mirrors Server/VersionInfo.cs
+export interface VersionInfo {
+  Server: string;
+  LumenCore: string;
+  Os: string;
+  Kernel: string;
+  Architecture: string;
+  Runtime: string;
+  Hostname: string;
+}
+
+// mirrors Server/SettingsArchive.cs's ImportResult
+export interface ImportResult {
+  FilesRestored: number;
+  Groups: string[];
+  BackupPath: string | null;
+}

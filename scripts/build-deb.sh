@@ -51,7 +51,7 @@ cmake --build --preset "$LUMEN_CORE_PRESET"
 
 echo "==> Publishing Server (self-contained, $DOTNET_RID, Release)"
 dotnet publish "$REPO_ROOT/Server/Server.csproj" -c Release -r "$DOTNET_RID" --self-contained true \
-    -p:LumenCorePreset="$LUMEN_CORE_PRESET"
+    -p:LumenCorePreset="$LUMEN_CORE_PRESET" -p:Version="$VERSION"
 
 PUBLISH_DIR="$REPO_ROOT/Server/bin/Release/net10.0/$DOTNET_RID/publish"
 if [[ ! -f "$PUBLISH_DIR/Server" ]]; then

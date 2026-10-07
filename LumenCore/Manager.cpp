@@ -518,6 +518,15 @@ CameraCalibrationResult Manager::TransformCameraCalibration(CameraCalibrationRes
     return TransformCalibration(calibration, transform);
 }
 
+string Manager::GetLumenCoreVersion()
+{
+#ifdef LUMEN_VERSION_STRING
+    return LUMEN_VERSION_STRING;
+#else
+    return "unknown";
+#endif
+}
+
 bool Manager::SetCameraControl(int sourceId, int controlId, int value)
 {
     auto sourceIt = m_Sources.find(sourceId);

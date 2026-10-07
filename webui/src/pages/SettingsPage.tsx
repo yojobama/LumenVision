@@ -5,6 +5,8 @@ import type { DeviceSettingsData } from '../types';
 import { NetworkSection } from '../components/NetworkSection';
 import { SettingsSection } from '../components/SettingsSection';
 import { PowerSection } from '../components/PowerSection';
+import { DataSection } from '../components/DataSection';
+import { AboutSection } from '../components/AboutSection';
 
 const api = new ApiService();
 
@@ -42,10 +44,6 @@ export const SettingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><SettingsIcon className="w-6 h-6" />Settings</h2>
         <p className="text-gray-600 dark:text-gray-400">Stored on the coprocessor, so every browser sees the same values</p>
       </div>
-
-      <NetworkSection onToast={onToast} />
-
-      <PowerSection onToast={onToast} />
 
       {settings && nt && led && (
         <>
@@ -107,6 +105,14 @@ export const SettingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error
           </div>
         </>
       )}
+
+      <NetworkSection onToast={onToast} />
+
+      <DataSection onToast={onToast} />
+
+      <PowerSection onToast={onToast} />
+
+      <AboutSection />
     </div>
   );
 };
