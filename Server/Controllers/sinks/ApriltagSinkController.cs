@@ -117,6 +117,24 @@ namespace Server.Controllers.sinks
             return ok ? ManagerWrapper.Instance.GetFieldLayoutTagCount(sinkId) : -1;
         }
 
+        // GET: the field layouts shipped with the server (and their tag counts), newest season first
+        [HttpGet("fieldLayouts")]
+        public Task<List<FieldLayoutInfo>> ListFieldLayouts()
+        {
+            return Task.FromResult(FieldLayoutCatalog.ListBundled());
+        }
+
+        // POST: use a bundled layout (an Id from GET /fieldLayouts) on this sink and enable multi-tag PnP; returns the tags loaded, or -1 if it
+        // could not be loaded
+        [HttpPost("apriltagSink/fieldLayoutBundled")]
+        public Task<int> SetBundledFieldLayout([FromQuery] int sinkId, [FromQuery] string layout)
+        {
+            string path = Path.Combine(FieldLayoutCatalog.UserDirectory, $"sink-{sinkId}.json");
+            FieldLayoutCatalog.CopyBundled(layout, path);
+            bool ok = ManagerWrapper.Instance.LoadFieldLayout(sinkId, path);
+            return Task.FromResult(ok ? ManagerWrapper.Instance.GetFieldLayoutTagCount(sinkId) : -1);
+        }
+
         // GET: how many tags this sink's currently-loaded field layout has (0 if none loaded)
         [HttpGet("apriltagSink/fieldLayoutTagCount")]
         public Task<int> GetFieldLayoutTagCount([FromQuery] int sinkId)

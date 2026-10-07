@@ -70,6 +70,25 @@ namespace Server.Controllers.sources
                 : 0;
         }
 
+        // POST: use a bundled layout (an Id from GET /fieldLayouts) on one profile; returns its tag count, or -1 if it is not a valid layout.
+        [HttpPost("source/profiles/fieldLayoutBundled")]
+        public Task<int> SetProfileBundledFieldLayout([FromQuery] int sourceId, [FromQuery] int index, [FromQuery] string layout)
+        {
+            string path = Path.Combine(FieldLayoutCatalog.UserDirectory, $"source-{sourceId}-profile-{index}.json");
+            int count = FieldLayoutCatalog.CopyBundled(layout, path);
+            SourceManager.Instance.SetProfileFieldLayout(sourceId, index, path);
+            return Task.FromResult(count);
+        }
+
+        // GET: how many tags a profile's field layout has (0 when it has none, -1 when the file is not a valid layout)
+        [HttpGet("source/profiles/fieldLayoutTagCount")]
+        public Task<int> GetProfileFieldLayoutTagCount([FromQuery] int sourceId, [FromQuery] int index)
+        {
+            PipelineProfile? profile = SourceManager.Instance.GetProfiles(sourceId).Find(p => p.Index == index);
+            if (profile == null) throw ApiException.NotFound($"source {sourceId} has no profile at index {index}");
+            return Task.FromResult(string.IsNullOrEmpty(profile.FieldLayoutPath) ? 0 : FieldLayoutCatalog.CountTags(profile.FieldLayoutPath));
+        }
+
         // GET: every profile defined on a source.
         [HttpGet("source/profiles")]
         public Task<List<PipelineProfile>> GetProfiles([FromQuery] int sourceId)

@@ -433,3 +433,10 @@ export interface FrameTransform {
   CropWidth: number;
   CropHeight: number;
 }
+
+// mirrors Server/FieldLayoutCatalog.cs's FieldLayoutInfo (a layout shipped with the server)
+export interface FieldLayoutInfo {
+  Id: string;
+  Name: string;
+  TagCount: number;
+}

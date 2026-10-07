@@ -78,6 +78,11 @@
     <Content Include="wwwroot\**" Exclude="wwwroot\dist\**">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- the AprilTag field layouts shipped with the server (see field-layouts/README.md) -->
+    <Content Include="..\fieldLayouts\*.json">
+      <Link>fieldLayouts\bundled\%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="..\webui\dist\**" Condition="Exists('..\webui\dist')">
       <Link>wwwroot\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

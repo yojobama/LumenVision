@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
 import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings } from '../types';
-import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED } from '../types';
+import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED, PipelineProfileKind } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
 import { CameraTransformPanel } from '../components/CameraTransformPanel';
+import { FieldLayoutPicker } from '../components/FieldLayoutPicker';
 import { StreamSettingsPanel } from '../components/StreamSettingsPanel';
 import { deleteNode } from './nodeActions';
 import { StreamView } from '../components/StreamView';
@@ -609,6 +610,10 @@ export const Inspector: React.FC<{
                     {REFINE_EDGES_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
                 </div>
+                <FieldLayoutPicker resetKey={node.id} onToast={onToast}
+                  loadTagCount={() => api.getSinkFieldLayoutTagCount(sink!.Id)}
+                  applyBundled={layout => api.setSinkBundledFieldLayout(sink!.Id, layout)}
+                  applyUpload={json => api.uploadSinkFieldLayout(sink!.Id, json)} />
                 <div className="space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                   <div>
                     <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tag family</label>
@@ -748,7 +753,8 @@ export const Inspector: React.FC<{
             ) : (
               <div className="space-y-1 mb-2">
                 {source.Profiles.map(p => (
-                  <div key={p.Index} className="flex items-center justify-between gap-2 text-xs bg-gray-50 dark:bg-gray-700 rounded px-2 py-1">
+                  <div key={p.Index} className="text-xs bg-gray-50 dark:bg-gray-700 rounded px-2 py-1">
+                  <div className="flex items-center justify-between gap-2">
                     <span className="flex-1 truncate">{p.Name} {p.TagSize != null && `(${p.TagSize}m)`}</span>
                     {isCamera && (
                       <label className="flex items-center gap-1 text-gray-500 dark:text-gray-400 whitespace-nowrap"
@@ -762,6 +768,18 @@ export const Inspector: React.FC<{
                     ) : (
                       <button onClick={() => activateProfile(p.Index)} className="text-blue-600 hover:text-blue-700 flex items-center gap-1"><RefreshCw className="w-3 h-3" />Activate</button>
                     )}
+                  </div>
+                  {p.Kind === PipelineProfileKind.ApriltagSink && (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer select-none text-gray-500 dark:text-gray-400">Field layout</summary>
+                      <div className="mt-1">
+                        <FieldLayoutPicker resetKey={`${source.Id}-${p.Index}`} onToast={onToast}
+                          loadTagCount={() => api.getProfileFieldLayoutTagCount(source.Id, p.Index)}
+                          applyBundled={layout => api.setProfileBundledFieldLayout(source.Id, p.Index, layout)}
+                          applyUpload={json => api.uploadProfileFieldLayout(source.Id, p.Index, json)} />
+                      </div>
+                    </details>
+                  )}
                   </div>
                 ))}
               </div>

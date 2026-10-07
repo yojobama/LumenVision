@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -898,6 +898,50 @@ export class ApiService {
   async setMjpegSettings(sinkId: number, jpegQuality: number, scaleDivisor: number): Promise<void> {
     const response = await fetch(`${this.baseUrl}/mjpegSink/settings?sinkId=${sinkId}&jpegQuality=${jpegQuality}&scaleDivisor=${scaleDivisor}`, { method: 'PATCH' });
     if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  // Field layouts: the ones shipped with the server, and putting one (or an uploaded WPILib layout JSON) onto a detector or pipeline.
+  // Each resolves to the number of tags loaded, or -1 when the layout was not valid.
+  async listFieldLayouts(): Promise<FieldLayoutInfo[]> {
+    const response = await fetch(`${this.baseUrl}/fieldLayouts`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async getSinkFieldLayoutTagCount(sinkId: number): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/apriltagSink/fieldLayoutTagCount?sinkId=${sinkId}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async setSinkBundledFieldLayout(sinkId: number, layout: string): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/apriltagSink/fieldLayoutBundled?sinkId=${sinkId}&layout=${encodeURIComponent(layout)}`, { method: 'POST' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async uploadSinkFieldLayout(sinkId: number, json: string): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/apriltagSink/fieldLayout?sinkId=${sinkId}`, { method: 'POST', body: json });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async getProfileFieldLayoutTagCount(sourceId: number, index: number): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/source/profiles/fieldLayoutTagCount?sourceId=${sourceId}&index=${index}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async setProfileBundledFieldLayout(sourceId: number, index: number, layout: string): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/source/profiles/fieldLayoutBundled?sourceId=${sourceId}&index=${index}&layout=${encodeURIComponent(layout)}`, { method: 'POST' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async uploadProfileFieldLayout(sourceId: number, index: number, json: string): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/source/profiles/fieldLayout?sourceId=${sourceId}&index=${index}`, { method: 'POST', body: json });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
   }
 
   // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)
