@@ -136,7 +136,8 @@ namespace Server
             Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
             int limit = fps > 0 ? fps : -1;
             ManagerWrapper.Instance.SetSourceFpsLimit(sourceId, limit);
-            source.FpsLimit = limit > 0 ? limit : null;
+            if (ActiveOverrides(source) is CameraOverrides overrides) overrides.FpsLimit = limit > 0 ? limit : null;
+            else source.FpsLimit = limit > 0 ? limit : null;
             DB.Instance.Save();
         }
 
@@ -173,10 +174,105 @@ namespace Server
         {
             Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
             if (!ManagerWrapper.Instance.SetCameraControl(sourceId, controlId, value)) return false;
-            source.ControlValues ??= new Dictionary<int, int>();
-            source.ControlValues[controlId] = value;
+            // with the active pipeline overriding camera settings the edit belongs to that pipeline, not to the camera's own settings
+            if (ActiveOverrides(source) is CameraOverrides overrides)
+            {
+                overrides.ControlValues[controlId] = value;
+            }
+            else
+            {
+                source.ControlValues ??= new Dictionary<int, int>();
+                source.ControlValues[controlId] = value;
+            }
             DB.Instance.Save();
             return true;
+        }
+
+        private static CameraOverrides? ActiveOverrides(Source source) =>
+            source.Profiles.FirstOrDefault(p => p.Index == source.ActiveProfileIndex)?.CameraOverrides;
+
+        // the camera controls each source currently has set by a pipeline's overrides (not persisted: ActivateProfile reapplies them at start)
+        private readonly Dictionary<int, HashSet<int>> overriddenControls = new Dictionary<int, HashSet<int>>();
+
+        // Puts a camera into the state a pipeline asks for: the camera's own settings with the pipeline's overrides on top. Controls a previous
+        // pipeline overrode but this one does not go back to the camera's own value (or the device default when it never had one).
+        private void ApplyCameraSettings(Source source, CameraOverrides? overrides)
+        {
+            if (source.Type != SourceType.Camera) return;
+
+            HashSet<int> previous = overriddenControls.TryGetValue(source.Id, out var set) ? set : new HashSet<int>();
+            HashSet<int> next = overrides?.ControlValues.Keys.ToHashSet() ?? new HashSet<int>();
+            var restore = previous.Except(next).ToList();
+            if (restore.Count > 0)
+            {
+                Dictionary<int, int> defaults = ManagerWrapper.Instance.GetCameraControls(source.Id).ToDictionary(c => c.id, c => c.defaultValue);
+                foreach (int controlId in restore)
+                {
+                    int? own = source.ControlValues != null && source.ControlValues.TryGetValue(controlId, out int v) ? v : defaults.TryGetValue(controlId, out int d) ? d : null;
+                    if (own.HasValue) TrySetControl(source.Id, controlId, own.Value);
+                }
+            }
+            if (overrides != null)
+            {
+                foreach (var (controlId, value) in overrides.ControlValues) TrySetControl(source.Id, controlId, value);
+            }
+            overriddenControls[source.Id] = next;
+
+            FrameTransformDto transform = overrides?.Transform ?? source.Transform ?? default;
+            ManagerWrapper.Instance.SetCameraTransform(source.Id, transform.ToNative());
+            ManagerWrapper.Instance.SetSourceFpsLimit(source.Id, overrides?.FpsLimit ?? source.FpsLimit ?? -1);
+        }
+
+        private static void TrySetControl(int sourceId, int controlId, int value)
+        {
+            try
+            {
+                ManagerWrapper.Instance.SetCameraControl(sourceId, controlId, value);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Applying camera control {controlId} on source {sourceId} failed: {ex.Message}");
+            }
+        }
+
+        // Turns a pipeline's camera-setting overrides on or off. Turning them on starts from what the camera is doing now (the active pipeline) or
+        // from the camera's own settings (any other), so the pipeline initially behaves as before; later edits to the camera while the pipeline
+        // is active then belong to it. Off removes them and, for the active pipeline, puts the camera's own settings back.
+        public void SetProfileCameraOverrides(int sourceId, int index, bool enabled)
+        {
+            Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
+            if (source.Type != SourceType.Camera) throw Server.Web.ApiException.BadRequest("only camera sources have camera settings");
+            PipelineProfile profile = source.Profiles.FirstOrDefault(p => p.Index == index)
+                ?? throw new ArgumentException($"source {sourceId} has no profile at index {index}");
+            bool active = source.ActiveProfileIndex == index;
+
+            if (enabled && profile.CameraOverrides == null)
+            {
+                var overrides = new CameraOverrides();
+                if (active)
+                {
+                    foreach (var control in ManagerWrapper.Instance.GetCameraControls(sourceId))
+                    {
+                        // buttons have no value, and an inactive or read-only control cannot be set
+                        if (control.kind == CameraControlKind.CAMERA_CONTROL_BUTTON || control.readOnly || control.inactive) continue;
+                        overrides.ControlValues[control.id] = control.value;
+                    }
+                    overrides.Transform = FrameTransformDto.From(ManagerWrapper.Instance.GetCameraTransform(sourceId));
+                }
+                else
+                {
+                    if (source.ControlValues != null) overrides.ControlValues = new Dictionary<int, int>(source.ControlValues);
+                    overrides.Transform = source.Transform;
+                }
+                overrides.FpsLimit = source.FpsLimit;
+                profile.CameraOverrides = overrides;
+            }
+            else if (!enabled && profile.CameraOverrides != null)
+            {
+                profile.CameraOverrides = null;
+                if (active) ApplyCameraSettings(source, null);
+            }
+            DB.Instance.Save();
         }
 
         // reshapes a camera's frames; the transform is remembered across restarts. Validates the rotation and crop.
@@ -192,14 +288,15 @@ namespace Server
 
             transform = transform with { Rotation = ((transform.Rotation % 360) + 360) % 360 };
             ManagerWrapper.Instance.SetCameraTransform(sourceId, transform.ToNative());
-            source.Transform = transform.IsIdentity ? null : transform;
+            if (ActiveOverrides(source) is CameraOverrides overrides) overrides.Transform = transform;
+            else source.Transform = transform.IsIdentity ? null : transform;
             DB.Instance.Save();
         }
 
         public FrameTransformDto GetCameraTransform(int sourceId)
         {
             Source source = GetSourceById(sourceId) ?? throw Server.Web.ApiException.NotFound($"no source with id {sourceId}");
-            return source.Transform ?? default;
+            return ActiveOverrides(source)?.Transform ?? source.Transform ?? default;
         }
 
         // reapplies the remembered control values; a control the device no longer has is skipped
@@ -333,6 +430,8 @@ namespace Server
             Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
             PipelineProfile profile = source.Profiles.FirstOrDefault(p => p.Index == profileIndex)
                 ?? throw new ArgumentException($"source {sourceId} has no profile at index {profileIndex}");
+
+            ApplyCameraSettings(source, profile.CameraOverrides);
 
             List<int> downstreamSinkIds = source.ActiveDetectionSinkId.HasValue
                 ? SinkManager.Instance.GetSinksBoundToSource(source.ActiveDetectionSinkId.Value)

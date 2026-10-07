@@ -73,10 +73,8 @@ namespace Server
             CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(sourceId);
             CameraCalibrationResult? native = GetLatest(cameraPath, mode.width, mode.height)?.Result;
             // calibrations are stored for the camera's own pixels; a transformed source needs them carried across
-            FrameTransformDto? transform = SourceManager.Instance.GetSourceById(sourceId)?.Transform;
-            if (native != null && transform is { IsIdentity: false } t)
-                return ManagerWrapper.Instance.TransformCameraCalibration(native, t.ToNative());
-            return native;
+            FrameTransformDto transform = SourceManager.Instance.GetCameraTransform(sourceId);
+            return native != null && !transform.IsIdentity ? ManagerWrapper.Instance.TransformCameraCalibration(native, transform.ToNative()) : native;
         }
 
         public List<StoredCalibration> GetAll() => calibrations;

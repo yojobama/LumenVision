@@ -71,6 +71,33 @@ public class DuplicateTests
     }
 
     [Fact]
+    public void ProfileCameraOverridesSurviveSerialisationAndCopiesDoNotShareThem()
+    {
+        var profile = new PipelineProfile
+        {
+            Index = 1,
+            Name = "dark",
+            CameraOverrides = new CameraOverrides
+            {
+                ControlValues = { [9963776] = 40 },
+                Transform = new FrameTransformDto(180, false, false, 0, 0, 0, 0),
+                FpsLimit = 30,
+            },
+        };
+
+        var restored = JsonSerializer.Deserialize<PipelineProfile>(JsonSerializer.Serialize(profile))!;
+        Assert.Equal(40, restored.CameraOverrides!.ControlValues[9963776]);
+        Assert.Equal(180, restored.CameraOverrides.Transform!.Value.Rotation);
+        Assert.Equal(30, restored.CameraOverrides.FpsLimit);
+
+        var copy = profile.Clone();
+        copy.CameraOverrides!.ControlValues[9963776] = 99;
+        Assert.Equal(40, profile.CameraOverrides.ControlValues[9963776]);
+
+        Assert.Null(JsonSerializer.Deserialize<PipelineProfile>("""{"Index":0,"Name":"old","Kind":0}""")!.CameraOverrides);
+    }
+
+    [Fact]
     public void ProfileCopiesAreIndependent()
     {
         var profile = new PipelineProfile { Index = 2, Name = "far", TagSize = 0.1 };

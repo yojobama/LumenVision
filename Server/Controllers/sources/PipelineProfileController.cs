@@ -37,6 +37,15 @@ namespace Server.Controllers.sources
             return Task.FromResult(index);
         }
 
+        // PATCH: let one pipeline carry its own camera settings (control values, frame transform, FPS limit), applied when it is activated.
+        // While it is the active pipeline, camera edits belong to it; disabling restores the camera's own settings.
+        [HttpPatch("source/profiles/cameraOverrides")]
+        public Task SetCameraOverrides([FromQuery] int sourceId, [FromQuery] int index, [FromQuery] bool enabled)
+        {
+            SourceManager.Instance.SetProfileCameraOverrides(sourceId, index, enabled);
+            return Task.CompletedTask;
+        }
+
         // POST: upload a WPILib AprilTagFieldLayout JSON body onto one profile; returns tags loaded, or -1 if invalid.
         [HttpPost("source/profiles/fieldLayout")]
         public async Task<int> SetProfileFieldLayout([FromQuery] int sourceId, [FromQuery] int index)

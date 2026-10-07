@@ -382,6 +382,16 @@ export const Inspector: React.FC<{
     }
   };
 
+  const toggleCameraOverrides = async (index: number, enabled: boolean) => {
+    if (!source) return;
+    try {
+      await api.setProfileCameraOverrides(source.Id, index, enabled);
+      onToast(enabled ? 'This pipeline now keeps its own camera settings' : 'This pipeline uses the camera settings again', 'success');
+    } catch {
+      onToast("Failed to change the pipeline's camera settings", 'error');
+    }
+  };
+
   const activateProfile = async (index: number) => {
     if (!source) return;
     try {
@@ -676,8 +686,15 @@ export const Inspector: React.FC<{
             ) : (
               <div className="space-y-1 mb-2">
                 {source.Profiles.map(p => (
-                  <div key={p.Index} className="flex items-center justify-between text-xs bg-gray-50 dark:bg-gray-700 rounded px-2 py-1">
-                    <span>{p.Name} {p.TagSize != null && `(${p.TagSize}m)`}</span>
+                  <div key={p.Index} className="flex items-center justify-between gap-2 text-xs bg-gray-50 dark:bg-gray-700 rounded px-2 py-1">
+                    <span className="flex-1 truncate">{p.Name} {p.TagSize != null && `(${p.TagSize}m)`}</span>
+                    {isCamera && (
+                      <label className="flex items-center gap-1 text-gray-500 dark:text-gray-400 whitespace-nowrap"
+                        title="Give this pipeline its own camera controls, rotation/crop and FPS limit. While it is the active pipeline, camera edits belong to it; the camera's own settings come back for the others.">
+                        <input type="checkbox" checked={p.CameraOverrides != null} onChange={e => toggleCameraOverrides(p.Index, e.target.checked)} />
+                        own camera settings
+                      </label>
+                    )}
                     {source.ActiveProfileIndex === p.Index ? (
                       <span className="text-green-600 dark:text-green-400 font-medium">active</span>
                     ) : (

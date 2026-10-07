@@ -286,6 +286,8 @@ export interface PipelineProfile {
   FieldLayoutPath: string | null;
   DriverMode: boolean;
   ModelId: number | null;
+  // camera settings this pipeline applies when activated (control values by control id, frame transform, FPS limit); null = the camera's own
+  CameraOverrides: { ControlValues: Record<string, number>; Transform: FrameTransform | null; FpsLimit: number | null } | null;
 }
 
 // mirrors Server/NodeCapabilities.cs

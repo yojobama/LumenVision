@@ -840,6 +840,12 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
+  // Gives a pipeline its own camera settings (starting from what the camera does now) or takes them away again
+  async setProfileCameraOverrides(sourceId: number, index: number, enabled: boolean): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/source/profiles/cameraOverrides?sourceId=${sourceId}&index=${index}&enabled=${enabled}`, { method: 'PATCH' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
   async deleteProfile(sourceId: number, index: number): Promise<void> {
     const response = await fetch(`${this.baseUrl}/source/profiles?sourceId=${sourceId}&index=${index}`, { method: 'DELETE' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

@@ -37,12 +37,39 @@ namespace Server
         // a ModelManager-registered model id, as in AddObjectDetectionSink's modelId
         public int? ModelId { get; set; }
 
+        // Camera settings this pipeline applies when activated, on top of the camera's own; null = the pipeline uses the camera's settings as they are.
+        public CameraOverrides? CameraOverrides { get; set; }
+
         public PipelineProfile()
         {
             Name = string.Empty;
         }
 
         // an independent copy (same index), for duplicating a source with its pipelines
-        public PipelineProfile Clone() => (PipelineProfile)MemberwiseClone();
+        public PipelineProfile Clone()
+        {
+            var copy = (PipelineProfile)MemberwiseClone();
+            copy.CameraOverrides = CameraOverrides?.Clone();
+            return copy;
+        }
+    }
+}
+
+namespace Server
+{
+    // A pipeline's own camera settings (see PipelineProfile.CameraOverrides): generic control values by control id, a frame transform and an FPS limit.
+    // A null Transform / FpsLimit keeps the camera's own; controls not listed keep the camera's own too.
+    public class CameraOverrides
+    {
+        public Dictionary<int, int> ControlValues { get; set; } = new Dictionary<int, int>();
+        public FrameTransformDto? Transform { get; set; }
+        public int? FpsLimit { get; set; }
+
+        public CameraOverrides Clone() => new CameraOverrides
+        {
+            ControlValues = new Dictionary<int, int>(ControlValues),
+            Transform = Transform,
+            FpsLimit = FpsLimit,
+        };
     }
 }
