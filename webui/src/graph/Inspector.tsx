@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
-import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings } from '../types';
+import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings, Model } from '../types';
 import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED, PipelineProfileKind } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
 import { CameraTransformPanel } from '../components/CameraTransformPanel';
 import { FieldLayoutPicker } from '../components/FieldLayoutPicker';
+import { ThresholdFields } from '../components/ThresholdFields';
 import { StreamSettingsPanel } from '../components/StreamSettingsPanel';
 import { deleteNode } from './nodeActions';
 import { StreamView } from '../components/StreamView';
@@ -56,6 +57,11 @@ export const Inspector: React.FC<{
   const [refineEdgesValue, setRefineEdgesValue] = useState(true);
   const [refineModeValue, setRefineModeValue] = useState(1);
   const [refineModeSupported, setRefineModeSupported] = useState(false);
+  const [detectionThresholds, setDetectionThresholds] = useState<{ confThreshold: number; nmsThreshold: number } | null>(null);
+  const [models, setModels] = useState<Model[]>([]);
+  const [newObjectProfileName, setNewObjectProfileName] = useState('');
+  const [newObjectProfileModel, setNewObjectProfileModel] = useState<number | ''>('');
+  const [newObjectProfileThresholds, setNewObjectProfileThresholds] = useState<{ confThreshold: number; nmsThreshold: number } | null>(null);
   const [advanced, setAdvanced] = useState<ApriltagAdvancedSettings>(DEFAULT_APRILTAG_ADVANCED);
   const [quadSigmaSupported, setQuadSigmaSupported] = useState(true);
   const [applyingTuning, setApplyingTuning] = useState(false);
@@ -175,6 +181,9 @@ export const Inspector: React.FC<{
   useEffect(() => {
     if (!isObjectDetectionSink || !sink) return;
     let cancelled = false;
+    api.getObjectDetectionThresholds(sink.Id)
+      .then(t => { if (!cancelled) setDetectionThresholds({ confThreshold: t.confThreshold, nmsThreshold: t.nmsThreshold }); })
+      .catch(() => { if (!cancelled) setDetectionThresholds(null); });
     api.getObjectDetectionSinkBackend(sink.Id)
       .then(name => { if (!cancelled) setDetectionBackendName(name); })
       .catch(() => { if (!cancelled) setDetectionBackendName(null); });
@@ -389,6 +398,35 @@ export const Inspector: React.FC<{
       onToast('Profile created', 'success');
     } catch {
       onToast('Failed to create profile', 'error');
+    }
+  };
+
+  // models for the "add object detection pipeline" form
+  useEffect(() => {
+    if (!isCamera) return;
+    api.getAllModels()
+      .then(list => { setModels(list); setNewObjectProfileModel(current => (current === '' && list.length > 0 ? list[0].id : current)); })
+      .catch(() => setModels([]));
+  }, [node.id, isCamera]);
+
+  const applyDetectionThresholds = async () => {
+    if (!sink || !detectionThresholds) return;
+    try {
+      await api.setObjectDetectionThresholds(sink.Id, detectionThresholds.confThreshold, detectionThresholds.nmsThreshold);
+      onToast('Cutoffs applied', 'success');
+    } catch (error) {
+      onToast(error instanceof Error && error.message ? error.message : 'Failed to apply the cutoffs', 'error');
+    }
+  };
+
+  const createObjectDetectionProfile = async () => {
+    if (!source || !newObjectProfileName.trim() || newObjectProfileModel === '') return;
+    try {
+      await api.createObjectDetectionProfile(source.Id, newObjectProfileName.trim(), newObjectProfileModel, newObjectProfileThresholds ?? undefined);
+      setNewObjectProfileName('');
+      onToast('Object detection pipeline created', 'success');
+    } catch {
+      onToast('Failed to create the pipeline', 'error');
     }
   };
 
@@ -671,6 +709,13 @@ export const Inspector: React.FC<{
                 <span className="text-xs text-gray-500 dark:text-gray-400">{detectionBackendName ?? 'Loading...'}</span>
               </div>
             )}
+            {isObjectDetectionSink && detectionThresholds && (
+              <div className="space-y-2">
+                <ThresholdFields {...detectionThresholds} onChange={setDetectionThresholds} />
+                <button onClick={applyDetectionThresholds}
+                  className="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Apply cutoffs</button>
+              </div>
+            )}
 
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-700 dark:text-gray-300 flex items-center gap-1"><Radio className="w-3 h-3" />Publish to NT4</span>
@@ -755,7 +800,8 @@ export const Inspector: React.FC<{
                 {source.Profiles.map(p => (
                   <div key={p.Index} className="text-xs bg-gray-50 dark:bg-gray-700 rounded px-2 py-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="flex-1 truncate">{p.Name} {p.TagSize != null && `(${p.TagSize}m)`}</span>
+                    <span className="flex-1 truncate">{p.Name} {p.TagSize != null && `(${p.TagSize}m)`}
+                      {p.Kind === PipelineProfileKind.ObjectDetectionSink && p.ModelId != null && ` (${models.find(m => m.id === p.ModelId)?.name ?? `model ${p.ModelId}`})`}</span>
                     {isCamera && (
                       <label className="flex items-center gap-1 text-gray-500 dark:text-gray-400 whitespace-nowrap"
                         title="Give this pipeline its own camera controls, rotation/crop and FPS limit. While it is the active pipeline, camera edits belong to it; the camera's own settings come back for the others.">
@@ -783,6 +829,25 @@ export const Inspector: React.FC<{
                   </div>
                 ))}
               </div>
+            )}
+            {models.length > 0 && (
+              <details className="mb-2">
+                <summary className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">Add an object detection pipeline</summary>
+                <div className="space-y-2 mt-2">
+                  <input value={newObjectProfileName} onChange={e => setNewObjectProfileName(e.target.value)} placeholder="Pipeline name"
+                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+                  <select value={newObjectProfileModel} onChange={e => { setNewObjectProfileModel(parseInt(e.target.value)); setNewObjectProfileThresholds(null); }}
+                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white">
+                    {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                  <ThresholdFields
+                    confThreshold={newObjectProfileThresholds?.confThreshold ?? models.find(m => m.id === newObjectProfileModel)?.confThreshold ?? 0.25}
+                    nmsThreshold={newObjectProfileThresholds?.nmsThreshold ?? models.find(m => m.id === newObjectProfileModel)?.nmsThreshold ?? 0.45}
+                    onChange={setNewObjectProfileThresholds} />
+                  <button onClick={createObjectDetectionProfile} disabled={!newObjectProfileName.trim() || newObjectProfileModel === ''}
+                    className="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">Add pipeline</button>
+                </div>
+              </details>
             )}
             <div className="space-y-1">
               <input value={newProfileName} onChange={e => setNewProfileName(e.target.value)} placeholder="New AprilTag profile name"

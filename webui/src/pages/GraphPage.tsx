@@ -200,7 +200,10 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
         const modelId = await api.uploadModel(options.newModel);
         await api.createObjectDetectionSink(name, modelId);
       } else if (type === 'object' && options?.modelId) {
-        await api.createObjectDetectionSink(name, options.modelId);
+        await api.createObjectDetectionSink(name, options.modelId,
+          options.confThreshold !== undefined && options.nmsThreshold !== undefined
+            ? { confThreshold: options.confThreshold, nmsThreshold: options.nmsThreshold }
+            : undefined);
       }
       onToast(`Sink "${name}" added`, 'success');
       setShowAddSink(false);

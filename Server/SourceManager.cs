@@ -381,7 +381,7 @@ namespace Server
             return index;
         }
 
-        public int AddObjectDetectionProfile(int sourceId, string name, int modelId)
+        public int AddObjectDetectionProfile(int sourceId, string name, int modelId, float? confThreshold = null, float? nmsThreshold = null)
         {
             Source source = GetSourceById(sourceId) ?? throw new ArgumentException($"no source with id {sourceId}");
             int index = source.Profiles.Count == 0 ? 0 : source.Profiles.Max(p => p.Index) + 1;
@@ -390,7 +390,9 @@ namespace Server
                 Index = index,
                 Name = name,
                 Kind = DetectionSinkKind.ObjectDetectionSink,
-                ModelId = modelId
+                ModelId = modelId,
+                ConfThreshold = confThreshold,
+                NmsThreshold = nmsThreshold
             });
             DB.Instance.Save();
             return index;

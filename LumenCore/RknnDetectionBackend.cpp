@@ -15,6 +15,8 @@ RknnDetectionBackend::~RknnDetectionBackend()
 bool RknnDetectionBackend::Load(const DetectionBackendConfig& config)
 {
 	m_Config = config;
+	m_ConfThreshold = config.confThreshold;
+	m_NmsThreshold = config.nmsThreshold;
 
 	std::ifstream modelFile(config.modelPath, std::ios::binary | std::ios::ate);
 	if (!modelFile) return false;
@@ -138,7 +140,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 			if (numClasses > 0) {
 				detections = YoloPostProcess::DecodeAndNms(
 					static_cast<const float*>(outputs[0].buf), numClasses, static_cast<int>(numAnchors),
-					m_Labels, letterboxInfo, m_Config.confThreshold, m_Config.nmsThreshold);
+					m_Labels, letterboxInfo, m_ConfThreshold.load(), m_NmsThreshold.load());
 			}
 		}
 	} else {
@@ -156,7 +158,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 		int regMax = m_Scales.empty() ? 0 : m_Scales[0].regMax;
 		detections = YoloPostProcess::DecodeDflMultiScaleAndNms(
 			scaleOutputs, regMax, m_NumClasses, m_Labels, letterboxInfo,
-			m_Config.confThreshold, m_Config.nmsThreshold);
+			m_ConfThreshold.load(), m_NmsThreshold.load());
 	}
 
 	rknn_outputs_release(m_Context, static_cast<uint32_t>(m_NumOutputs), outputs.data());

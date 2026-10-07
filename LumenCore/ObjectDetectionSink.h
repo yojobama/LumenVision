@@ -16,6 +16,11 @@ public:
 	std::string GetBackendName() const { return m_Backend ? m_Backend->Name() : "none"; }
 
 	// Driver mode: skips inference and keeps streaming raw video.
+	// Changes the confidence and NMS cutoffs of the running model (see IDetectionBackend::SetThresholds).
+	void SetThresholds(float confThreshold, float nmsThreshold) { if (m_Backend) m_Backend->SetThresholds(confThreshold, nmsThreshold); }
+	float GetConfThreshold() const { return m_Backend ? m_Backend->GetConfThreshold() : 0.0f; }
+	float GetNmsThreshold() const { return m_Backend ? m_Backend->GetNmsThreshold() : 0.0f; }
+
 	void SetDriverMode(bool enabled) { m_DriverMode = enabled; }
 	bool GetDriverMode() const { return m_DriverMode; }
 

@@ -38,6 +38,9 @@ namespace Server
         // --- ObjectDetectionSink settings (Kind == ObjectDetectionSink) ---
         // a ModelManager-registered model id, as in AddObjectDetectionSink's modelId
         public int? ModelId { get; set; }
+        // cutoffs for this pipeline; null = the model's own
+        public float? ConfThreshold { get; set; }
+        public float? NmsThreshold { get; set; }
 
         // Camera settings this pipeline applies when activated, on top of the camera's own; null = the pipeline uses the camera's settings as they are.
         public CameraOverrides? CameraOverrides { get; set; }

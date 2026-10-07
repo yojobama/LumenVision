@@ -78,6 +78,22 @@ namespace Server
         public Model? GetModel(int id) => models.FirstOrDefault(m => m.Id == id);
         public List<Model> GetAllModels() => models;
 
+        // Renames a model and/or changes the confidence and NMS cutoffs new detectors start with (each null = unchanged). The input size is part of the
+        // network and cannot change after upload. Detectors already running on the model are retuned by SinkManager.ApplyModelThresholds.
+        public Model UpdateModel(int id, string? name, float? confThreshold, float? nmsThreshold)
+        {
+            var model = GetModel(id) ?? throw Server.Web.ApiException.NotFound($"no model with id {id}");
+            if (confThreshold is < 0.01f or > 1.0f) throw Server.Web.ApiException.BadRequest("confThreshold must be 0.01 to 1");
+            if (nmsThreshold is < 0.01f or > 1.0f) throw Server.Web.ApiException.BadRequest("nmsThreshold must be 0.01 to 1");
+            if (name != null && string.IsNullOrWhiteSpace(name)) throw Server.Web.ApiException.BadRequest("the name must not be empty");
+
+            if (name != null) model.Name = name.Trim();
+            if (confThreshold.HasValue) model.ConfThreshold = confThreshold.Value;
+            if (nmsThreshold.HasValue) model.NmsThreshold = nmsThreshold.Value;
+            Save();
+            return model;
+        }
+
         public void DeleteModel(int id)
         {
             var model = GetModel(id);

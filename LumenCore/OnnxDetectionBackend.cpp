@@ -18,6 +18,8 @@ OnnxDetectionBackend::~OnnxDetectionBackend() = default;
 bool OnnxDetectionBackend::Load(const DetectionBackendConfig& config)
 {
 	m_Config = config;
+	m_ConfThreshold = config.confThreshold;
+	m_NmsThreshold = config.nmsThreshold;
 
 	Ort::SessionOptions options;
 	options.SetIntraOpNumThreads(1);
@@ -107,7 +109,7 @@ std::vector<ObjectDetection> OnnxDetectionBackend::Infer(const cv::Mat& bgrFrame
 
 	return YoloPostProcess::DecodeAndNms(
 		outputData, numClasses, numAnchors, m_Labels, letterboxInfo,
-		m_Config.confThreshold, m_Config.nmsThreshold);
+		m_ConfThreshold.load(), m_NmsThreshold.load());
 }
 
 #endif // LUMEN_WITH_ONNX

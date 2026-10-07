@@ -371,8 +371,10 @@ export class ApiService {
   }
 
   // Object Detection Sink Controller routes
-  async createObjectDetectionSink(name: string, modelId: number): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/objectDetectionSink/create?name=${encodeURIComponent(name)}&modelId=${modelId}`, { method: 'POST' });
+  async createObjectDetectionSink(name: string, modelId: number, thresholds?: { confThreshold: number; nmsThreshold: number }): Promise<number> {
+    let url = `${this.baseUrl}/objectDetectionSink/create?name=${encodeURIComponent(name)}&modelId=${modelId}`;
+    if (thresholds) url += `&confThreshold=${thresholds.confThreshold}&nmsThreshold=${thresholds.nmsThreshold}`;
+    const response = await fetch(url, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
@@ -385,10 +387,42 @@ export class ApiService {
   }
 
   // Model Controller routes (uploaded YOLOv8/YOLOv11 models, ONNX or RKNN)
+  // The server answers in PascalCase like every other route; the Model type is lower-case, so the fields are mapped here.
   async getAllModels(): Promise<Model[]> {
     const response = await fetch(`${this.baseUrl}/model/getAll`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
+    const raw: Array<Record<string, unknown>> = await response.json();
+    return raw.map(m => ({
+      id: (m.Id ?? m.id) as number,
+      name: (m.Name ?? m.name) as string,
+      variant: (m.Variant ?? m.variant) as number,
+      inputSize: (m.InputSize ?? m.inputSize) as number,
+      confThreshold: (m.ConfThreshold ?? m.confThreshold) as number,
+      nmsThreshold: (m.NmsThreshold ?? m.nmsThreshold) as number,
+      provider: (m.Provider ?? m.provider) as number,
+    }));
+  }
+
+  // Renames a model and/or changes its default cutoffs (0.01-1); detectors running on it are retuned. The input size cannot change.
+  async updateModel(id: number, changes: { name?: string; confThreshold?: number; nmsThreshold?: number }): Promise<void> {
+    const params = new URLSearchParams({ id: String(id) });
+    if (changes.name !== undefined) params.set('name', changes.name);
+    if (changes.confThreshold !== undefined) params.set('confThreshold', String(changes.confThreshold));
+    if (changes.nmsThreshold !== undefined) params.set('nmsThreshold', String(changes.nmsThreshold));
+    const response = await fetch(`${this.baseUrl}/model/update?${params}`, { method: 'PATCH' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  async getObjectDetectionThresholds(sinkId: number): Promise<{ confThreshold: number; nmsThreshold: number; modelId: number | null }> {
+    const response = await fetch(`${this.baseUrl}/objectDetectionSink/thresholds?sinkId=${sinkId}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const dto = await response.json();
+    return { confThreshold: dto.ConfThreshold, nmsThreshold: dto.NmsThreshold, modelId: dto.ModelId };
+  }
+
+  async setObjectDetectionThresholds(sinkId: number, confThreshold: number, nmsThreshold: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/objectDetectionSink/thresholds?sinkId=${sinkId}&confThreshold=${confThreshold}&nmsThreshold=${nmsThreshold}`, { method: 'PATCH' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   }
 
   async uploadModel(params: {
@@ -840,8 +874,12 @@ export class ApiService {
     return response.json();
   }
 
-  async createObjectDetectionProfile(sourceId: number, name: string, modelId: number): Promise<number> {
+  async createObjectDetectionProfile(sourceId: number, name: string, modelId: number, thresholds?: { confThreshold: number; nmsThreshold: number }): Promise<number> {
     const params = new URLSearchParams({ sourceId: String(sourceId), name, modelId: String(modelId) });
+    if (thresholds) {
+      params.set('confThreshold', String(thresholds.confThreshold));
+      params.set('nmsThreshold', String(thresholds.nmsThreshold));
+    }
     const response = await fetch(`${this.baseUrl}/source/profiles/objectDetection?${params}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();

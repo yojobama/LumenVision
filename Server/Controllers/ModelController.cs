@@ -42,6 +42,17 @@ namespace Server.Controllers
             return Task.FromResult(ModelManager.Instance.GetAllModels());
         }
 
+        // PATCH: rename a model and/or change the default confidence/NMS cutoffs (0.01-1); detectors running on it are retuned straight away,
+        // except those whose own cutoffs were set explicitly. The input size cannot be changed after upload.
+        [HttpPatch("model/update")]
+        public Task<Model> Update([FromQuery] int id, [FromQuery] string? name = null, [FromQuery] float? confThreshold = null,
+            [FromQuery] float? nmsThreshold = null)
+        {
+            Model model = ModelManager.Instance.UpdateModel(id, name, confThreshold, nmsThreshold);
+            SinkManager.Instance.ApplyModelThresholds(model);
+            return Task.FromResult(model);
+        }
+
         [HttpDelete("model/delete")]
         public Task Delete([FromQuery] int id)
         {

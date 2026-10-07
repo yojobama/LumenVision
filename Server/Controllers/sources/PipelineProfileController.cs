@@ -34,9 +34,9 @@ namespace Server.Controllers.sources
         // POST: define an object-detection profile using a registered model. Returns the new profile's index.
         [HttpPost("source/profiles/objectDetection")]
         public Task<int> CreateObjectDetectionProfile([FromQuery] int sourceId, [FromQuery] string name,
-            [FromQuery] int modelId)
+            [FromQuery] int modelId, [FromQuery] float? confThreshold = null, [FromQuery] float? nmsThreshold = null)
         {
-            int index = SourceManager.Instance.AddObjectDetectionProfile(sourceId, name, modelId);
+            int index = SourceManager.Instance.AddObjectDetectionProfile(sourceId, name, modelId, confThreshold, nmsThreshold);
             return Task.FromResult(index);
         }
 

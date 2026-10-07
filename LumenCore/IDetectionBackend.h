@@ -1,6 +1,7 @@
 #pragma once
 #include "ObjectDetection.h"
 #include <opencv2/opencv.hpp>
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -30,4 +31,14 @@ public:
 	virtual bool Load(const DetectionBackendConfig& config) = 0;
 	virtual std::vector<ObjectDetection> Infer(const cv::Mat& bgrFrame) = 0;
 	virtual std::string Name() const = 0;
+
+	// The confidence and NMS cutoffs in effect; they can change between frames (the input size cannot: it is part of the model).
+	void SetThresholds(float confThreshold, float nmsThreshold) { m_ConfThreshold = confThreshold; m_NmsThreshold = nmsThreshold; }
+	float GetConfThreshold() const { return m_ConfThreshold; }
+	float GetNmsThreshold() const { return m_NmsThreshold; }
+
+protected:
+	// Load() starts these from DetectionBackendConfig; Infer() reads them on every frame
+	std::atomic<float> m_ConfThreshold{ 0.25f };
+	std::atomic<float> m_NmsThreshold{ 0.45f };
 };

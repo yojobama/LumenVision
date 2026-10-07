@@ -154,6 +154,10 @@ public:
 	ApriltagTuning GetApriltagDetectorEffectiveTuning(int sinkId);
 	bool GetApriltagDetectorQuadSigmaSupported(int sinkId);
 	// legacy no-model overloads: inference needs a model, so these only keep generated SWIG call sites compiling and throw a clear error
+	// the confidence/NMS cutoffs of a running ObjectDetectionSink's model; Set throws if sinkId is not one
+	void SetObjectDetectionThresholds(int sinkId, float confThreshold, float nmsThreshold);
+	float GetObjectDetectionConfThreshold(int sinkId);
+	float GetObjectDetectionNmsThreshold(int sinkId);
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider);
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider, int id);
 

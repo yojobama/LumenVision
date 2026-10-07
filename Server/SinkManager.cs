@@ -450,15 +450,20 @@ namespace Server
         public string GetWebRTCSinkStatus(int sinkId) => ManagerWrapper.Instance.GetWebRTCSinkStatus(sinkId);
 
         // creates an ObjectDetectionSink running an uploaded model; the provider is fixed by ModelManager.AddModel from the file extension
-        public int AddObjectDetectionSink(string name, int modelId)
+        public int AddObjectDetectionSink(string name, int modelId, float? confThreshold = null, float? nmsThreshold = null)
         {
             var model = ModelManager.Instance.GetModel(modelId);
             if (model == null) throw new ArgumentException($"no model with id {modelId}");
 
             int id = ManagerWrapper.Instance.CreateObjectDetectionSink(
                 model.Provider, model.ModelPath, model.LabelsPath, model.Variant,
-                model.ConfThreshold, model.NmsThreshold, model.InputSize);
-            sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink) { ObjectDetectionModelId = modelId });
+                confThreshold ?? model.ConfThreshold, nmsThreshold ?? model.NmsThreshold, model.InputSize);
+            sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink)
+            {
+                ObjectDetectionModelId = modelId,
+                ObjectDetectionConfThreshold = confThreshold,
+                ObjectDetectionNmsThreshold = nmsThreshold,
+            });
             DB.Instance.Save();
             return id;
         }
@@ -472,9 +477,44 @@ namespace Server
             if (model == null) return false;
 
             int id = ManagerWrapper.Instance.CreateObjectDetectionSink(persisted.Id, model.Provider, model.ModelPath, model.LabelsPath,
-                model.Variant, model.ConfThreshold, model.NmsThreshold, model.InputSize);
-            sinks.Add(new Sink(id, persisted.Name, SinkType.ObjectDetectionSink) { ObjectDetectionModelId = model.Id });
+                model.Variant, persisted.ObjectDetectionConfThreshold ?? model.ConfThreshold, persisted.ObjectDetectionNmsThreshold ?? model.NmsThreshold,
+                model.InputSize);
+            sinks.Add(new Sink(id, persisted.Name, SinkType.ObjectDetectionSink)
+            {
+                ObjectDetectionModelId = model.Id,
+                ObjectDetectionConfThreshold = persisted.ObjectDetectionConfThreshold,
+                ObjectDetectionNmsThreshold = persisted.ObjectDetectionNmsThreshold,
+            });
             return true;
+        }
+
+        // Retunes a running ObjectDetectionSink's model cutoffs (0.01-1) and remembers them on the sink, overriding its model's defaults.
+        public void SetObjectDetectionThresholds(int sinkId, float confThreshold, float nmsThreshold)
+        {
+            Sink sink = RequireSink(sinkId, SinkType.ObjectDetectionSink);
+            if (confThreshold < 0.01f || confThreshold > 1.0f) throw Server.Web.ApiException.BadRequest("confThreshold must be 0.01 to 1");
+            if (nmsThreshold < 0.01f || nmsThreshold > 1.0f) throw Server.Web.ApiException.BadRequest("nmsThreshold must be 0.01 to 1");
+            ManagerWrapper.Instance.SetObjectDetectionThresholds(sinkId, confThreshold, nmsThreshold);
+            sink.ObjectDetectionConfThreshold = confThreshold;
+            sink.ObjectDetectionNmsThreshold = nmsThreshold;
+            DB.Instance.Save();
+        }
+
+        // After a model's default cutoffs changed: the detectors running on it follow, unless their own cutoffs were set on the sink.
+        public void ApplyModelThresholds(Model model)
+        {
+            foreach (Sink sink in sinks.Where(s => s.Type == SinkType.ObjectDetectionSink && s.ObjectDetectionModelId == model.Id).ToList())
+            {
+                ManagerWrapper.Instance.SetObjectDetectionThresholds(sink.Id,
+                    sink.ObjectDetectionConfThreshold ?? model.ConfThreshold, sink.ObjectDetectionNmsThreshold ?? model.NmsThreshold);
+            }
+        }
+
+        public (float Conf, float Nms, int? ModelId) GetObjectDetectionThresholds(int sinkId)
+        {
+            Sink sink = RequireSink(sinkId, SinkType.ObjectDetectionSink);
+            return (ManagerWrapper.Instance.GetObjectDetectionConfThreshold(sinkId), ManagerWrapper.Instance.GetObjectDetectionNmsThreshold(sinkId),
+                sink.ObjectDetectionModelId);
         }
 
         // The field-layout file a detector was given: its own upload, or the active profile's layout of the camera it is the detector for.
@@ -532,7 +572,8 @@ namespace Server
                 case SinkType.ObjectDetectionSink:
                     if (!original.ObjectDetectionModelId.HasValue)
                         throw Server.Web.ApiException.BadRequest("this object detection node predates model tracking and cannot be copied; create it again");
-                    newId = AddObjectDetectionSink(name, original.ObjectDetectionModelId.Value);
+                    newId = AddObjectDetectionSink(name, original.ObjectDetectionModelId.Value,
+                        original.ObjectDetectionConfThreshold, original.ObjectDetectionNmsThreshold);
                     break;
                 default:
                     throw Server.Web.ApiException.BadRequest($"{original.Type} nodes cannot be copied");
@@ -582,12 +623,19 @@ namespace Server
                     var model = ModelManager.Instance.GetModel(profile.ModelId.Value);
                     if (model == null) throw new ArgumentException($"no model with id {profile.ModelId.Value}");
 
+                    float conf = profile.ConfThreshold ?? model.ConfThreshold;
+                    float nms = profile.NmsThreshold ?? model.NmsThreshold;
                     id = explicitId.HasValue
                         ? ManagerWrapper.Instance.CreateObjectDetectionSink(explicitId.Value, model.Provider,
-                            model.ModelPath, model.LabelsPath, model.Variant, model.ConfThreshold, model.NmsThreshold, model.InputSize)
+                            model.ModelPath, model.LabelsPath, model.Variant, conf, nms, model.InputSize)
                         : ManagerWrapper.Instance.CreateObjectDetectionSink(model.Provider,
-                            model.ModelPath, model.LabelsPath, model.Variant, model.ConfThreshold, model.NmsThreshold, model.InputSize);
-                    sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink) { ObjectDetectionModelId = model.Id });
+                            model.ModelPath, model.LabelsPath, model.Variant, conf, nms, model.InputSize);
+                    sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink)
+                    {
+                        ObjectDetectionModelId = model.Id,
+                        ObjectDetectionConfThreshold = profile.ConfThreshold,
+                        ObjectDetectionNmsThreshold = profile.NmsThreshold,
+                    });
                     break;
 
                 default:

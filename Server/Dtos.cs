@@ -56,6 +56,8 @@ namespace Server
         };
     }
 
+    public record struct ObjectDetectionThresholdsDto(float ConfThreshold, float NmsThreshold, int? ModelId);
+
     public record struct CameraControlsDto(CameraControlRangeDto Exposure, CameraControlRangeDto Gain);
 
     // one generic camera control (LumenCore's CameraControlInfo); Kind is 0 integer, 1 boolean, 2 menu (MenuValues/MenuLabels) or 3 button

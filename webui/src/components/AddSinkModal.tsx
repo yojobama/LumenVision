@@ -3,6 +3,7 @@ import { Plus } from 'lucide-react';
 import { Modal } from './Modal';
 import type { AddSinkOptions, Model } from '../types';
 import { ApiService } from '../services/ApiService';
+import { ThresholdFields } from './ThresholdFields';
 
 const addSinkModalApi = new ApiService();
 
@@ -21,6 +22,9 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
   const [uploadingNewModel, setUploadingNewModel] = useState(false);
   const [newModelName, setNewModelName] = useState('');
   const [newModelVariant, setNewModelVariant] = useState(0); // 0 = YOLOv8, 1 = YOLOv11
+  const [newModelInputSize, setNewModelInputSize] = useState(640);
+  // cutoffs for the detector (and, for an uploaded model, its defaults); null until the user touches them = the model's own
+  const [thresholds, setThresholds] = useState<{ confThreshold: number; nmsThreshold: number } | null>(null);
   const [newModelFile, setNewModelFile] = useState<File | null>(null);
   const [newModelLabelsFile, setNewModelLabelsFile] = useState<File | null>(null);
 
@@ -33,6 +37,8 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
     setUploadingNewModel(false);
     setNewModelName('');
     setNewModelVariant(0);
+    setNewModelInputSize(640);
+    setThresholds(null);
     setNewModelFile(null);
     setNewModelLabelsFile(null);
   };
@@ -72,8 +78,8 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
       options = { tagSize, backend: apriltagBackend };
     } else if (type === 'object') {
       options = uploadingNewModel
-        ? { newModel: { name: newModelName.trim(), variant: newModelVariant, inputSize: 640, confThreshold: 0.25, nmsThreshold: 0.45, modelFile: newModelFile!, labelsFile: newModelLabelsFile ?? undefined } }
-        : { modelId: modelId as number };
+        ? { newModel: { name: newModelName.trim(), variant: newModelVariant, inputSize: newModelInputSize, confThreshold: thresholds?.confThreshold ?? 0.25, nmsThreshold: thresholds?.nmsThreshold ?? 0.45, modelFile: newModelFile!, labelsFile: newModelLabelsFile ?? undefined } }
+        : { modelId: modelId as number, ...(thresholds ?? {}) };
     }
 
     onAdd(name.trim(), type, options);
@@ -153,6 +159,15 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
                 ) : (
                   <div className="text-sm text-gray-500 dark:text-gray-400">No models uploaded yet.</div>
                 )}
+                {models.length > 0 && modelId !== '' && (
+                  <div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Cutoffs for this detector (the model's own unless changed)</div>
+                    <ThresholdFields
+                      confThreshold={thresholds?.confThreshold ?? models.find(x => x.id === modelId)?.confThreshold ?? 0.25}
+                      nmsThreshold={thresholds?.nmsThreshold ?? models.find(x => x.id === modelId)?.nmsThreshold ?? 0.45}
+                      onChange={setThresholds} />
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={() => setUploadingNewModel(true)}
@@ -186,6 +201,13 @@ export const AddSinkModal: React.FC<{ isOpen: boolean; onClose: () => void; onAd
                   <option value={0}>YOLOv8</option>
                   <option value={1}>YOLOv11</option>
                 </select>
+                <div className="grid grid-cols-1 gap-2">
+                  <label className="block text-xs text-gray-500 dark:text-gray-400">Input size (px; what the network was exported with)
+                    <input type="number" min={32} step={32} value={newModelInputSize} onChange={(e) => setNewModelInputSize(parseInt(e.target.value) || 640)}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white" />
+                  </label>
+                  <ThresholdFields confThreshold={thresholds?.confThreshold ?? 0.25} nmsThreshold={thresholds?.nmsThreshold ?? 0.45} onChange={setThresholds} />
+                </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Model weights (.onnx or .rknn)</label>
                   <input type="file" accept=".onnx,.rknn" onChange={(e) => setNewModelFile(e.target.files?.[0] ?? null)}

@@ -1361,6 +1361,28 @@ int Manager::CreateObjectDetectionSink(int id, ObjectDetectionProvider provider,
     return id;
 }
 
+void Manager::SetObjectDetectionThresholds(int sinkId, float confThreshold, float nmsThreshold)
+{
+    auto sink = m_Sinks.find(sinkId);
+    auto* p_Sink = sink == m_Sinks.end() ? nullptr : dynamic_cast<ObjectDetectionSink*>(sink->second.get());
+    if (p_Sink == nullptr) throw std::runtime_error("no ObjectDetectionSink with id " + std::to_string(sinkId));
+    p_Sink->SetThresholds(confThreshold, nmsThreshold);
+}
+
+float Manager::GetObjectDetectionConfThreshold(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    auto* p_Sink = sink == m_Sinks.end() ? nullptr : dynamic_cast<ObjectDetectionSink*>(sink->second.get());
+    return p_Sink ? p_Sink->GetConfThreshold() : 0.0f;
+}
+
+float Manager::GetObjectDetectionNmsThreshold(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    auto* p_Sink = sink == m_Sinks.end() ? nullptr : dynamic_cast<ObjectDetectionSink*>(sink->second.get());
+    return p_Sink ? p_Sink->GetNmsThreshold() : 0.0f;
+}
+
 std::string Manager::GetObjectDetectionSinkBackendName(int sinkId)
 {
     auto sink = m_Sinks.find(sinkId);

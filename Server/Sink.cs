@@ -118,6 +118,9 @@ namespace Server
 
         // ObjectDetectionSink only: the model the sink was created from, so DB.Load() can rebuild it and a node copy can reuse it.
         public int? ObjectDetectionModelId { get; set; }
+        // cutoffs set on this sink itself; null = the model's own (Model.ConfThreshold / NmsThreshold)
+        public float? ObjectDetectionConfThreshold { get; set; }
+        public float? ObjectDetectionNmsThreshold { get; set; }
 
         // No `source` constructor parameter: System.Text.Json would bind the JSON "Source" property to it instead of the Source setter.
         public Sink(int id, string name, SinkType type)
