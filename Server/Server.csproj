@@ -79,7 +79,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- the AprilTag field layouts shipped with the server (see field-layouts/README.md) -->
-    <Content Include="..\fieldLayouts\*.json">
+    <Content Include="..\field-layouts\*.json">
       <Link>fieldLayouts\bundled\%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

@@ -9,7 +9,7 @@ namespace Server
     // One AprilTag field layout a pipeline can use. Id is the file name without extension (bundled layouts live in fieldLayouts/bundled/).
     public sealed record FieldLayoutInfo(string Id, string Name, int TagCount);
 
-    // The field layouts shipped with the server (copied from the repository's fieldLayouts/ folder by Server.csproj) and helpers for
+    // The field layouts shipped with the server (copied from the repository's field-layouts/ folder by Server.csproj) and helpers for
     // WPILib-format layout files in general.
     public static class FieldLayoutCatalog
     {
