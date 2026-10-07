@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -339,8 +339,12 @@ export class ApiService {
 
   // Switches an existing sink between CPU/Vulkan in place, preserving id/tag size/calibration/bindings.
   // Omitted nthreads/quadDecimate/refineEdges/refineMode carry forward the sink's current tuning.
-  async setApriltagBackend(sinkId: number, backend: number, nthreads?: number, quadDecimate?: number, refineEdges?: boolean, refineMode?: number): Promise<void> {
+  async setApriltagBackend(sinkId: number, backend: number, nthreads?: number, quadDecimate?: number, refineEdges?: boolean, refineMode?: number,
+    advanced?: Partial<ApriltagAdvancedSettings>): Promise<void> {
     let url = `${this.baseUrl}/apriltagSink/backend?sinkId=${sinkId}&backend=${backend}`;
+    if (advanced) {
+      for (const [key, value] of Object.entries(advanced)) if (value !== undefined) url += `&${key}=${value}`;
+    }
     if (nthreads !== undefined) url += `&nthreads=${nthreads}`;
     if (quadDecimate !== undefined) url += `&quadDecimate=${quadDecimate}`;
     if (refineEdges !== undefined) url += `&refineEdges=${refineEdges}`;
@@ -351,11 +355,19 @@ export class ApiService {
 
   // Current threads/quad_decimate/refine_edges in effect; on Vulkan quadDecimate is the integer the
   // GPU pipeline actually runs.
-  async getApriltagTuning(sinkId: number): Promise<{ threads: number; quadDecimate: number; quadDecimateSupported: boolean; refineEdges: boolean; refineMode: number; refineModeSupported: boolean }> {
+  async getApriltagTuning(sinkId: number): Promise<{ threads: number; quadDecimate: number; quadDecimateSupported: boolean; refineEdges: boolean; refineMode: number; refineModeSupported: boolean;
+    advanced: ApriltagAdvancedSettings; quadSigmaSupported: boolean }> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/tuning?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const dto = await response.json();
-    return { threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges, refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported };
+    return {
+      threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges,
+      refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported, quadSigmaSupported: dto.QuadSigmaSupported,
+      advanced: {
+        family: dto.Family, quadSigma: dto.QuadSigma, maxHamming: dto.MaxHamming, decisionMargin: dto.DecisionMargin,
+        poseIterations: dto.PoseIterations, multiTag: dto.MultiTag, singleTagPose: dto.SingleTagPose,
+      },
+    };
   }
 
   // Object Detection Sink Controller routes

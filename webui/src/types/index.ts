@@ -400,6 +400,29 @@ export interface CameraControl {
   MenuValues: number[];
 }
 
+// mirrors LumenCore's ApriltagFamilyKind
+export const APRILTAG_FAMILIES = [
+  { value: 0, label: 'tag36h11 (FRC)' },
+  { value: 1, label: 'tag16h5' },
+  { value: 2, label: 'tag25h9' },
+  { value: 3, label: 'tagStandard41h12' },
+] as const;
+
+// the AprilTag settings beyond threads/decimation/refine (Server/ApriltagAdvancedTuning.cs)
+export interface ApriltagAdvancedSettings {
+  family: number;
+  quadSigma: number;
+  maxHamming: number;
+  decisionMargin: number;
+  poseIterations: number;
+  multiTag: boolean;
+  singleTagPose: boolean;
+}
+
+export const DEFAULT_APRILTAG_ADVANCED: ApriltagAdvancedSettings = {
+  family: 0, quadSigma: 0, maxHamming: 2, decisionMargin: 0, poseIterations: 50, multiTag: true, singleTagPose: true,
+};
+
 // mirrors Server/Dtos.cs's FrameTransformDto: crop (camera pixels; 0 width/height = none), then a clockwise rotation, then mirrors
 export interface FrameTransform {
   Rotation: number;

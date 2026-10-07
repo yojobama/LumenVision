@@ -36,10 +36,13 @@ namespace Server.Controllers.sinks
         public Task<int> CreateWithBackend([FromQuery] string name, [FromQuery] double tagSize,
             [FromQuery] ApriltagBackendKind backend, [FromQuery] int frameWidth = 0, [FromQuery] int frameHeight = 0,
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
-            [FromQuery] RefineEdgesMode? refineMode = null)
+            [FromQuery] RefineEdgesMode? refineMode = null, [FromQuery] ApriltagFamilyKind? family = null, [FromQuery] float? quadSigma = null,
+            [FromQuery] int? maxHamming = null, [FromQuery] float? decisionMargin = null, [FromQuery] int? poseIterations = null,
+            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null)
         {
             int sinkId = SinkManager.Instance.AddApriltagSinkWithBackend(name, tagSize, backend, frameWidth, frameHeight,
-                nthreads ?? 0, quadDecimate ?? 0.0f, refineEdges ?? true, refineMode ?? RefineEdgesMode.REFINE_EXACT);
+                nthreads ?? 0, quadDecimate ?? 0.0f, refineEdges ?? true, refineMode ?? RefineEdgesMode.REFINE_EXACT,
+                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose));
             return Task.FromResult(sinkId);
         }
 
@@ -62,6 +65,7 @@ namespace Server.Controllers.sinks
         [HttpGet("apriltagSink/tuning")]
         public Task<ApriltagTuningDto> GetTuning([FromQuery] int sinkId)
         {
+            ApriltagTuning effective = ManagerWrapper.Instance.GetApriltagDetectorEffectiveTuning(sinkId);
             return Task.FromResult(new ApriltagTuningDto
             {
                 Threads = ManagerWrapper.Instance.GetApriltagDetectorThreads(sinkId),
@@ -70,6 +74,14 @@ namespace Server.Controllers.sinks
                 RefineEdges = ManagerWrapper.Instance.GetApriltagDetectorRefineEdges(sinkId),
                 RefineMode = ManagerWrapper.Instance.GetApriltagDetectorRefineMode(sinkId),
                 RefineModeSupported = ManagerWrapper.Instance.GetApriltagDetectorRefineModeSupported(sinkId),
+                Family = effective.family,
+                QuadSigma = effective.quadSigma,
+                QuadSigmaSupported = ManagerWrapper.Instance.GetApriltagDetectorQuadSigmaSupported(sinkId),
+                MaxHamming = effective.maxHamming,
+                DecisionMargin = effective.decisionMargin,
+                PoseIterations = effective.poseIterations,
+                MultiTag = effective.multiTag,
+                SingleTagPose = effective.singleTagPose,
             });
         }
 
@@ -78,9 +90,12 @@ namespace Server.Controllers.sinks
         [HttpPatch("apriltagSink/backend")]
         public Task SetBackend([FromQuery] int sinkId, [FromQuery] ApriltagBackendKind backend,
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
-            [FromQuery] RefineEdgesMode? refineMode = null)
+            [FromQuery] RefineEdgesMode? refineMode = null, [FromQuery] ApriltagFamilyKind? family = null, [FromQuery] float? quadSigma = null,
+            [FromQuery] int? maxHamming = null, [FromQuery] float? decisionMargin = null, [FromQuery] int? poseIterations = null,
+            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null)
         {
-            SinkManager.Instance.SetApriltagBackend(sinkId, backend, nthreads, quadDecimate, refineEdges, refineMode);
+            SinkManager.Instance.SetApriltagBackend(sinkId, backend, nthreads, quadDecimate, refineEdges, refineMode,
+                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose));
             return Task.CompletedTask;
         }
 

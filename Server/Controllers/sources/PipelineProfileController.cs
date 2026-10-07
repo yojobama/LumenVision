@@ -21,10 +21,13 @@ namespace Server.Controllers.sources
             [FromQuery] int frameWidth = 0, [FromQuery] int frameHeight = 0,
             [FromQuery] bool driverMode = false,
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
-            [FromQuery] RefineEdgesMode? refineMode = null)
+            [FromQuery] RefineEdgesMode? refineMode = null, [FromQuery] ApriltagFamilyKind? family = null, [FromQuery] float? quadSigma = null,
+            [FromQuery] int? maxHamming = null, [FromQuery] float? decisionMargin = null, [FromQuery] int? poseIterations = null,
+            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null)
         {
             int index = SourceManager.Instance.AddApriltagProfile(sourceId, name, tagSize,
-                backend, frameWidth, frameHeight, driverMode, nthreads, quadDecimate, refineEdges, refineMode);
+                backend, frameWidth, frameHeight, driverMode, nthreads, quadDecimate, refineEdges, refineMode,
+                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose));
             return Task.FromResult(index);
         }
 

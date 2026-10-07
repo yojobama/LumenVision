@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
-import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment } from '../types';
-import { REFINE_EDGES_MODES } from '../types';
+import type { WsSource, WsSink, NT4Defaults, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings } from '../types';
+import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
@@ -55,6 +55,8 @@ export const Inspector: React.FC<{
   const [refineEdgesValue, setRefineEdgesValue] = useState(true);
   const [refineModeValue, setRefineModeValue] = useState(1);
   const [refineModeSupported, setRefineModeSupported] = useState(false);
+  const [advanced, setAdvanced] = useState<ApriltagAdvancedSettings>(DEFAULT_APRILTAG_ADVANCED);
+  const [quadSigmaSupported, setQuadSigmaSupported] = useState(true);
   const [applyingTuning, setApplyingTuning] = useState(false);
 
   useEffect(() => {
@@ -198,6 +200,8 @@ export const Inspector: React.FC<{
         setRefineEdgesValue(tuning.refineEdges);
         setRefineModeValue(tuning.refineMode);
         setRefineModeSupported(tuning.refineModeSupported);
+        setAdvanced(tuning.advanced);
+        setQuadSigmaSupported(tuning.quadSigmaSupported);
       })
       .catch(() => { if (!cancelled) onToast('Failed to load detector tuning', 'error'); });
     return () => { cancelled = true; };
@@ -210,11 +214,13 @@ export const Inspector: React.FC<{
     if (!sink) return;
     setSwitchingBackend(true);
     try {
-      await api.setApriltagBackend(sink.Id, backend, threadsValue, quadDecimateValue, refineEdgesValue, refineModeValue);
+      await api.setApriltagBackend(sink.Id, backend, threadsValue, quadDecimateValue, refineEdgesValue, refineModeValue, advanced);
       setSinkBackend(backend);
       const actual = await api.getApriltagTuning(sink.Id);
       setRefineModeValue(actual.refineMode);
       setRefineModeSupported(actual.refineModeSupported);
+      setAdvanced(actual.advanced);
+      setQuadSigmaSupported(actual.quadSigmaSupported);
       onToast('Backend switched', 'success');
     } catch {
       onToast('Failed to switch backend', 'error');
@@ -228,8 +234,10 @@ export const Inspector: React.FC<{
     if (!sink || sinkBackend === null) return;
     setApplyingTuning(true);
     try {
-      await api.setApriltagBackend(sink.Id, sinkBackend, threadsValue, quadDecimateSupported ? quadDecimateValue : undefined, refineEdgesValue, refineModeValue);
+      await api.setApriltagBackend(sink.Id, sinkBackend, threadsValue, quadDecimateSupported ? quadDecimateValue : undefined, refineEdgesValue, refineModeValue, advanced);
       const actual = await api.getApriltagTuning(sink.Id);
+      setAdvanced(actual.advanced);
+      setQuadSigmaSupported(actual.quadSigmaSupported);
       setThreadsValue(actual.threads);
       setQuadDecimateValue(actual.quadDecimate);
       setRefineEdgesValue(actual.refineEdges);
@@ -600,6 +608,51 @@ export const Inspector: React.FC<{
                     className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white disabled:opacity-50">
                     {REFINE_EDGES_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                   </select>
+                </div>
+                <div className="space-y-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                  <div>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Tag family</label>
+                    <select value={advanced.family} onChange={e => setAdvanced({ ...advanced, family: parseInt(e.target.value) })}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white">
+                      {APRILTAG_FAMILIES.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-xs text-gray-500 dark:text-gray-400"
+                      title={quadSigmaSupported ? 'Gaussian blur before the quad search; helps with noisy images, 0 = none.' : 'The Vulkan backend has no blur stage.'}>
+                      Blur (sigma)
+                      <input type="number" min={0} step={0.1} value={advanced.quadSigma} disabled={!quadSigmaSupported}
+                        onChange={e => setAdvanced({ ...advanced, quadSigma: Math.max(0, parseFloat(e.target.value) || 0) })}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white disabled:opacity-50" />
+                    </label>
+                    <label className="text-xs text-gray-500 dark:text-gray-400" title="How many corrupted bits a tag may have and still be read. More finds more tags, and more false ones.">
+                      Max hamming
+                      <select value={advanced.maxHamming} onChange={e => setAdvanced({ ...advanced, maxHamming: parseInt(e.target.value) })}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white">
+                        {[0, 1, 2].map(bits => <option key={bits} value={bits}>{bits} bit{bits === 1 ? '' : 's'}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-xs text-gray-500 dark:text-gray-400" title="Detections with a lower decision margin are dropped. 0 keeps everything; a clean tag scores well over 50.">
+                      Decision margin
+                      <input type="number" min={0} step={1} value={advanced.decisionMargin}
+                        onChange={e => setAdvanced({ ...advanced, decisionMargin: Math.max(0, parseFloat(e.target.value) || 0) })}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+                    </label>
+                    <label className="text-xs text-gray-500 dark:text-gray-400" title="Steps of the per-tag pose refinement. More is slower and rarely changes the answer.">
+                      Pose iterations
+                      <input type="number" min={1} max={500} step={1} value={advanced.poseIterations}
+                        onChange={e => setAdvanced({ ...advanced, poseIterations: Math.min(500, Math.max(1, parseInt(e.target.value) || 50)) })}
+                        className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+                    </label>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300" title="Solve one robot-relative pose from every visible tag with a known field position (needs a field layout and a calibration).">
+                    <input type="checkbox" checked={advanced.multiTag} onChange={e => setAdvanced({ ...advanced, multiTag: e.target.checked })} />
+                    Multi-tag pose
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300" title="Estimate a pose for each tag by itself. Off publishes only where each tag is in the image.">
+                    <input type="checkbox" checked={advanced.singleTagPose} onChange={e => setAdvanced({ ...advanced, singleTagPose: e.target.checked })} />
+                    Single-tag poses
+                  </label>
                 </div>
                 <button onClick={applyTuning} disabled={applyingTuning}
                   className="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">Apply Tuning</button>

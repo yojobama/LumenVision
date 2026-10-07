@@ -28,6 +28,8 @@ namespace Server
         public bool? RefineEdges { get; set; }
         // null = REFINE_EXACT (also what profiles saved before the option existed use)
         public RefineEdgesMode? RefineMode { get; set; }
+        // family, blur, hamming, decision margin, pose iterations and tag toggles (null = all defaults)
+        public ApriltagAdvancedTuning? Advanced { get; set; }
         // path to this profile's own WPILib field-layout JSON; keyed by profile because profiles on one source share the
         // ActiveDetectionSinkId slot, so a sink-id key would let one profile's upload overwrite another's
         public string? FieldLayoutPath { get; set; }
@@ -50,6 +52,7 @@ namespace Server
         {
             var copy = (PipelineProfile)MemberwiseClone();
             copy.CameraOverrides = CameraOverrides?.Clone();
+            copy.Advanced = Advanced?.Clone();
             return copy;
         }
     }

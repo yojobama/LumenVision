@@ -107,6 +107,8 @@ namespace Server
         public bool? ApriltagRefineEdges { get; set; }
         // which refine-edges implementation the Vulkan backend runs (null in older records: REFINE_EXACT)
         public RefineEdgesMode? ApriltagRefineMode { get; set; }
+        // family, blur, hamming, decision margin, pose iterations and tag toggles (null = all defaults)
+        public ApriltagAdvancedTuning? ApriltagAdvanced { get; set; }
 
         // MjpegSink and WebRTCSink: stream tuning, persisted so a restored stream keeps it. Null = the defaults (JPEG quality 80, 4000 kbps, 30 fps, full size).
         public int? StreamJpegQuality { get; set; }

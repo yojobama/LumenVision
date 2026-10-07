@@ -145,23 +145,31 @@ namespace Server
         // creates an ApriltagSink with an explicit backend (CPU or Vulkan) and no calibration data.
         // frameWidth/frameHeight are a hint (0 is fine); nthreads/quadDecimate <= 0 mean the backend default (see ApriltagTuning).
         public int AddApriltagSinkWithBackend(string name, double tagSize, ApriltagBackendKind backend, int frameWidth, int frameHeight,
-            int nthreads = 0, float quadDecimate = 0.0f, bool refineEdges = true, RefineEdgesMode refineMode = RefineEdgesMode.REFINE_EXACT)
+            int nthreads = 0, float quadDecimate = 0.0f, bool refineEdges = true, RefineEdgesMode refineMode = RefineEdgesMode.REFINE_EXACT,
+            ApriltagAdvancedTuning? advanced = null)
         {
             int id = ManagerWrapper.Instance.CreateApriltagDetector(new CameraCalibrationResult(), tagSize, backend, frameWidth, frameHeight,
-                MakeTuning(nthreads, quadDecimate, refineEdges, refineMode));
-            sinks.Add(NewApriltagSinkRecord(id, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode));
+                MakeTuning(nthreads, quadDecimate, refineEdges, refineMode, advanced));
+            sinks.Add(NewApriltagSinkRecord(id, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode, advanced));
             DB.Instance.Save();
             return id;
         }
 
-        private static ApriltagTuning MakeTuning(int nthreads, float quadDecimate, bool refineEdges, RefineEdgesMode refineMode) =>
-            new ApriltagTuning { nthreads = nthreads, quadDecimate = quadDecimate, refineEdges = refineEdges, refineMode = refineMode };
+        private static ApriltagTuning MakeTuning(int nthreads, float quadDecimate, bool refineEdges, RefineEdgesMode refineMode,
+            ApriltagAdvancedTuning? advanced = null)
+        {
+            var tuning = new ApriltagTuning { nthreads = nthreads, quadDecimate = quadDecimate, refineEdges = refineEdges, refineMode = refineMode };
+            advanced?.ApplyTo(tuning);
+            return tuning;
+        }
 
         // the persisted record for an ApriltagSink, carrying the requested configuration for RestoreApriltagSink
         private static Sink NewApriltagSinkRecord(int id, string name, double tagSize, ApriltagBackendKind backend,
-            int nthreads, float quadDecimate, bool refineEdges, RefineEdgesMode refineMode = RefineEdgesMode.REFINE_EXACT) =>
+            int nthreads, float quadDecimate, bool refineEdges, RefineEdgesMode refineMode = RefineEdgesMode.REFINE_EXACT,
+            ApriltagAdvancedTuning? advanced = null) =>
             new Sink(id, name, SinkType.ApriltagSink)
             {
+                ApriltagAdvanced = advanced == null || advanced.IsDefault ? null : advanced.Clone(),
                 ApriltagTagSize = tagSize,
                 ApriltagBackend = backend,
                 ApriltagThreads = nthreads,
@@ -180,8 +188,8 @@ namespace Server
             bool refineEdges = persisted.ApriltagRefineEdges ?? true;
             RefineEdgesMode refineMode = persisted.ApriltagRefineMode ?? RefineEdgesMode.REFINE_EXACT;
             int id = ManagerWrapper.Instance.CreateApriltagDetector(persisted.Id, new CameraCalibrationResult(), tagSize,
-                backend, 0, 0, MakeTuning(nthreads, quadDecimate, refineEdges, refineMode));
-            sinks.Add(NewApriltagSinkRecord(id, persisted.Name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode));
+                backend, 0, 0, MakeTuning(nthreads, quadDecimate, refineEdges, refineMode, persisted.ApriltagAdvanced));
+            sinks.Add(NewApriltagSinkRecord(id, persisted.Name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode, persisted.ApriltagAdvanced));
             return id;
         }
 
@@ -194,7 +202,7 @@ namespace Server
         // Switches an existing ApriltagSink between CPU/Vulkan by rebuilding it at the same id and re-establishing its bindings.
         // nthreads/quadDecimate/refineEdges/refineMode default to the sink's current values; frame size is 0x0 so a Vulkan detector sizes itself from its first frame.
         public void SetApriltagBackend(int sinkId, ApriltagBackendKind backend, int? nthreads = null, float? quadDecimate = null,
-            bool? refineEdges = null, RefineEdgesMode? refineMode = null)
+            bool? refineEdges = null, RefineEdgesMode? refineMode = null, ApriltagAdvancedTuning? advanced = null)
         {
             Sink sink = GetSinkById(sinkId) ?? throw new ArgumentException($"no sink with id {sinkId}");
             if (sink.Type != SinkType.ApriltagSink)
@@ -213,12 +221,30 @@ namespace Server
             bool effectiveRefineEdges = refineEdges ?? sink.ApriltagRefineEdges ?? ManagerWrapper.Instance.GetApriltagDetectorRefineEdges(sinkId);
             RefineEdgesMode effectiveRefineMode = refineMode ?? sink.ApriltagRefineMode ?? ManagerWrapper.Instance.GetApriltagDetectorRefineMode(sinkId);
 
+            // settings given now replace the saved ones member by member; the rest are carried over
+            ApriltagAdvancedTuning? effectiveAdvanced = advanced != null ? advanced.MergedOver(sink.ApriltagAdvanced) : sink.ApriltagAdvanced;
+
             DeleteSink(sinkId);
 
             ManagerWrapper.Instance.CreateApriltagDetector(sinkId, calibration, tagSize, backend, 0, 0,
-                MakeTuning(effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode));
-            sinks.Add(NewApriltagSinkRecord(sinkId, name, tagSize, backend, effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode));
+                MakeTuning(effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode, effectiveAdvanced));
+            sinks.Add(NewApriltagSinkRecord(sinkId, name, tagSize, backend, effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode, effectiveAdvanced));
             if (driverMode) ManagerWrapper.Instance.SetDriverMode(sinkId, true);
+
+            // a camera's active pipeline keeps what was tuned here, so activating another pipeline and coming back (or a restart) does not lose it
+            foreach (int sourceId in SourceManager.Instance.GetAllSourceIds())
+            {
+                Source? owner = SourceManager.Instance.GetSourceById(sourceId);
+                if (owner?.ActiveDetectionSinkId != sinkId) continue;
+                PipelineProfile? active = owner.Profiles.FirstOrDefault(p => p.Index == owner.ActiveProfileIndex);
+                if (active == null || active.Kind != DetectionSinkKind.ApriltagSink) continue;
+                active.Backend = backend;
+                active.Threads = effectiveThreads;
+                active.QuadDecimate = effectiveQuadDecimate;
+                active.RefineEdges = effectiveRefineEdges;
+                active.RefineMode = effectiveRefineMode;
+                active.Advanced = effectiveAdvanced == null || effectiveAdvanced.IsDefault ? null : effectiveAdvanced.Clone();
+            }
 
             if (upstreamSourceId.HasValue) BindSourceToSink(sinkId, upstreamSourceId.Value);
             foreach (int downstreamId in downstreamSinkIds) BindSourceToSink(downstreamId, sinkId);
@@ -488,8 +514,8 @@ namespace Server
                     RefineEdgesMode refineMode = original.ApriltagRefineMode ?? ManagerWrapper.Instance.GetApriltagDetectorRefineMode(sinkId);
 
                     newId = ManagerWrapper.Instance.CreateApriltagDetector(calibration, tagSize, backend, 0, 0,
-                        MakeTuning(nthreads, quadDecimate, refineEdges, refineMode));
-                    sinks.Add(NewApriltagSinkRecord(newId, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode));
+                        MakeTuning(nthreads, quadDecimate, refineEdges, refineMode, original.ApriltagAdvanced));
+                    sinks.Add(NewApriltagSinkRecord(newId, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode, original.ApriltagAdvanced));
 
                     string? layout = FindFieldLayoutPath(sinkId);
                     if (layout != null)
@@ -537,13 +563,13 @@ namespace Server
                     float quadDecimate = profile.QuadDecimate ?? 0.0f;
                     bool refineEdges = profile.RefineEdges ?? true;
                     RefineEdgesMode refineMode = profile.RefineMode ?? RefineEdgesMode.REFINE_EXACT;
-                    ApriltagTuning tuning = MakeTuning(nthreads, quadDecimate, refineEdges, refineMode);
+                    ApriltagTuning tuning = MakeTuning(nthreads, quadDecimate, refineEdges, refineMode, profile.Advanced);
                     id = explicitId.HasValue
                         ? ManagerWrapper.Instance.CreateApriltagDetector(explicitId.Value, calibration, tagSize,
                             backend, profile.FrameWidth, profile.FrameHeight, tuning)
                         : ManagerWrapper.Instance.CreateApriltagDetector(calibration, tagSize,
                             backend, profile.FrameWidth, profile.FrameHeight, tuning);
-                    sinks.Add(NewApriltagSinkRecord(id, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode));
+                    sinks.Add(NewApriltagSinkRecord(id, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode, profile.Advanced));
 
                     if (!string.IsNullOrEmpty(profile.FieldLayoutPath))
                         ManagerWrapper.Instance.LoadFieldLayout(id, profile.FieldLayoutPath);
