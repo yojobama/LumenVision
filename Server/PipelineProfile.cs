@@ -41,5 +41,8 @@ namespace Server
         {
             Name = string.Empty;
         }
+
+        // an independent copy (same index), for duplicating a source with its pipelines
+        public PipelineProfile Clone() => (PipelineProfile)MemberwiseClone();
     }
 }

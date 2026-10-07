@@ -104,6 +104,14 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinks);
         }
 
+        // POST: copy a detector node (ApriltagSink or ObjectDetectionSink) as "<name> copy"; with copyBindings it is bound to the same source.
+        // Returns the new sink's id.
+        [HttpPost("sink/duplicate")]
+        public Task<int> Duplicate([FromQuery] int SinkID, [FromQuery] bool copyBindings = false)
+        {
+            return Task.FromResult(SinkManager.Instance.DuplicateSink(SinkID, copyBindings));
+        }
+
         // PATCH: toggle driver mode on a detection sink (video still streams, detection/NT4 publishing is skipped).
         // Throws if the sink doesn't support it.
         [HttpPatch("sink/driverMode")]

@@ -56,6 +56,13 @@ namespace Server.Controllers.sources
             return Task.CompletedTask;
         }
 
+        // POST: copy a file source (not a camera) as "<name> copy"; returns the new source's id
+        [HttpPost("source/duplicate")]
+        public Task<int> Duplicate([FromQuery] int SourceID)
+        {
+            return Task.FromResult(SourceManager.Instance.DuplicateSource(SourceID));
+        }
+
         // GET: the source's FPS cap, or -1 when unlimited
         [HttpGet("source/fpsLimit")]
         public Task<int> GetFpsLimit([FromQuery] int SourceID)

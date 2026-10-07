@@ -6,6 +6,7 @@ import { REFINE_EDGES_MODES } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
+import { deleteNode } from './nodeActions';
 import { StreamView } from '../components/StreamView';
 
 const api = new ApiService();
@@ -251,10 +252,8 @@ export const Inspector: React.FC<{
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Delete ${node.data.label}?`)) return;
     try {
-      if (source) await api.deleteSource(source.Id);
-      else if (sink) await api.deleteSink(sink.Id);
+      if (!(await deleteNode(node))) return;
       onToast('Deleted', 'info');
       onDeleted();
     } catch {
@@ -403,7 +402,11 @@ export const Inspector: React.FC<{
         <div>
           <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">Name</label>
           <div className="flex gap-2">
-            <input value={name} onChange={e => setName(e.target.value)} onBlur={saveName}
+            <input id="inspector-name" value={name} onChange={e => setName(e.target.value)} onBlur={saveName}
+              onKeyDown={e => {
+                if (e.key === 'Enter') e.currentTarget.blur();
+                if (e.key === 'Escape') { setName(node.data.label); e.currentTarget.blur(); }
+              }}
               className="flex-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
           </div>
         </div>

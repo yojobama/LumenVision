@@ -109,6 +109,8 @@ namespace Server
                         // records without it use the generic path's defaults - see RestoreApriltagSink
                         if (sink.Type == SinkType.ApriltagSink && sink.ApriltagTagSize.HasValue)
                             SinkManager.Instance.RestoreApriltagSink(sink);
+                        else if (sink.Type == SinkType.ObjectDetectionSink)
+                            SinkManager.Instance.RestoreObjectDetectionSink(sink);
                         else
                             SinkManager.Instance.AddSink(sink.Name, sink.Type.ToString(), sink.Id);
                     }

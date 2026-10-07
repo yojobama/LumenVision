@@ -15,6 +15,7 @@ import { LeftRail } from '../graph/LeftRail';
 import { BottomStrip } from '../graph/BottomStrip';
 import { AddSourceModal } from '../components/AddSourceModal';
 import { AddSinkModal } from '../components/AddSinkModal';
+import { deleteNode, duplicateNode } from '../graph/nodeActions';
 import type { AddSinkOptions, NodeTypesResponse, NT4Defaults, CameraHardwareInfo } from '../types';
 
 const api = new ApiService();
@@ -53,6 +54,50 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   }, [snapshot, capabilities, setNodes]);
 
   const selectedNode = nodes.find(n => n.id === selectedId) ?? null;
+
+  // Keyboard shortcuts on the selected node: Ctrl+C remembers it, Ctrl+V copies it on the server (Ctrl+Shift+V also keeps its source
+  // binding), F2 renames it in the Inspector and Delete removes it. Ignored while typing in a field.
+  const copiedRef = useRef<PipelineNode | null>(null);
+  const shortcutState = useRef({ selectedNode, onToast });
+  shortcutState.current = { selectedNode, onToast };
+  useEffect(() => {
+    const handler = async (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      const { selectedNode: current, onToast: toast } = shortcutState.current;
+      const modifier = e.ctrlKey || e.metaKey;
+
+      try {
+        if (modifier && e.key.toLowerCase() === 'c' && current) {
+          copiedRef.current = current;
+          toast(`Copied "${current.data.label}"`, 'info');
+        } else if (modifier && e.key.toLowerCase() === 'v' && copiedRef.current) {
+          e.preventDefault();
+          const original = copiedRef.current;
+          const newId = await duplicateNode(original, e.shiftKey);
+          const origin = positionsRef.current.get(original.id) ?? original.position;
+          positionsRef.current.set(newId, { x: origin.x + 40, y: origin.y + 60 });
+          setSelectedId(newId);
+          toast(`Pasted a copy of "${original.data.label}"`, 'success');
+        } else if (e.key === 'F2' && current) {
+          e.preventDefault();
+          const field = document.getElementById('inspector-name') as HTMLInputElement | null;
+          field?.focus();
+          field?.select();
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && current) {
+          e.preventDefault();
+          if (await deleteNode(current)) {
+            setSelectedId(null);
+            toast('Deleted', 'info');
+          }
+        }
+      } catch (error) {
+        toast(error instanceof Error && error.message ? error.message : 'That action failed', 'error');
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
   // A WebRTCSink holds one peer connection, so the sink shown in the Inspector is excluded from
   // BottomStrip to avoid double negotiation. Derived from `snapshot` (not `nodes`, which lags a
   // render) so both see identical data.
@@ -181,6 +226,10 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
               <span className="px-3 py-2 bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 rounded text-sm">Reconnecting to live state...</span>
             )}
             <GraphProfileBar onToast={onToast} />
+            <span className="px-3 py-2 bg-white/80 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 rounded text-xs hidden xl:inline"
+              title="Select a node first. Ctrl+Shift+V also keeps the copy's source binding. Cameras cannot be copied (a device opens once); copy a detector or a file source.">
+              Ctrl+C / Ctrl+V copy &middot; F2 rename &middot; Del delete
+            </span>
           </div>
           <ReactFlow
             nodes={nodes}

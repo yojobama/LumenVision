@@ -369,9 +369,89 @@ namespace Server
             int id = ManagerWrapper.Instance.CreateObjectDetectionSink(
                 model.Provider, model.ModelPath, model.LabelsPath, model.Variant,
                 model.ConfThreshold, model.NmsThreshold, model.InputSize);
-            sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink));
+            sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink) { ObjectDetectionModelId = modelId });
             DB.Instance.Save();
             return id;
+        }
+
+        // DB.Load() restore path: recreates the ObjectDetectionSink at the same id from its saved model; false when the record carries no
+        // model (older data) or the model no longer exists, in which case the sink is dropped
+        public bool RestoreObjectDetectionSink(Sink persisted)
+        {
+            if (!persisted.ObjectDetectionModelId.HasValue) return false;
+            var model = ModelManager.Instance.GetModel(persisted.ObjectDetectionModelId.Value);
+            if (model == null) return false;
+
+            int id = ManagerWrapper.Instance.CreateObjectDetectionSink(persisted.Id, model.Provider, model.ModelPath, model.LabelsPath,
+                model.Variant, model.ConfThreshold, model.NmsThreshold, model.InputSize);
+            sinks.Add(new Sink(id, persisted.Name, SinkType.ObjectDetectionSink) { ObjectDetectionModelId = model.Id });
+            return true;
+        }
+
+        // The field-layout file a detector was given: its own upload, or the active profile's layout of the camera it is the detector for.
+        private string? FindFieldLayoutPath(int sinkId)
+        {
+            string own = System.IO.Path.Combine(AppContext.BaseDirectory, "fieldLayouts", $"sink-{sinkId}.json");
+            if (System.IO.File.Exists(own)) return own;
+            foreach (int sourceId in SourceManager.Instance.GetAllSourceIds())
+            {
+                Source? source = SourceManager.Instance.GetSourceById(sourceId);
+                if (source?.ActiveDetectionSinkId != sinkId) continue;
+                string? path = source.Profiles.FirstOrDefault(p => p.Index == source.ActiveProfileIndex)?.FieldLayoutPath;
+                if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path)) return path;
+            }
+            return null;
+        }
+
+        // Copies a detector node: a new, stopped sink named "<name> copy" with the same configuration (tag size, backend, tuning, calibration,
+        // field layout, driver mode, or the same model). With copyBindings it is bound to the same source as the original. Only the two
+        // detector types are copyable; the stream/record/NT outputs hang off nodes as badges and the stereo nodes need their own calibration.
+        public int DuplicateSink(int sinkId, bool copyBindings)
+        {
+            Sink original = GetSinkById(sinkId) ?? throw Server.Web.ApiException.NotFound($"no sink with id {sinkId}");
+            string name = original.Name + " copy";
+            int newId;
+
+            switch (original.Type)
+            {
+                case SinkType.ApriltagSink:
+                {
+                    double tagSize = ManagerWrapper.Instance.GetApriltagDetectorTagSize(sinkId);
+                    CameraCalibrationResult calibration = ManagerWrapper.Instance.GetApriltagDetectorCalibration(sinkId);
+                    ApriltagBackendKind backend = original.ApriltagBackend ?? ApriltagBackendKind.APRILTAG_BACKEND_CPU;
+                    int nthreads = original.ApriltagThreads ?? ManagerWrapper.Instance.GetApriltagDetectorThreads(sinkId);
+                    float quadDecimate = original.ApriltagQuadDecimate ?? ManagerWrapper.Instance.GetApriltagDetectorQuadDecimate(sinkId);
+                    bool refineEdges = original.ApriltagRefineEdges ?? ManagerWrapper.Instance.GetApriltagDetectorRefineEdges(sinkId);
+                    RefineEdgesMode refineMode = original.ApriltagRefineMode ?? ManagerWrapper.Instance.GetApriltagDetectorRefineMode(sinkId);
+
+                    newId = ManagerWrapper.Instance.CreateApriltagDetector(calibration, tagSize, backend, 0, 0,
+                        MakeTuning(nthreads, quadDecimate, refineEdges, refineMode));
+                    sinks.Add(NewApriltagSinkRecord(newId, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode));
+
+                    string? layout = FindFieldLayoutPath(sinkId);
+                    if (layout != null)
+                    {
+                        // a private copy, so editing one node's layout never changes the other's
+                        string copy = System.IO.Path.Combine(AppContext.BaseDirectory, "fieldLayouts", $"sink-{newId}.json");
+                        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(copy)!);
+                        System.IO.File.Copy(layout, copy, true);
+                        ManagerWrapper.Instance.LoadFieldLayout(newId, copy);
+                    }
+                    if (ManagerWrapper.Instance.GetDriverMode(sinkId)) ManagerWrapper.Instance.SetDriverMode(newId, true);
+                    break;
+                }
+                case SinkType.ObjectDetectionSink:
+                    if (!original.ObjectDetectionModelId.HasValue)
+                        throw Server.Web.ApiException.BadRequest("this object detection node predates model tracking and cannot be copied; create it again");
+                    newId = AddObjectDetectionSink(name, original.ObjectDetectionModelId.Value);
+                    break;
+                default:
+                    throw Server.Web.ApiException.BadRequest($"{original.Type} nodes cannot be copied");
+            }
+
+            if (copyBindings && original.Source != null) BindSourceToSink(newId, original.Source.Id);
+            DB.Instance.Save();
+            return newId;
         }
 
         // which backend an existing ObjectDetectionSink runs (read-only)
@@ -418,7 +498,7 @@ namespace Server
                             model.ModelPath, model.LabelsPath, model.Variant, model.ConfThreshold, model.NmsThreshold, model.InputSize)
                         : ManagerWrapper.Instance.CreateObjectDetectionSink(model.Provider,
                             model.ModelPath, model.LabelsPath, model.Variant, model.ConfThreshold, model.NmsThreshold, model.InputSize);
-                    sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink));
+                    sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink) { ObjectDetectionModelId = model.Id });
                     break;
 
                 default:

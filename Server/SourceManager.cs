@@ -140,6 +140,34 @@ namespace Server
             DB.Instance.Save();
         }
 
+        // Copies a file source (image or video) as "<name> copy" with the same path, fps limit and pipeline profiles. A physical camera
+        // cannot be opened twice, so cameras are refused: use a pipeline profile (or a crop source) for a second view of one.
+        public int DuplicateSource(int sourceId)
+        {
+            Source original = GetSourceById(sourceId) ?? throw Server.Web.ApiException.NotFound($"no source with id {sourceId}");
+            string name = original.Name + " copy";
+            int newId;
+            switch (original.Type)
+            {
+                case SourceType.VideoFile:
+                    newId = InitializeVideoFileSource(original.FilePath!, original.Fps ?? 30, name);
+                    break;
+                case SourceType.ImageFile:
+                    newId = initializeImageFileSource(original.FilePath!, name);
+                    break;
+                case SourceType.Camera:
+                    throw Server.Web.ApiException.BadRequest("a camera can only be opened once; add another pipeline profile to it instead of copying the node");
+                default:
+                    throw Server.Web.ApiException.BadRequest($"{original.Type} nodes cannot be copied");
+            }
+
+            Source copy = GetSourceById(newId);
+            if (original.FpsLimit.HasValue) SetFpsLimit(newId, original.FpsLimit.Value);
+            copy.Profiles = original.Profiles.Select(p => p.Clone()).ToList();
+            DB.Instance.Save();
+            return newId;
+        }
+
         // writes one camera control and, when the device accepted it, remembers the value for the next start
         public bool SetCameraControl(int sourceId, int controlId, int value)
         {

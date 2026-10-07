@@ -108,6 +108,9 @@ namespace Server
         // which refine-edges implementation the Vulkan backend runs (null in older records: REFINE_EXACT)
         public RefineEdgesMode? ApriltagRefineMode { get; set; }
 
+        // ObjectDetectionSink only: the model the sink was created from, so DB.Load() can rebuild it and a node copy can reuse it.
+        public int? ObjectDetectionModelId { get; set; }
+
         // No `source` constructor parameter: System.Text.Json would bind the JSON "Source" property to it instead of the Source setter.
         public Sink(int id, string name, SinkType type)
         {

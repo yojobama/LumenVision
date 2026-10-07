@@ -881,6 +881,21 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
+  // Copies a detector node as "<name> copy"; with copyBindings it is bound to the same source. Resolves to the new sink id; rejects
+  // with the server's explanation (for example that this node type cannot be copied).
+  async duplicateSink(sinkId: number, copyBindings: boolean): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/sink/duplicate?SinkID=${sinkId}&copyBindings=${copyBindings}`, { method: 'POST' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  // Copies a file source (a camera cannot be opened twice); resolves to the new source id.
+  async duplicateSource(sourceId: number): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/source/duplicate?SourceID=${sourceId}`, { method: 'POST' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
   async getDriverMode(sinkId: number): Promise<boolean> {
     const response = await fetch(`${this.baseUrl}/sink/driverMode?SinkID=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
