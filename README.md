@@ -268,6 +268,34 @@ or stop them), each camera's calibration status, and every saved calibration.
 plus CPU/RAM/disk/temperature — meant to be legible across a pit during a match, not for editing
 anything.
 
+## Device settings
+
+The Settings page (`/settings`) manages the coprocessor itself. Everything is stored on the device, so every browser sees the same values:
+
+- **NetworkTables and LED** (`GET/PUT /api/device/settings`, `settings.json`): how to reach the robot's NT4 server (team number or an address, root
+  table, client identity) and the LED GPIO. Every NetworkTables sink connects from these settings, is rebuilt when they change, and is
+  restored after a restart.
+- **Network** (`/api/network`): hostname (`hostnamectl`, the board answers to `<name>.local`) and DHCP or a static IPv4 address through NetworkManager
+  (`nmcli`). A static address that is not confirmed from the new address within a minute is undone, and so is one still unconfirmed when the server
+  restarts, so a typo cannot lock the device out. Boards without NetworkManager show the settings as unsupported.
+- **Backup and restore** (`/api/device/settings/export`, `/import`): one ZIP of the graph, settings, graph profiles, uploaded field layouts and
+  calibrations (models and the log optional). An import validates the archive's manifest and every entry name, backs up what it replaces to
+  `backups/` (the last five are kept), and restarts the server.
+- **Restart, reboot, shut down, factory reset** (`/api/device/restart`, `reboot`, `shutdown`, `factoryReset`): a factory reset needs the typed phrase
+  and can keep calibrations, models and media.
+- **Update** (`/api/device/update/*`): upload a `lumenvision-backend` .deb built for the board (checked: ar archive, package name, architecture), then
+  install it. The install runs as root in its own systemd unit, so it survives the server restarting, and its output is shown on the page.
+- **Logs**: the server's own output, LumenCore's log and the store's log are gathered in one place (`GET /api/log/tail|entries|download` with `level` and
+  `since` filters, `/ws/logs` live) and written to daily files under `logs/`. Press the backtick key anywhere in the UI for the log drawer.
+- **Accelerators and version**: GPU, memory-controller and NPU frequency, governor and load on the Dashboard and Match pages (from devfreq; the NPU's
+  load is read from `/sys/kernel/debug/rknpu/load` as root), and the server, LumenCore and operating system versions under About.
+
+**Security.** These operations run as root. The package's postinst gives the `lumen` user passwordless sudo (`/etc/sudoers.d/lumenvision`, validated with
+`visudo` before it is installed, removed on purge) and the server runs commands through `sudo -n` with each argument passed separately, never through a
+shell. The HTTP API has no authentication, so **anyone who can reach the server's port can restart, reboot, re-address or update the board**. Keep it on the
+robot network or put it behind something that authenticates.
+
+
 ## Tests
 
 - **C++ (`tests/`, Catch2):** configure with `-DLUMEN_BUILD_TESTS=ON` (the `ci-*` presets do) and build the

@@ -819,6 +819,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/device/accelerators": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DeviceController_GetAccelerators"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/device/temperature": {
         parameters: {
             query?: never;
@@ -828,6 +844,38 @@ export interface paths {
         };
         get: operations["DeviceController_GetDeviceTemperature"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DeviceSettingsController_GetVersion"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DeviceSettingsController_Get"];
+        put: operations["DeviceSettingsController_Put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -923,6 +971,38 @@ export interface paths {
             cookie?: never;
         };
         get: operations["LogController_Tail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/log/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["LogController_Entries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/log/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["LogController_Download"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1027,6 +1107,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/network": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["NetworkController_Get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network/hostname": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["NetworkController_SetHostname"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network/ipv4": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["NetworkController_SetIpv4"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["NetworkController_Confirm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/network/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["NetworkController_Revert"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/networkTablesSink/createForTeam": {
         parameters: {
             query?: never;
@@ -1053,6 +1213,22 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["NetworkTablesSinkController_CreateForServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/networkTablesSink/createFromSettings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["NetworkTablesSinkController_CreateFromSettings"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1283,6 +1459,70 @@ export interface paths {
         patch: operations["PipelineProfileController_Activate"];
         trace?: never;
     };
+    "/device/restart": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PowerController_Restart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/reboot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PowerController_Reboot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PowerController_Shutdown"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/factoryReset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PowerController_FactoryReset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/recordSink/create": {
         parameters: {
             query?: never;
@@ -1357,6 +1597,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["RecordSinkController_Promote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/settings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["SettingsArchiveController_Export"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/settings/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["SettingsArchiveController_Import"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1779,6 +2051,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/device/update/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpdateController_Upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/update/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["UpdateController_Install"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/device/update/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["UpdateController_Status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/videoFileSource/getAll": {
         parameters: {
             query?: never;
@@ -2145,28 +2465,40 @@ export interface components {
             Sources?: components["schemas"]["NodeTypeCapability"][];
             Sinks?: components["schemas"]["NodeTypeCapability"][];
         };
-        Model: {
-            Id: number;
+        AcceleratorInfo: {
+            Kind?: string;
             Name?: string;
-            ModelPath?: string;
-            LabelsPath?: string;
-            Variant: number;
-            InputSize: number;
-            ConfThreshold: number;
-            NmsThreshold: number;
-            Provider: number;
+            FreqMhz: number;
+            MaxFreqMhz: number;
+            Governor?: string;
+            LoadPercent?: number;
         };
-        NetworkTablesStatusDto: {
-            Connected: boolean;
-            Identity?: string;
-            RootTable?: string;
+        VersionInfo: {
+            Server?: string;
+            LumenCore?: string;
+            Os?: string;
+            Kernel?: string;
+            Architecture?: string;
+            Runtime?: string;
+            Hostname?: string;
+        };
+        LedSettings: {
+            Enabled: boolean;
+            Chip: number;
+            Line: number;
+            ActiveLow: boolean;
+        };
+        NetworkTablesSettings: {
+            Mode?: string;
             TeamNumber?: number;
             ServerAddress?: string;
+            Port: number;
+            RootTable?: string;
+            ClientIdentity?: string;
         };
-        ObjectDetectionThresholdsDto: {
-            ConfThreshold: number;
-            NmsThreshold: number;
-            ModelId?: number;
+        DeviceSettingsData: {
+            Led?: components["schemas"]["LedSettings"];
+            NetworkTables?: components["schemas"]["NetworkTablesSettings"];
         };
         TimeSpan: {
             Ticks: number;
@@ -2202,10 +2534,68 @@ export interface components {
             TimeOfDay: components["schemas"]["TimeSpan"];
             Year: number;
         };
+        LogEntry: {
+            Id: number;
+            TimeUtc: components["schemas"]["DateTime"];
+            Level: number;
+            Source?: string;
+            Message?: string;
+        };
+        Model: {
+            Id: number;
+            Name?: string;
+            ModelPath?: string;
+            LabelsPath?: string;
+            Variant: number;
+            InputSize: number;
+            ConfThreshold: number;
+            NmsThreshold: number;
+            Provider: number;
+        };
+        Ipv4Config: {
+            Method?: string;
+            Address?: string;
+            Gateway?: string;
+            Dns?: string[];
+        };
+        NetworkConnectionInfo: {
+            Name?: string;
+            Device?: string;
+            Type?: string;
+            Configured?: components["schemas"]["Ipv4Config"];
+            CurrentAddresses?: string[];
+        };
+        PendingNetworkChange: {
+            Connection?: string;
+            SecondsLeft: number;
+        };
+        NetworkStatus: {
+            Supported: boolean;
+            Hostname?: string;
+            Connections?: components["schemas"]["NetworkConnectionInfo"][];
+            Pending?: components["schemas"]["PendingNetworkChange"];
+        };
+        NetworkTablesStatusDto: {
+            Connected: boolean;
+            Identity?: string;
+            RootTable?: string;
+            TeamNumber?: number;
+            ServerAddress?: string;
+        };
+        ObjectDetectionThresholdsDto: {
+            ConfThreshold: number;
+            NmsThreshold: number;
+            ModelId?: number;
+        };
         RecordSegmentDto: {
             FileName?: string;
             SizeBytes: number;
             LastWriteTimeUtc: components["schemas"]["DateTime"];
+        };
+        ImportResult: {
+            FilesRestored: number;
+            Groups?: string[];
+            BackupPath?: string;
         };
         Sink: {
             Type: number;
@@ -2245,6 +2635,16 @@ export interface components {
         StereoDepthStatsDto: {
             ValidFraction: number;
             MedianDepthMeters: number;
+        };
+        StagedPackage: {
+            Package?: string;
+            Version?: string;
+            Architecture?: string;
+            SizeBytes: number;
+        };
+        UpdateStatus: {
+            State?: string;
+            Log?: string;
         };
         WebRtcStatusDto: {
             Connected: boolean;
@@ -3456,6 +3856,26 @@ export interface operations {
             };
         };
     };
+    DeviceController_GetAccelerators: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcceleratorInfo"][];
+                };
+            };
+        };
+    };
     DeviceController_GetDeviceTemperature: {
         parameters: {
             query?: never;
@@ -3472,6 +3892,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": number;
+                };
+            };
+        };
+    };
+    DeviceSettingsController_GetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionInfo"];
+                };
+            };
+        };
+    };
+    DeviceSettingsController_Get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSettingsData"];
+                };
+            };
+        };
+    };
+    DeviceSettingsController_Put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSettingsData"];
                 };
             };
         };
@@ -3580,6 +4060,8 @@ export interface operations {
         parameters: {
             query?: {
                 lines?: number;
+                level?: string;
+                since?: string;
             };
             header?: never;
             path?: never;
@@ -3595,6 +4077,48 @@ export interface operations {
                 content: {
                     "application/json": string[];
                 };
+            };
+        };
+    };
+    LogController_Entries: {
+        parameters: {
+            query?: {
+                lines?: number;
+                level?: string;
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LogEntry"][];
+                };
+            };
+        };
+    };
+    LogController_Download: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3728,6 +4252,100 @@ export interface operations {
             };
         };
     };
+    NetworkController_Get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NetworkStatus"];
+                };
+            };
+        };
+    };
+    NetworkController_SetHostname: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NetworkController_SetIpv4: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingNetworkChange"];
+                };
+            };
+        };
+    };
+    NetworkController_Confirm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NetworkController_Revert: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     NetworkTablesSinkController_CreateForTeam: {
         parameters: {
             query: {
@@ -3761,6 +4379,28 @@ export interface operations {
                 port?: number;
                 rootTable?: string;
                 clientIdentity?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    NetworkTablesSinkController_CreateFromSettings: {
+        parameters: {
+            query?: {
+                name?: string;
             };
             header?: never;
             path?: never;
@@ -4153,6 +4793,80 @@ export interface operations {
             };
         };
     };
+    PowerController_Restart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PowerController_Reboot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PowerController_Shutdown: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PowerController_FactoryReset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
     RecordSinkController_Create: {
         parameters: {
             query?: {
@@ -4313,6 +5027,47 @@ export interface operations {
                 };
                 content: {
                     "application/json": number;
+                };
+            };
+        };
+    };
+    SettingsArchiveController_Export: {
+        parameters: {
+            query?: {
+                models?: boolean;
+                log?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SettingsArchiveController_Import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportResult"];
                 };
             };
         };
@@ -4913,6 +5668,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StereoDepthStatsDto"];
+                };
+            };
+        };
+    };
+    UpdateController_Upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StagedPackage"];
+                };
+            };
+        };
+    };
+    UpdateController_Install: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UpdateController_Status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpdateStatus"];
                 };
             };
         };
