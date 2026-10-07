@@ -13,7 +13,7 @@ public sealed class FakeRunner : IPrivilegedRunner
     public List<(string Program, string[] Arguments)> Calls { get; } = new();
     public Func<string, string[], CommandResult> Respond { get; set; } = (_, _) => new CommandResult(0, "", "");
 
-    public Task<CommandResult> RunAsync(string program, IReadOnlyList<string> arguments, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+    public Task<CommandResult> RunAsync(string program, IReadOnlyList<string> arguments, TimeSpan? timeout = null, CancellationToken cancellationToken = default, bool quiet = false)
     {
         var args = new List<string>(arguments).ToArray();
         lock (Calls) Calls.Add((program, args));

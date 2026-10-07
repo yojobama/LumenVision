@@ -108,7 +108,7 @@ namespace Server
             if (npuLoadUnavailable) return null;
             try
             {
-                CommandResult result = await runner().RunAsync("cat", new[] { npuLoadPath }, TimeSpan.FromSeconds(3));
+                CommandResult result = await runner().RunAsync("cat", new[] { npuLoadPath }, TimeSpan.FromSeconds(3), quiet: true);
                 if (!result.Ok)
                 {
                     // no NPU driver, or debugfs is not mounted: stop asking

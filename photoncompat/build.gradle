@@ -86,6 +86,12 @@ test {
     useJUnitPlatform()
     dependsOn "unpackTestNatives"
     systemProperty "java.library.path", layout.buildDirectory.dir("test-natives").get().asFile.absolutePath
+    // the hardware test (LumenHardwareTest) runs only when asked: -Dlumen.hil=true
+    if (System.getProperty("lumen.hil.watch") != null) systemProperty "lumen.hil.watch", System.getProperty("lumen.hil.watch")
+    if (System.getProperty("lumen.hil") != null) {
+        systemProperty "lumen.hil", System.getProperty("lumen.hil")
+    }
+    if (System.getProperty("lumen.hil") != null || System.getProperty("lumen.hil.watch") != null) testLogging.showStandardStreams = true
 }
 
 publishing {

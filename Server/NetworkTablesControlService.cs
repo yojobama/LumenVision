@@ -32,6 +32,24 @@ namespace Server
         private static readonly Dictionary<int, double[]> ConstrainedSeeds = new();
         private static readonly Dictionary<int, double[]> ConstrainedMounts = new();
 
+        // NT sinks that were rebuilt under the same id: the new native sink has none of the aliases or status values the caches below say were applied
+        private static readonly System.Collections.Concurrent.ConcurrentQueue<int> ForgottenSinks = new();
+
+        // Call after a NetworkTablesSink was rebuilt in place: the next tick applies its camera aliases and republishes its status from scratch.
+        public static void ForgetSink(int ntSinkId) => ForgottenSinks.Enqueue(ntSinkId);
+
+        internal static void ApplyForgottenSinks()
+        {
+            while (ForgottenSinks.TryDequeue(out int ntSinkId))
+            {
+                foreach (var key in AppliedAliases.Keys.Where(k => k.ntSinkId == ntSinkId).ToList()) AppliedAliases.Remove(key);
+                foreach (var key in PublishedStatus.Keys.Where(k => k.ntSinkId == ntSinkId).ToList()) PublishedStatus.Remove(key);
+            }
+        }
+
+        internal static bool HasAppliedAlias(int ntSinkId, int nodeId) => AppliedAliases.ContainsKey((ntSinkId, nodeId));
+        internal static void RecordAppliedAliasForTest(int ntSinkId, int nodeId, string name) => AppliedAliases[(ntSinkId, nodeId)] = name;
+
         private static readonly Dictionary<(int ntSinkId, int nodeId), string> AppliedAliases = new();
         private static readonly Dictionary<(int ntSinkId, int nodeId), (string status, DateTime at)> PublishedStatus = new();
 
@@ -62,6 +80,7 @@ namespace Server
 
         private static void Tick()
         {
+            ApplyForgottenSinks();
             List<int> ntSinkIds = SinkManager.Instance.getAllSinkIds()
                 .Where(id => SinkManager.Instance.GetSinkById(id)?.Type == SinkType.NetworkTablesSink)
                 .ToList();

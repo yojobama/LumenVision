@@ -54,8 +54,11 @@ namespace Server
         public override void Flush() => original.Flush();
 
         // ASP.NET's console logger prints "info: Category[0]" plus an indented message; those arrive through LogHubLoggerProvider instead
+        // under systemd the console logger prints "<6>Category[0] message" (a syslog priority prefix) instead
+        private static readonly System.Text.RegularExpressions.Regex SyslogPrefix = new(@"^<\d>", System.Text.RegularExpressions.RegexOptions.Compiled);
+
         private static bool IsFrameworkLoggerLine(string text) =>
-            text.StartsWith("info: ", StringComparison.Ordinal) || text.StartsWith("warn: ", StringComparison.Ordinal) || text.StartsWith("fail: ", StringComparison.Ordinal)
+            SyslogPrefix.IsMatch(text) || text.StartsWith("info: ", StringComparison.Ordinal) || text.StartsWith("warn: ", StringComparison.Ordinal) || text.StartsWith("fail: ", StringComparison.Ordinal)
             || text.StartsWith("crit: ", StringComparison.Ordinal) || text.StartsWith("dbug: ", StringComparison.Ordinal) || text.StartsWith("trce: ", StringComparison.Ordinal)
             || text.StartsWith("      ", StringComparison.Ordinal);
 

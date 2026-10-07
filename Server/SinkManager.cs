@@ -727,6 +727,8 @@ namespace Server
                 }
                 if (sourceId.HasValue) ManagerWrapper.Instance.BindSourceToSink(sourceId.Value, sink.Id);
                 if (wasRunning) EnableSinkById(sink.Id);
+                // the rebuilt sink has no camera aliases yet; the control service applied them to the old one
+                NetworkTablesControlService.ForgetSink(sink.Id);
             }
             DB.Instance.Save();
         }

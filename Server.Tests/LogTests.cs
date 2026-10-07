@@ -153,6 +153,7 @@ public class LogTests : IDisposable
         tee.WriteLine("base...");
         tee.WriteLine("info: Microsoft.Hosting.Lifetime[14]");
         tee.WriteLine("      Now listening on: http://[::]:5800");
+        tee.WriteLine("<6>Microsoft.AspNetCore.Hosting.Diagnostics[1] Request starting HTTP/1.1 GET /api/x");
         tee.WriteLine("[power] systemctl reboot failed: denied");
         tee.WriteLine("");
 

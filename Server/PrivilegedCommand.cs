@@ -17,7 +17,8 @@ namespace Server
     // client sent can be interpreted by a shell.
     public interface IPrivilegedRunner
     {
-        Task<CommandResult> RunAsync(string program, IReadOnlyList<string> arguments, TimeSpan? timeout = null, CancellationToken cancellationToken = default);
+        // quiet: routine polling that should not fill the log with one line per call
+        Task<CommandResult> RunAsync(string program, IReadOnlyList<string> arguments, TimeSpan? timeout = null, CancellationToken cancellationToken = default, bool quiet = false);
     }
 
     // `sudo -n`: the lumen user has passwordless sudo (scripts/deb/postinst writes /etc/sudoers.d/lumenvision), so a command that would need a
@@ -43,12 +44,12 @@ namespace Server
             return info;
         }
 
-        public async Task<CommandResult> RunAsync(string program, IReadOnlyList<string> arguments, TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+        public async Task<CommandResult> RunAsync(string program, IReadOnlyList<string> arguments, TimeSpan? timeout = null, CancellationToken cancellationToken = default, bool quiet = false)
         {
             if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 throw new PlatformNotSupportedException("privileged device operations are only available on the coprocessor (Linux)");
 
-            Console.WriteLine($"[privileged] sudo {program} {string.Join(' ', arguments)}");
+            if (!quiet) Console.WriteLine($"[privileged] sudo {program} {string.Join(' ', arguments)}");
             using var process = new Process { StartInfo = BuildStartInfo(program, arguments) };
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
@@ -73,7 +74,7 @@ namespace Server
             }
             process.WaitForExit(); // flushes the asynchronous output readers
             var result = new CommandResult(process.ExitCode, stdout.ToString(), stderr.ToString());
-            if (!result.Ok) Console.WriteLine($"[privileged] {program} exited {result.ExitCode}: {result.StdErr.Trim()}");
+            if (!result.Ok && !quiet) Console.WriteLine($"[privileged] {program} exited {result.ExitCode}: {result.StdErr.Trim()}");
             return result;
         }
     }

@@ -500,6 +500,8 @@ export interface NetworkStatus {
   Hostname: string;
   Connections: NetworkConnectionInfo[];
   Pending: PendingNetworkChange | null;
+  // "NetworkManager" or "netplan"; null when the address cannot be changed from here
+  Mechanism: string | null;
 }
 
 // mirrors Server/VersionInfo.cs

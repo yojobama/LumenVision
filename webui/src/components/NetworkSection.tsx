@@ -127,9 +127,10 @@ export const NetworkSection: React.FC<{ onToast: (m: string, t: 'success' | 'err
 
       {status === null && <p className="text-sm text-gray-500 dark:text-gray-400">Reading the network setup...</p>}
       {status && !status.Supported && (
-        <p className="text-sm text-gray-500 dark:text-gray-400">This device is not managed by NetworkManager, so the address cannot be changed here.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">This device is managed by neither NetworkManager nor netplan, so the address cannot be changed here.</p>
       )}
-      {status?.Supported && status.Connections.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No active ethernet or wifi connection.</p>}
+      {status?.Supported && <p className="text-xs text-gray-500 dark:text-gray-400">Managed through {status.Mechanism}.</p>}
+      {status?.Supported && status.Connections.length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">No ethernet interface found.</p>}
       {status?.Supported && status.Connections.map(connection => (
         <ConnectionCard key={`${connection.Name}-${connection.Configured.Method}-${connection.Configured.Address}`} connection={connection}
           disabled={pending !== null} onApplied={refresh} onToast={onToast} />

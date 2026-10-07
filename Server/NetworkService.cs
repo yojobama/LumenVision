@@ -19,7 +19,8 @@ namespace Server
 
     public sealed record PendingNetworkChange(string Connection, int SecondsLeft);
 
-    public sealed record NetworkStatus(bool Supported, string Hostname, NetworkConnectionInfo[] Connections, PendingNetworkChange? Pending);
+    // Mechanism: "NetworkManager" or "netplan", or null when the address cannot be changed from here
+    public sealed record NetworkStatus(bool Supported, string Hostname, NetworkConnectionInfo[] Connections, PendingNetworkChange? Pending, string? Mechanism = null);
 
     // Hostname and IPv4 configuration through NetworkManager (nmcli). A static address that does not work would cut the device off, so a change
     // starts a countdown and is undone unless the user confirms it from the new address; an unconfirmed change is also undone if the server
@@ -29,6 +30,7 @@ namespace Server
         public static NetworkService Instance { get; } = new NetworkService(() => PrivilegedCommand.Runner, TimeSpan.FromSeconds(60), "network-pending.json");
 
         private readonly Func<IPrivilegedRunner> runner;
+        private readonly Func<IEnumerable<INetworkBackend>> backends;
         private readonly TimeSpan revertAfter;
         private readonly string pendingFile;
         private readonly object sync = new object();
@@ -36,48 +38,42 @@ namespace Server
         private DateTime? revertAt;
         private string? pendingConnection;
 
-        // the runner is read on every call so tests can swap PrivilegedCommand.Runner after the singleton exists
         public NetworkService(IPrivilegedRunner runner, TimeSpan revertAfter, string pendingFile)
             : this(() => runner, revertAfter, pendingFile) { }
 
+        // the runner is read on every call so tests can swap PrivilegedCommand.Runner after the singleton exists
         public NetworkService(Func<IPrivilegedRunner> runner, TimeSpan revertAfter, string pendingFile)
+            : this(runner, revertAfter, pendingFile, () => new INetworkBackend[] { new NmcliNetworkBackend(runner), new NetplanNetworkBackend(runner) }) { }
+
+        public NetworkService(Func<IPrivilegedRunner> runner, TimeSpan revertAfter, string pendingFile, Func<IEnumerable<INetworkBackend>> backends)
         {
             this.runner = runner;
             this.revertAfter = revertAfter;
             this.pendingFile = pendingFile;
+            this.backends = backends;
         }
 
-        private Task<CommandResult> Run(params string[] arguments) => runner().RunAsync("nmcli", arguments);
+        // the first mechanism this device actually uses, or null
+        private async Task<INetworkBackend?> BackendAsync()
+        {
+            foreach (INetworkBackend backend in backends())
+            {
+                if (await backend.IsAvailableAsync()) return backend;
+            }
+            return null;
+        }
 
         // ---- reading ----
 
         public async Task<NetworkStatus> GetStatusAsync()
         {
             string hostname = await ReadHostnameAsync();
-            if (!await IsAvailableAsync()) return new NetworkStatus(false, hostname, Array.Empty<NetworkConnectionInfo>(), CurrentPending());
-
-            var connections = new List<NetworkConnectionInfo>();
-            CommandResult active = await Run("-t", "-f", "NAME,TYPE,DEVICE", "connection", "show", "--active");
-            foreach (string line in Lines(active.StdOut))
-            {
-                string[] fields = SplitTerse(line);
-                if (fields.Length < 3 || fields[1] != "802-3-ethernet" && fields[1] != "802-11-wireless") continue;
-                connections.Add(new NetworkConnectionInfo(fields[0], fields[2], fields[1], await ReadIpv4Async(fields[0]), await ReadCurrentAddressesAsync(fields[2])));
-            }
-            return new NetworkStatus(true, hostname, connections.ToArray(), CurrentPending());
+            INetworkBackend? backend = await BackendAsync();
+            if (backend == null) return new NetworkStatus(false, hostname, Array.Empty<NetworkConnectionInfo>(), CurrentPending());
+            return new NetworkStatus(true, hostname, await backend.ListAsync(), CurrentPending(), backend.Name);
         }
 
-        public async Task<bool> IsAvailableAsync()
-        {
-            try
-            {
-                return (await Run("-t", "general", "status")).Ok;
-            }
-            catch (Exception ex) when (ex is PlatformNotSupportedException or System.ComponentModel.Win32Exception)
-            {
-                return false;
-            }
-        }
+        public async Task<bool> IsAvailableAsync() => await BackendAsync() != null;
 
         private async Task<string> ReadHostnameAsync()
         {
@@ -89,30 +85,6 @@ namespace Server
             {
                 return Dns.GetHostName();
             }
-        }
-
-        private async Task<Ipv4Config> ReadIpv4Async(string connection)
-        {
-            CommandResult details = await Run("-t", "-f", "ipv4.method,ipv4.addresses,ipv4.gateway,ipv4.dns", "connection", "show", connection);
-            var values = new Dictionary<string, string>();
-            foreach (string line in Lines(details.StdOut))
-            {
-                int colon = line.IndexOf(':');
-                if (colon > 0) values[line[..colon]] = line[(colon + 1)..].Replace("\\:", ":");
-            }
-            string Get(string key) => values.TryGetValue(key, out string? v) ? v.Trim() : "";
-            string[] SplitList(string text) => text.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Where(s => s != "--").ToArray();
-
-            string[] addresses = SplitList(Get("ipv4.addresses"));
-            string gateway = Get("ipv4.gateway");
-            return new Ipv4Config(Get("ipv4.method") == "manual" ? "static" : "dhcp", addresses.FirstOrDefault(),
-                gateway == "" || gateway == "--" ? null : gateway, SplitList(Get("ipv4.dns")));
-        }
-
-        private async Task<string[]> ReadCurrentAddressesAsync(string device)
-        {
-            CommandResult result = await Run("-t", "-f", "IP4.ADDRESS", "device", "show", device);
-            return Lines(result.StdOut).Select(l => l[(l.IndexOf(':') + 1)..].Trim()).Where(s => s.Length > 0).ToArray();
         }
 
         // ---- hostname ----
@@ -169,36 +141,27 @@ namespace Server
             return (ToUInt(a) & mask) == (ToUInt(b) & mask);
         }
 
-        private static string[] ModifyArguments(string connection, Ipv4Config config)
-        {
-            bool manual = config.Method == "static";
-            return new[]
-            {
-                "connection", "modify", connection,
-                "ipv4.method", manual ? "manual" : "auto",
-                "ipv4.addresses", manual ? config.Address ?? "" : "",
-                "ipv4.gateway", manual ? config.Gateway ?? "" : "",
-                "ipv4.dns", string.Join(",", config.Dns),
-            };
-        }
-
         // Applies a new IPv4 setup to a connection and starts the revert countdown. The old setup is restored after `revertAfter` unless
         // ConfirmAsync is called first. The connection is brought up shortly after this returns, so the caller's session may drop.
         public async Task<PendingNetworkChange> SetIpv4Async(string connection, Ipv4Config requested)
         {
             string? problem = ValidateIpv4(requested);
             if (problem != null) throw ApiException.BadRequest(problem);
-            if (!await IsAvailableAsync()) throw ApiException.BadRequest("this device is not managed by NetworkManager; set the address with the operating system's own tools");
+            INetworkBackend backend = await BackendAsync()
+                ?? throw ApiException.BadRequest("this device is managed by neither NetworkManager nor netplan; set the address with the operating system's own tools");
             if (CurrentPending() != null) throw ApiException.BadRequest("an earlier network change is still waiting to be confirmed");
 
-            Ipv4Config previous = await ReadIpv4Async(connection);
+            Ipv4Config previous = await backend.ReadAsync(connection);
             WritePending(connection, previous);
 
-            CommandResult modified = await Run(ModifyArguments(connection, requested));
-            if (!modified.Ok)
+            try
+            {
+                await backend.WriteAsync(connection, requested);
+            }
+            catch
             {
                 ClearPending();
-                throw ApiException.BadRequest($"NetworkManager rejected the change: {modified.StdErr.Trim()}");
+                throw;
             }
 
             StartCountdown(connection, previous);
@@ -206,8 +169,7 @@ namespace Server
             _ = Task.Run(async () =>
             {
                 await Task.Delay(TimeSpan.FromSeconds(1));
-                CommandResult up = await Run("connection", "up", connection);
-                if (!up.Ok) Console.WriteLine($"[network] connection up failed: {up.StdErr.Trim()}");
+                await backend.ActivateAsync(connection);
             });
             return CurrentPending()!;
         }
@@ -253,9 +215,14 @@ namespace Server
         {
             try
             {
-                CommandResult modified = await Run(ModifyArguments(connection, previous));
-                if (modified.Ok) await Run("connection", "up", connection);
-                else Console.WriteLine($"[network] restoring '{connection}' failed: {modified.StdErr.Trim()}");
+                INetworkBackend? backend = await BackendAsync();
+                if (backend == null) return;
+                await backend.WriteAsync(connection, previous);
+                await backend.ActivateAsync(connection);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[network] restoring '{connection}' failed: {ex.Message}");
             }
             finally
             {
@@ -327,23 +294,6 @@ namespace Server
             try { if (File.Exists(pendingFile)) File.Delete(pendingFile); } catch (IOException) { /* a stale file only causes one extra restore at the next start */ }
         }
 
-        // ---- nmcli's terse output ----
-
-        private static IEnumerable<string> Lines(string text) => text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        // fields are separated by ':' and a literal ':' (or '\') inside one is escaped with a backslash
-        public static string[] SplitTerse(string line)
-        {
-            var fields = new List<string>();
-            var current = new System.Text.StringBuilder();
-            for (int i = 0; i < line.Length; i++)
-            {
-                if (line[i] == '\\' && i + 1 < line.Length) current.Append(line[++i]);
-                else if (line[i] == ':') { fields.Add(current.ToString()); current.Clear(); }
-                else current.Append(line[i]);
-            }
-            fields.Add(current.ToString());
-            return fields.ToArray();
-        }
+        public static string[] SplitTerse(string line) => NetworkParsing.SplitTerse(line);
     }
 }

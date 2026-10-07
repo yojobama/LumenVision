@@ -97,3 +97,23 @@ public class DeviceSettingsTests
         }
     }
 }
+
+[Collection("ServerSingletons")]
+public class RebuiltNetworkTablesSinkTests
+{
+    [Fact]
+    public void ARebuiltSinkLosesTheAliasesTheControlServiceHadAppliedToItsPredecessor()
+    {
+        NetworkTablesControlService.RecordAppliedAliasForTest(4242, 7, "front");
+        NetworkTablesControlService.RecordAppliedAliasForTest(4343, 7, "front");
+        Assert.True(NetworkTablesControlService.HasAppliedAlias(4242, 7));
+
+        NetworkTablesControlService.ForgetSink(4242);
+        NetworkTablesControlService.ApplyForgottenSinks();
+
+        Assert.False(NetworkTablesControlService.HasAppliedAlias(4242, 7)); // applied again on the next tick
+        Assert.True(NetworkTablesControlService.HasAppliedAlias(4343, 7));  // other sinks are untouched
+        NetworkTablesControlService.ForgetSink(4343);
+        NetworkTablesControlService.ApplyForgottenSinks();
+    }
+}

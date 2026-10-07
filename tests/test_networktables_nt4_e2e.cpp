@@ -328,3 +328,59 @@ TEST_CASE("NetworkTablesSink surfaces the robot's fps, snapshot and LED requests
 	robot.StopClient();
 	server.StopServer();
 }
+
+// A NetworkTablesSink the server rebuilds in place (the NT settings changed) must keep publishing its bound detector's results.
+TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bound detector's results", "[nt4][e2e][rebuild]") {
+	const std::string pgmPath = std::string(LUMEN_VKAPRILTAG_SAMPLE_DIR) + "/grayimage.pgm";
+	cv::Mat gray = cv::imread(pgmPath, cv::IMREAD_GRAYSCALE);
+	REQUIRE_FALSE(gray.empty());
+	cv::Mat bgr;
+	cv::cvtColor(gray, bgr, cv::COLOR_GRAY2BGR);
+
+	constexpr unsigned int NT3_PORT = 17811;
+	constexpr unsigned int NT4_PORT = 17812;
+	nt::NetworkTableInstance server = nt::NetworkTableInstance::Create();
+	server.StartServer("", "127.0.0.1", NT3_PORT, NT4_PORT);
+	nt::NetworkTableInstance client = nt::NetworkTableInstance::Create();
+	client.SetServer("127.0.0.1", NT4_PORT);
+	client.StartClient4("LumenCoreTests-rebuild-reader");
+	auto clientTable = client.GetTable("lumenvision");
+	auto detectorTable = clientTable->GetSubTable("rebuild-detector");
+
+	auto logger = std::make_shared<Logger>("LumenCoreTests-nt4-rebuild.log");
+	auto imageSource = std::make_shared<PgmFrameSource>(logger, "rebuild-image", bgr);
+	auto detector = std::make_shared<ApriltagDetector>(logger, "rebuild-detector", CameraCalibrationResult(), 0.1651);
+	REQUIRE(detector->BindSource(imageSource));
+
+	NetworkTablesConfig config;
+	config.serverAddress = "127.0.0.1";
+	config.port = NT4_PORT;
+	config.rootTable = "lumenvision";
+	config.clientIdentity = "rebuild-1";
+	auto ntSink = std::make_shared<NetworkTablesSink>(logger, "rebuild-sink", config);
+	REQUIRE(ntSink->BindSource(detector));
+
+	imageSource->Toggle(true);
+	static_cast<ISink&>(*detector).Toggle(true);
+	static_cast<ISink&>(*ntSink).Toggle(true);
+	REQUIRE(WaitUntil([&] { return detectorTable->GetNumberArray("tags/ids", {}).size() > 0; }, 200, 50));
+
+	// rebuilt the way Manager::DeleteSink + CreateNetworkTablesSinkForServer(id, ...) do it: the old sink is toggled off and destroyed first
+	static_cast<ISink&>(*ntSink).Toggle(false);
+	ntSink.reset();
+	config.clientIdentity = "rebuild-2";
+	ntSink = std::make_shared<NetworkTablesSink>(logger, "rebuild-sink", config);
+	REQUIRE(ntSink->BindSource(detector));
+	static_cast<ISink&>(*ntSink).Toggle(true);
+
+	// the old sink's values are gone with its client; only the rebuilt sink can publish them again
+	REQUIRE(WaitUntil([&] { return clientTable->GetNumber("heartbeat", -1.0) >= 0.0; }, 200, 50));
+	detectorTable->GetEntry("tags/ids").SetDoubleArray({});
+	REQUIRE(WaitUntil([&] { return detectorTable->GetNumberArray("tags/ids", {}).size() > 0; }, 200, 50));
+
+	static_cast<ISink&>(*ntSink).Toggle(false);
+	static_cast<ISink&>(*detector).Toggle(false);
+	imageSource->Toggle(false);
+	client.StopClient();
+	server.StopServer();
+}
