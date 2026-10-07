@@ -1035,6 +1035,22 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
+  // Power: each takes effect a second after the request returns. Failures reject with the server's explanation.
+  async powerAction(action: 'restart' | 'reboot' | 'shutdown'): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/device/${action}`, { method: 'POST' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  // Resolves to how many files were deleted
+  async factoryReset(confirmation: string, keep: { calibrations: boolean; models: boolean; media: boolean }): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/device/factoryReset`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Confirmation: confirmation, KeepCalibrations: keep.calibrations, KeepModels: keep.models, KeepMedia: keep.media }),
+    });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
   // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)
   async listSnapshots(): Promise<SnapshotEntry[]> {
     const response = await fetch(`${this.baseUrl}/snapshot/list`);

@@ -4,6 +4,7 @@ import { ApiService } from '../services/ApiService';
 import type { DeviceSettingsData } from '../types';
 import { NetworkSection } from '../components/NetworkSection';
 import { SettingsSection } from '../components/SettingsSection';
+import { PowerSection } from '../components/PowerSection';
 
 const api = new ApiService();
 
@@ -43,6 +44,8 @@ export const SettingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error
       </div>
 
       <NetworkSection onToast={onToast} />
+
+      <PowerSection onToast={onToast} />
 
       {settings && nt && led && (
         <>

@@ -196,10 +196,15 @@ namespace Server
             }
         }
 
+        // set by a factory reset: the files were just deleted and the server is about to restart, so nothing may write the live state back
+        private volatile bool m_SavesSuspended = false;
+
+        public void SuspendSaves() => m_SavesSuspended = true;
+
         public void Save()
         {
             // Save() is skipped during Load() (see m_Loading): live state is still partly reconstructed
-            if (m_Loading) return;
+            if (m_Loading || m_SavesSuspended) return;
 
             logger.EnterLog("DB Save called");
             List<Sink> sinks = new List<Sink>();

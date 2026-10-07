@@ -33,6 +33,7 @@ namespace Server
             typeof(DeviceController),
             typeof(DeviceSettingsController),
             typeof(NetworkController),
+            typeof(PowerController),
             typeof(CapabilitiesController),
             typeof(CalibrationController),
             typeof(OpenApiController),
