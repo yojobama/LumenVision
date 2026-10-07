@@ -1,5 +1,6 @@
 #include "MjpegSink.h"
 #include <opencv2/opencv.hpp>
+#include <algorithm>
 
 namespace {
 	constexpr int MAX_BOUND_SOURCES = 1; // matches WebRTCSink's own single-source convention
@@ -45,6 +46,12 @@ MjpegSink::MjpegSink(std::shared_ptr<Logger> logger, std::string id, int jpegQua
 {
 }
 
+void MjpegSink::SetSettings(int jpegQuality, int scaleDivisor)
+{
+	m_JpegQuality = std::clamp(jpegQuality, 1, 100);
+	m_ScaleDivisor = std::clamp(scaleDivisor, 1, 16);
+}
+
 std::string MjpegSink::GetLatestJpegBase64() const
 {
 	std::lock_guard<std::mutex> lock(m_Mutex);
@@ -57,8 +64,15 @@ void MjpegSink::Process(const std::vector<SourceResult>& results)
 		if (!result.frame.has_value() || result.frame->empty()) continue;
 
 		std::vector<uint8_t> encoded;
-		std::vector<int> params{ cv::IMWRITE_JPEG_QUALITY, m_JpegQuality };
-		if (!cv::imencode(".jpg", result.frame->AsBgr(), encoded, params)) continue;
+		std::vector<int> params{ cv::IMWRITE_JPEG_QUALITY, m_JpegQuality.load() };
+		const cv::Mat* image = &result.frame->AsBgr();
+		cv::Mat scaled;
+		const int divisor = m_ScaleDivisor.load();
+		if (divisor > 1) {
+			cv::resize(*image, scaled, cv::Size(), 1.0 / divisor, 1.0 / divisor, cv::INTER_AREA);
+			image = &scaled;
+		}
+		if (!cv::imencode(".jpg", *image, encoded, params)) continue;
 
 		std::string base64 = Base64Encode(encoded);
 		std::lock_guard<std::mutex> lock(m_Mutex);

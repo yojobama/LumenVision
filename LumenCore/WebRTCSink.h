@@ -44,6 +44,10 @@ public:
 	bool IsConnected() const;
 	std::string GetConnectionStatus() const;
 
+	// Changes the target bitrate, frame rate and size divisor (N shrinks frames to 1/N width and height; 1 = full size). The encoder is
+	// rebuilt with them before the next frame, so the stream restarts on a keyframe.
+	void SetSettings(int bitrateKbps, int fps, int scaleDivisor);
+
 private:
 	void Process(const std::vector<SourceResult>& results) override;
 	void InitializePeerConnection(); // caller must already hold m_ConnectionMutex
@@ -54,6 +58,12 @@ private:
 
 	std::shared_ptr<Logger> m_Logger;
 	WebRTCSinkConfig m_Config;
+	// settings requested by SetSettings(), picked up by the encoding thread
+	std::mutex m_SettingsMutex;
+	WebRTCSinkConfig m_PendingConfig;
+	int m_PendingScaleDivisor = 1;
+	bool m_SettingsChanged = false;
+	int m_ScaleDivisor = 1;
 
 	// Guards m_PeerConnection/m_Track/m_SrReporter reassignment: CreateOffer() replaces all three per negotiation,
 	// racing with Process()'s thread reading m_Track via EncodeAndSend().

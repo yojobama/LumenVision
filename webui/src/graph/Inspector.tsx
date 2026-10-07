@@ -7,6 +7,7 @@ import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
 import { CameraTransformPanel } from '../components/CameraTransformPanel';
+import { StreamSettingsPanel } from '../components/StreamSettingsPanel';
 import { deleteNode } from './nodeActions';
 import { StreamView } from '../components/StreamView';
 
@@ -26,7 +27,7 @@ export const Inspector: React.FC<{
   onDeleted: () => void;
   nt4Settings: NT4Defaults;
 }> = ({ node, onClose, onToast, onDeleted, nt4Settings }) => {
-  const { kind, raw, webrtcSink, nt4Sink, recordSink, isRunning } = node.data;
+  const { kind, raw, webrtcSink, mjpegSink, nt4Sink, recordSink, isRunning } = node.data;
   const [name, setName] = useState(node.data.label);
   const [resultJson, setResultJson] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -640,6 +641,14 @@ export const Inspector: React.FC<{
             </div>
             {webrtcSink?.IsRunning && (
               <StreamView sinkId={webrtcSink.Sink.Id} sourceId={previewTarget.Id} onStop={togglePreview} onError={() => onToast('Preview stream error', 'error')} />
+            )}
+            {(webrtcSink || mjpegSink) && (
+              <details className="mt-2">
+                <summary className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">Stream quality</summary>
+                <div className="mt-2">
+                  <StreamSettingsPanel webrtc={webrtcSink?.Sink} mjpeg={mjpegSink?.Sink} onToast={onToast} />
+                </div>
+              </details>
             )}
           </div>
         )}

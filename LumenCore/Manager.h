@@ -289,6 +289,10 @@ public:
 	// SWIG-visible surface small.
 	int CreateMjpegSink(int jpegQuality);
 	int CreateMjpegSink(int id, int jpegQuality);
+	// live stream tuning: JPEG quality (1-100) and a size divisor (N = 1/N width and height). Throws if sinkId is not an MjpegSink.
+	void SetMjpegSinkSettings(int sinkId, int jpegQuality, int scaleDivisor);
+	// live stream tuning for a WebRTCSink (bitrate, frame rate, size divisor); the encoder restarts. Throws if sinkId is not one.
+	void SetWebRTCSinkSettings(int sinkId, int bitrateKbps, int fps, int scaleDivisor);
 	// base64-encoded JPEG (see MjpegSink::GetLatestJpegBase64). Empty string if sinkId isn't an MjpegSink or no frame has arrived yet.
 	string GetMjpegFrameBase64(int sinkId);
 

@@ -246,6 +246,69 @@ namespace Server
             return id;
         }
 
+        // Retunes a live MjpegSink and remembers the values. quality 1-100; scaleDivisor N streams 1/N of the width and height.
+        public void SetMjpegSettings(int sinkId, int jpegQuality, int scaleDivisor)
+        {
+            Sink sink = RequireSink(sinkId, SinkType.MjpegSink);
+            if (jpegQuality < 1 || jpegQuality > 100) throw Server.Web.ApiException.BadRequest("jpegQuality must be 1 to 100");
+            if (scaleDivisor < 1 || scaleDivisor > 16) throw Server.Web.ApiException.BadRequest("scaleDivisor must be 1 to 16");
+            ManagerWrapper.Instance.SetMjpegSinkSettings(sinkId, jpegQuality, scaleDivisor);
+            sink.StreamJpegQuality = jpegQuality;
+            sink.StreamScaleDivisor = scaleDivisor;
+            DB.Instance.Save();
+        }
+
+        // Retunes a live WebRTCSink (its encoder restarts on the next frame) and remembers the values.
+        public void SetWebRTCSettings(int sinkId, int bitrateKbps, int fps, int scaleDivisor)
+        {
+            Sink sink = RequireSink(sinkId, SinkType.WebRTCSink);
+            if (bitrateKbps < 100 || bitrateKbps > 50000) throw Server.Web.ApiException.BadRequest("bitrateKbps must be 100 to 50000");
+            if (fps < 1 || fps > 120) throw Server.Web.ApiException.BadRequest("fps must be 1 to 120");
+            if (scaleDivisor < 1 || scaleDivisor > 16) throw Server.Web.ApiException.BadRequest("scaleDivisor must be 1 to 16");
+            ManagerWrapper.Instance.SetWebRTCSinkSettings(sinkId, bitrateKbps, fps, scaleDivisor);
+            sink.StreamBitrateKbps = bitrateKbps;
+            sink.StreamFps = fps;
+            sink.StreamScaleDivisor = scaleDivisor;
+            DB.Instance.Save();
+        }
+
+        private Sink RequireSink(int sinkId, SinkType type)
+        {
+            Sink sink = GetSinkById(sinkId) ?? throw Server.Web.ApiException.NotFound($"no sink with id {sinkId}");
+            if (sink.Type != type) throw Server.Web.ApiException.BadRequest($"sink {sinkId} is not a {type}");
+            return sink;
+        }
+
+        // DB.Load() restore paths for the stream sinks: same id, saved tuning
+        public int RestoreMjpegSink(Sink persisted)
+        {
+            int id = ManagerWrapper.Instance.CreateMjpegSink(persisted.Id, persisted.StreamJpegQuality ?? 80);
+            sinks.Add(new Sink(id, persisted.Name, SinkType.MjpegSink)
+            {
+                StreamJpegQuality = persisted.StreamJpegQuality,
+                StreamScaleDivisor = persisted.StreamScaleDivisor,
+            });
+            if (persisted.StreamScaleDivisor is int divisor && divisor > 1)
+                ManagerWrapper.Instance.SetMjpegSinkSettings(id, persisted.StreamJpegQuality ?? 80, divisor);
+            return id;
+        }
+
+        public int RestoreWebRTCSink(Sink persisted)
+        {
+            int bitrate = persisted.StreamBitrateKbps ?? 4000;
+            int fps = persisted.StreamFps ?? 30;
+            int id = ManagerWrapper.Instance.CreateWebRTCSink(persisted.Id, bitrate, fps, ManagerWrapper.Instance.GetPreferredWebRTCEncoder());
+            sinks.Add(new Sink(id, persisted.Name, SinkType.WebRTCSink)
+            {
+                StreamBitrateKbps = persisted.StreamBitrateKbps,
+                StreamFps = persisted.StreamFps,
+                StreamScaleDivisor = persisted.StreamScaleDivisor,
+            });
+            if (persisted.StreamScaleDivisor is int divisor && divisor > 1)
+                ManagerWrapper.Instance.SetWebRTCSinkSettings(id, bitrate, fps, divisor);
+            return id;
+        }
+
         public string GetMjpegFrameBase64(int sinkId) => ManagerWrapper.Instance.GetMjpegFrameBase64(sinkId);
 
         // creates a RecordSink; bind it to a frame-producing node to record segmented MP4 files plus a JSON-Lines telemetry sidecar.

@@ -16,5 +16,13 @@ namespace Server.Controllers.sinks
             int sinkId = SinkManager.Instance.AddMjpegSink(name, jpegQuality ?? 80);
             return Task.FromResult(sinkId);
         }
+
+        // PATCH: retune a live stream: jpegQuality 1-100, scaleDivisor N sends 1/N of the width and height. Remembered across restarts.
+        [HttpPatch("mjpegSink/settings")]
+        public Task SetSettings([FromQuery] int sinkId, [FromQuery] int jpegQuality = 80, [FromQuery] int scaleDivisor = 1)
+        {
+            SinkManager.Instance.SetMjpegSettings(sinkId, jpegQuality, scaleDivisor);
+            return Task.CompletedTask;
+        }
     }
 }

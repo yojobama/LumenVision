@@ -108,6 +108,12 @@ namespace Server
         // which refine-edges implementation the Vulkan backend runs (null in older records: REFINE_EXACT)
         public RefineEdgesMode? ApriltagRefineMode { get; set; }
 
+        // MjpegSink and WebRTCSink: stream tuning, persisted so a restored stream keeps it. Null = the defaults (JPEG quality 80, 4000 kbps, 30 fps, full size).
+        public int? StreamJpegQuality { get; set; }
+        public int? StreamBitrateKbps { get; set; }
+        public int? StreamFps { get; set; }
+        public int? StreamScaleDivisor { get; set; }
+
         // ObjectDetectionSink only: the model the sink was created from, so DB.Load() can rebuild it and a node copy can reuse it.
         public int? ObjectDetectionModelId { get; set; }
 

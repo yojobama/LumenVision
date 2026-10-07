@@ -112,6 +112,13 @@ namespace Server
                             SinkManager.Instance.RestoreApriltagSink(sink);
                         else if (sink.Type == SinkType.ObjectDetectionSink)
                             SinkManager.Instance.RestoreObjectDetectionSink(sink);
+                        else if (sink.Type == SinkType.MjpegSink)
+                            SinkManager.Instance.RestoreMjpegSink(sink);
+                        else if (sink.Type == SinkType.WebRTCSink)
+                        {
+                            try { SinkManager.Instance.RestoreWebRTCSink(sink); }
+                            catch (Exception ex) { logger.EnterLog($"WebRTC sink {sink.Id} not restored: {ex.Message}"); }
+                        }
                         else
                             SinkManager.Instance.AddSink(sink.Name, sink.Type.ToString(), sink.Id);
                     }

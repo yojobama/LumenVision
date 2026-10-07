@@ -329,6 +329,11 @@ export interface WsSink {
   Source: WsSource | null;
   Source2: WsSource | null; // stereo sinks only - the RIGHT camera (Source is LEFT)
   DepthSourceId: number | null; // DepthFusionSink only
+  // MjpegSink / WebRTCSink tuning; null = the defaults (JPEG quality 80, 4000 kbps, 30 fps, full size)
+  StreamJpegQuality?: number | null;
+  StreamBitrateKbps?: number | null;
+  StreamFps?: number | null;
+  StreamScaleDivisor?: number | null;
 }
 
 // mirrors Server/WebSockets/StateChannel.cs's own DTOs

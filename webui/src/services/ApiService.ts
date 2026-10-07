@@ -878,6 +878,16 @@ export class ApiService {
     if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   }
 
+  async setWebRTCSettings(sinkId: number, bitrateKbps: number, fps: number, scaleDivisor: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/webrtcSink/settings?sinkId=${sinkId}&bitrateKbps=${bitrateKbps}&fps=${fps}&scaleDivisor=${scaleDivisor}`, { method: 'PATCH' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  async setMjpegSettings(sinkId: number, jpegQuality: number, scaleDivisor: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/mjpegSink/settings?sinkId=${sinkId}&jpegQuality=${jpegQuality}&scaleDivisor=${scaleDivisor}`, { method: 'PATCH' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
   // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)
   async listSnapshots(): Promise<SnapshotEntry[]> {
     const response = await fetch(`${this.baseUrl}/snapshot/list`);

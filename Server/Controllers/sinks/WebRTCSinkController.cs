@@ -21,6 +21,15 @@ namespace Server.Controllers.sinks
             return Task.FromResult(sinkId);
         }
 
+        // PATCH: retune a live stream (bitrate 100-50000 kbps, 1-120 fps, scaleDivisor N sends 1/N of the width and height); the encoder
+        // restarts with a keyframe. Remembered across restarts.
+        [HttpPatch("webrtcSink/settings")]
+        public Task SetSettings([FromQuery] int sinkId, [FromQuery] int bitrateKbps = 4000, [FromQuery] int fps = 30, [FromQuery] int scaleDivisor = 1)
+        {
+            SinkManager.Instance.SetWebRTCSettings(sinkId, bitrateKbps, fps, scaleDivisor);
+            return Task.CompletedTask;
+        }
+
         // POST: get an SDP offer (blocks briefly for ICE gathering), written as raw text/plain since SDP contains literal \r\n.
         [HttpPost("webrtcSink/offer")]
         public async Task CreateOffer([FromQuery] int sinkId)

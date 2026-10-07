@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ISink.h"
+#include <atomic>
 #include <mutex>
 #include <string>
 
@@ -16,10 +17,14 @@ public:
 	// corrupted by SWIG's null-terminated std::string typemap. Empty until the first frame has been processed.
 	std::string GetLatestJpegBase64() const;
 
+	// Takes effect on the next frame. scaleDivisor N shrinks each frame to 1/N of its width and height before encoding (1 = full size).
+	void SetSettings(int jpegQuality, int scaleDivisor);
+
 private:
 	void Process(const std::vector<SourceResult>& results) override;
 
-	int m_JpegQuality;
+	std::atomic<int> m_JpegQuality;
+	std::atomic<int> m_ScaleDivisor{ 1 };
 	// guards m_LatestJpegBase64: written by this sink's processing thread (Process()), read by the HTTP request thread
 	// (via Manager::GetMjpegFrameBase64).
 	mutable std::mutex m_Mutex;

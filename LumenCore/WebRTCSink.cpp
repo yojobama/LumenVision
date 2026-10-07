@@ -1,6 +1,7 @@
 #ifdef LUMEN_WITH_WEBRTC
 #include "WebRTCSink.h"
 #include <nlohmann/json.hpp>
+#include <algorithm>
 #include <stdexcept>
 
 using namespace rtc;
@@ -19,6 +20,7 @@ WebRTCSink::WebRTCSink(std::shared_ptr<Logger> logger, std::string id, WebRTCSin
 	: ISink(logger, 1 /* maxSources */, false /* requireJson */, true /* requireFrame */, id)
 	, m_Logger(logger)
 	, m_Config(config)
+	, m_PendingConfig(config)
 {
 	if (m_Logger) m_Logger->EnterLog("WebRTCSink constructed, encoder=" + config.encoderName);
 	std::lock_guard<std::mutex> lock(m_ConnectionMutex);
@@ -126,6 +128,15 @@ void WebRTCSink::AddIceCandidate(const std::string& candidate, const std::string
 	}
 }
 
+void WebRTCSink::SetSettings(int bitrateKbps, int fps, int scaleDivisor)
+{
+	std::lock_guard<std::mutex> lock(m_SettingsMutex);
+	m_PendingConfig.bitrateKbps = std::clamp(bitrateKbps, 100, 50000);
+	m_PendingConfig.fps = std::clamp(fps, 1, 120);
+	m_PendingScaleDivisor = std::clamp(scaleDivisor, 1, 16);
+	m_SettingsChanged = true;
+}
+
 bool WebRTCSink::IsConnected() const
 {
 	std::lock_guard<std::mutex> lock(m_ConnectionMutex);
@@ -214,8 +225,22 @@ void WebRTCSink::ShutdownEncoder()
 	m_EncoderWidth = m_EncoderHeight = 0;
 }
 
-void WebRTCSink::EncodeAndSend(const cv::Mat& bgrFrame)
+void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 {
+	{
+		std::lock_guard<std::mutex> lock(m_SettingsMutex);
+		if (m_SettingsChanged) {
+			m_Config.bitrateKbps = m_PendingConfig.bitrateKbps;
+			m_Config.fps = m_PendingConfig.fps;
+			m_ScaleDivisor = m_PendingScaleDivisor;
+			m_SettingsChanged = false;
+			ShutdownEncoder(); // rebuilt below with the new bitrate and frame rate
+		}
+	}
+	cv::Mat scaled;
+	if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
+	const cv::Mat& bgrFrame = m_ScaleDivisor > 1 ? scaled : sourceFrame;
+
 	std::shared_ptr<rtc::Track> track;
 	{
 		std::lock_guard<std::mutex> lock(m_ConnectionMutex);

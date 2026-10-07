@@ -1576,6 +1576,13 @@ void Manager::WebRTCAddIceCandidate(int sinkId, string candidate, string mid)
     sink->AddIceCandidate(candidate, mid);
 }
 
+void Manager::SetWebRTCSinkSettings(int sinkId, int bitrateKbps, int fps, int scaleDivisor)
+{
+    auto sink = FindWebRTCSink(m_Sinks, sinkId);
+    if (!sink) throw std::runtime_error("no WebRTCSink with id " + std::to_string(sinkId));
+    sink->SetSettings(bitrateKbps, fps, scaleDivisor);
+}
+
 bool Manager::IsWebRTCSinkConnected(int sinkId)
 {
     auto sink = FindWebRTCSink(m_Sinks, sinkId);
@@ -1616,6 +1623,10 @@ void Manager::WebRTCAddIceCandidate(int, string, string)
 {
     throw std::runtime_error("WebRTC support is not compiled into this build of LumenCore");
 }
+void Manager::SetWebRTCSinkSettings(int, int, int, int)
+{
+    throw std::runtime_error("WebRTC support is not compiled into this build of LumenCore");
+}
 bool Manager::IsWebRTCSinkConnected(int) { return false; }
 string Manager::GetWebRTCSinkStatus(int) { return "{}"; }
 string Manager::GetPreferredWebRTCEncoder() { return "libx264"; }
@@ -1635,6 +1646,14 @@ int Manager::CreateMjpegSink(int id, int jpegQuality)
     auto p_Sink = std::make_shared<MjpegSink>(m_Logger, std::to_string(id), jpegQuality);
     m_Sinks.emplace(id, p_Sink);
     return id;
+}
+
+void Manager::SetMjpegSinkSettings(int sinkId, int jpegQuality, int scaleDivisor)
+{
+    auto sink = m_Sinks.find(sinkId);
+    auto mjpegSink = sink == m_Sinks.end() ? nullptr : std::dynamic_pointer_cast<MjpegSink>(sink->second);
+    if (!mjpegSink) throw std::runtime_error("no MjpegSink with id " + std::to_string(sinkId));
+    mjpegSink->SetSettings(jpegQuality, scaleDivisor);
 }
 
 string Manager::GetMjpegFrameBase64(int sinkId)
