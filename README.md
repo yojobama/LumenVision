@@ -229,6 +229,33 @@ a second source onto a single-source sink — rejected before the drag completes
 right-hand inspector covers per-node parameters, a live WebRTC preview, the latest result JSON,
 and pipeline profile switching. State (topology, per-node FPS/latency, device stats) is pushed
 over a `/ws/state` WebSocket, not polled.
+**Graph shortcuts.** Select a node, then Ctrl+C / Ctrl+V copies it (Ctrl+Shift+V also keeps the copy's source binding), F2 renames
+it in the inspector and Delete removes it. Copying runs on the server (`POST /api/sink/duplicate`, `POST /api/source/duplicate`):
+detector nodes (AprilTag or object detection) and file sources can be copied; a physical camera cannot (a device opens once),
+so give it another pipeline instead.
+
+**Camera settings** (camera node inspector):
+
+- *All camera controls* lists every control the device reports over V4L2 (brightness, white balance, exposure, ...), as sliders,
+  switches, menus and buttons; values are saved per camera and reapplied at start. Windows (OpenCV) cameras only offer the exposure
+  and gain fields.
+- *Rotate, mirror and crop* reshapes the camera's frames (`GET/PATCH /api/cameraSource/{id}/transform`). Saved calibrations follow the
+  transform automatically (the principal point, focal lengths and tangential distortion are remapped), but calibrate with the transform
+  cleared: sessions refuse a transformed camera.
+- A pipeline profile can keep its **own camera settings** (control values, transform, FPS limit): tick *own camera settings* on the profile.
+  While that profile is active, camera edits belong to it, and the camera's own settings come back when another profile is activated.
+- Input and output **snapshots** can be taken from the inspector or by a robot (`PhotonCamera.takeInputSnapshot()`); the `/snapshots`
+  page lists, downloads and deletes them.
+- *Stream quality* (live view and MJPEG): bitrate, frame rate, a size divisor and JPEG quality, applied to the running stream and saved.
+
+**Detector settings** (detector node inspector): besides threads, decimation and refine method, the AprilTag detector offers the tag
+family (36h11, 16h5, 25h9, Standard41h12), blur, the corrected-bit limit, a decision-margin cutoff, pose iterations and switches for
+multi-tag and single-tag poses. Blur is CPU-only (the GPU pipeline has no blur stage); everything else works on both backends. Tuning a
+camera's active pipeline detector is saved into that pipeline. The WPILib field layouts for 2022-2026 are bundled
+(`field-layouts/`, listed by `GET /api/fieldLayouts`); pick one or upload a JSON, per detector or per pipeline, to enable multi-tag
+poses. Object detectors have confidence and overlap (NMS) cutoffs that can be changed while running, and a camera can hold object
+detection pipelines next to AprilTag ones. `/models` uploads, renames and retunes models (changing a model's cutoffs retunes the detectors
+running on it).
 
 `/calibration` is its own tab: pick a camera (or a stereo pair, or one side-by-side camera) and a board, then
 start a session. Its wizard (`/calibration/camera/:sessionId`, `/calibration/stereo/:sessionId`) shows the

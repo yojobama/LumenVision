@@ -14,6 +14,7 @@ namespace Server
         public bool? SingleTagPose { get; set; }
 
         // true when every member is the default
+        [System.Text.Json.Serialization.JsonIgnore]
         public bool IsDefault => !Family.HasValue && !QuadSigma.HasValue && !MaxHamming.HasValue && !DecisionMargin.HasValue
             && !PoseIterations.HasValue && !MultiTag.HasValue && !SingleTagPose.HasValue;
 

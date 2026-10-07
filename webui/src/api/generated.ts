@@ -115,6 +115,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/fieldLayouts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ApriltagSinkController_ListFieldLayouts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apriltagSink/fieldLayoutBundled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["ApriltagSinkController_SetBundledFieldLayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/apriltagSink/fieldLayoutTagCount": {
         parameters: {
             query?: never;
@@ -611,6 +643,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cameraSource/{id}/controlList": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CameraSourceController_GetControlList"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cameraSource/{id}/control": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["CameraSourceController_SetControl"];
+        trace?: never;
+    };
+    "/cameraSource/{id}/transform": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CameraSourceController_GetTransform"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["CameraSourceController_SetTransform"];
+        trace?: never;
+    };
     "/cameraSource/{id}/roi": {
         parameters: {
             query?: never;
@@ -867,6 +947,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mjpegSink/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["MjpegSinkController_SetSettings"];
+        trace?: never;
+    };
     "/model/upload": {
         parameters: {
             query?: never;
@@ -897,6 +993,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/model/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["ModelController_Update"];
         trace?: never;
     };
     "/model/delete": {
@@ -979,6 +1091,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/objectDetectionSink/thresholds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ObjectDetectionSinkController_GetThresholds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["ObjectDetectionSinkController_SetThresholds"];
+        trace?: never;
+    };
     "/objectDetectionSink/backend": {
         parameters: {
             query?: never;
@@ -1043,6 +1171,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/source/profiles/cameraOverrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["PipelineProfileController_SetCameraOverrides"];
+        trace?: never;
+    };
     "/source/profiles/fieldLayout": {
         parameters: {
             query?: never;
@@ -1053,6 +1197,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["PipelineProfileController_SetProfileFieldLayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/source/profiles/fieldLayoutBundled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["PipelineProfileController_SetProfileBundledFieldLayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/source/profiles/fieldLayoutTagCount": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["PipelineProfileController_GetProfileFieldLayoutTagCount"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1331,6 +1507,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sink/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["SinkController_Duplicate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sink/driverMode": {
         parameters: {
             query?: never;
@@ -1345,6 +1537,70 @@ export interface paths {
         options?: never;
         head?: never;
         patch: operations["SinkController_SetDriverMode"];
+        trace?: never;
+    };
+    "/snapshot/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["SnapshotController_List"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/snapshot/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["SnapshotController_Download"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["SnapshotController_Delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/snapshot/take": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["SnapshotController_Take"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/source/isActive": {
@@ -1406,6 +1662,38 @@ export interface paths {
         put?: never;
         post?: never;
         delete: operations["SourceController_Delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/source/fpsLimit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["SourceController_GetFpsLimit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["SourceController_SetFpsLimit"];
+        trace?: never;
+    };
+    "/source/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["SourceController_Duplicate"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1555,6 +1843,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webrtcSink/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["WebRTCSinkController_SetSettings"];
+        trace?: never;
+    };
     "/webrtcSink/offer": {
         parameters: {
             query?: never;
@@ -1646,6 +1950,19 @@ export interface components {
             RefineEdges: boolean;
             RefineMode: number;
             RefineModeSupported: boolean;
+            Family: number;
+            QuadSigma: number;
+            QuadSigmaSupported: boolean;
+            MaxHamming: number;
+            DecisionMargin: number;
+            PoseIterations: number;
+            MultiTag: boolean;
+            SingleTagPose: boolean;
+        };
+        FieldLayoutInfo: {
+            Id?: string;
+            Name?: string;
+            TagCount: number;
         };
         CalibrationSessionDto: {
             SessionId: number;
@@ -1711,6 +2028,31 @@ export interface components {
             name?: string;
             path?: string;
         };
+        ApriltagAdvancedTuning: {
+            Family?: number;
+            QuadSigma?: number;
+            MaxHamming?: number;
+            DecisionMargin?: number;
+            PoseIterations?: number;
+            MultiTag?: boolean;
+            SingleTagPose?: boolean;
+            IsDefault: boolean;
+        };
+        FrameTransformDto: {
+            Rotation: number;
+            FlipHorizontal: boolean;
+            FlipVertical: boolean;
+            CropX: number;
+            CropY: number;
+            CropWidth: number;
+            CropHeight: number;
+            IsIdentity: boolean;
+        };
+        CameraOverrides: {
+            ControlValues?: number[];
+            Transform?: components["schemas"]["FrameTransformDto"];
+            FpsLimit?: number;
+        };
         PipelineProfile: {
             Index: number;
             Name?: string;
@@ -1723,9 +2065,13 @@ export interface components {
             QuadDecimate?: number;
             RefineEdges?: boolean;
             RefineMode?: number;
+            Advanced?: components["schemas"]["ApriltagAdvancedTuning"];
             FieldLayoutPath?: string;
             DriverMode: boolean;
             ModelId?: number;
+            ConfThreshold?: number;
+            NmsThreshold?: number;
+            CameraOverrides?: components["schemas"]["CameraOverrides"];
         };
         Source: {
             CameraHardwareInfo?: components["schemas"]["CameraHardwareInfo"];
@@ -1734,6 +2080,9 @@ export interface components {
             Profiles?: components["schemas"]["PipelineProfile"][];
             ActiveProfileIndex: number;
             ActiveDetectionSinkId?: number;
+            FpsLimit?: number;
+            ControlValues?: number[];
+            Transform?: components["schemas"]["FrameTransformDto"];
             Type: number;
             Id: number;
             Name?: string;
@@ -1767,6 +2116,20 @@ export interface components {
             Exposure: components["schemas"]["CameraControlRangeDto"];
             Gain: components["schemas"]["CameraControlRangeDto"];
         };
+        CameraControlDto: {
+            Id: number;
+            Name?: string;
+            Kind: number;
+            Minimum: number;
+            Maximum: number;
+            Step: number;
+            Default: number;
+            Value: number;
+            ReadOnly: boolean;
+            Inactive: boolean;
+            MenuLabels?: string[];
+            MenuValues?: number[];
+        };
         NodeTypeCapability: {
             TypeName?: string;
             Category?: string;
@@ -1799,6 +2162,11 @@ export interface components {
             RootTable?: string;
             TeamNumber?: number;
             ServerAddress?: string;
+        };
+        ObjectDetectionThresholdsDto: {
+            ConfThreshold: number;
+            NmsThreshold: number;
+            ModelId?: number;
         };
         TimeSpan: {
             Ticks: number;
@@ -1858,6 +2226,21 @@ export interface components {
             ApriltagQuadDecimate?: number;
             ApriltagRefineEdges?: boolean;
             ApriltagRefineMode?: number;
+            ApriltagAdvanced?: components["schemas"]["ApriltagAdvancedTuning"];
+            StreamJpegQuality?: number;
+            StreamBitrateKbps?: number;
+            StreamFps?: number;
+            StreamScaleDivisor?: number;
+            ObjectDetectionModelId?: number;
+            ObjectDetectionConfThreshold?: number;
+            ObjectDetectionNmsThreshold?: number;
+        };
+        SnapshotEntry: {
+            Camera?: string;
+            Path?: string;
+            Kind?: string;
+            SizeBytes: number;
+            CreatedUtc: components["schemas"]["DateTime"];
         };
         StereoDepthStatsDto: {
             ValidFraction: number;
@@ -1936,6 +2319,13 @@ export interface operations {
                 quadDecimate?: number;
                 refineEdges?: boolean;
                 refineMode?: number;
+                family?: number;
+                quadSigma?: number;
+                maxHamming?: number;
+                decisionMargin?: number;
+                poseIterations?: number;
+                multiTag?: boolean;
+                singleTagPose?: boolean;
             };
             header?: never;
             path?: never;
@@ -1985,6 +2375,13 @@ export interface operations {
                 quadDecimate?: number;
                 refineEdges?: boolean;
                 refineMode?: number;
+                family?: number;
+                quadSigma?: number;
+                maxHamming?: number;
+                decisionMargin?: number;
+                poseIterations?: number;
+                multiTag?: boolean;
+                singleTagPose?: boolean;
             };
             header?: never;
             path?: never;
@@ -2049,6 +2446,49 @@ export interface operations {
         parameters: {
             query: {
                 sinkId: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    ApriltagSinkController_ListFieldLayouts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FieldLayoutInfo"][];
+                };
+            };
+        };
+    };
+    ApriltagSinkController_SetBundledFieldLayout: {
+        parameters: {
+            query: {
+                sinkId: number;
+                layout?: string;
             };
             header?: never;
             path?: never;
@@ -2756,6 +3196,95 @@ export interface operations {
             };
         };
     };
+    CameraSourceController_GetControlList: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CameraControlDto"][];
+                };
+            };
+        };
+    };
+    CameraSourceController_SetControl: {
+        parameters: {
+            query: {
+                controlId: number;
+                value: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+        };
+    };
+    CameraSourceController_GetTransform: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameTransformDto"];
+                };
+            };
+        };
+    };
+    CameraSourceController_SetTransform: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     CameraSourceController_CreateRoi: {
         parameters: {
             query: {
@@ -3092,6 +3621,28 @@ export interface operations {
             };
         };
     };
+    MjpegSinkController_SetSettings: {
+        parameters: {
+            query: {
+                sinkId: number;
+                jpegQuality?: number;
+                scaleDivisor?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ModelController_Upload: {
         parameters: {
             query?: never;
@@ -3128,6 +3679,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Model"][];
+                };
+            };
+        };
+    };
+    ModelController_Update: {
+        parameters: {
+            query: {
+                id: number;
+                name?: string;
+                confThreshold?: number;
+                nmsThreshold?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Model"];
                 };
             };
         };
@@ -3230,6 +3806,8 @@ export interface operations {
             query: {
                 name?: string;
                 modelId: number;
+                confThreshold?: number;
+                nmsThreshold?: number;
             };
             header?: never;
             path?: never;
@@ -3245,6 +3823,50 @@ export interface operations {
                 content: {
                     "application/json": number;
                 };
+            };
+        };
+    };
+    ObjectDetectionSinkController_GetThresholds: {
+        parameters: {
+            query: {
+                sinkId: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObjectDetectionThresholdsDto"];
+                };
+            };
+        };
+    };
+    ObjectDetectionSinkController_SetThresholds: {
+        parameters: {
+            query: {
+                sinkId: number;
+                confThreshold: number;
+                nmsThreshold: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -3302,6 +3924,13 @@ export interface operations {
                 quadDecimate?: number;
                 refineEdges?: boolean;
                 refineMode?: number;
+                family?: number;
+                quadSigma?: number;
+                maxHamming?: number;
+                decisionMargin?: number;
+                poseIterations?: number;
+                multiTag?: boolean;
+                singleTagPose?: boolean;
             };
             header?: never;
             path?: never;
@@ -3326,6 +3955,8 @@ export interface operations {
                 sourceId: number;
                 name?: string;
                 modelId: number;
+                confThreshold?: number;
+                nmsThreshold?: number;
             };
             header?: never;
             path?: never;
@@ -3344,7 +3975,76 @@ export interface operations {
             };
         };
     };
+    PipelineProfileController_SetCameraOverrides: {
+        parameters: {
+            query: {
+                sourceId: number;
+                index: number;
+                enabled: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     PipelineProfileController_SetProfileFieldLayout: {
+        parameters: {
+            query: {
+                sourceId: number;
+                index: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    PipelineProfileController_SetProfileBundledFieldLayout: {
+        parameters: {
+            query: {
+                sourceId: number;
+                index: number;
+                layout?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    PipelineProfileController_GetProfileFieldLayoutTagCount: {
         parameters: {
             query: {
                 sourceId: number;
@@ -3801,6 +4501,29 @@ export interface operations {
             };
         };
     };
+    SinkController_Duplicate: {
+        parameters: {
+            query: {
+                SinkID: number;
+                copyBindings?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
     SinkController_GetDriverMode: {
         parameters: {
             query: {
@@ -3841,6 +4564,91 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    SnapshotController_List: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotEntry"][];
+                };
+            };
+        };
+    };
+    SnapshotController_Download: {
+        parameters: {
+            query?: {
+                Path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SnapshotController_Delete: {
+        parameters: {
+            query?: {
+                Path?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": boolean;
+                };
+            };
+        };
+    };
+    SnapshotController_Take: {
+        parameters: {
+            query: {
+                SourceID: number;
+                Kind?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
             };
         };
     };
@@ -3924,6 +4732,71 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    SourceController_GetFpsLimit: {
+        parameters: {
+            query: {
+                SourceID: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
+            };
+        };
+    };
+    SourceController_SetFpsLimit: {
+        parameters: {
+            query: {
+                SourceID: number;
+                fps: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SourceController_Duplicate: {
+        parameters: {
+            query: {
+                SourceID: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": number;
+                };
             };
         };
     };
@@ -4126,6 +4999,29 @@ export interface operations {
                 content: {
                     "application/json": number;
                 };
+            };
+        };
+    };
+    WebRTCSinkController_SetSettings: {
+        parameters: {
+            query: {
+                sinkId: number;
+                bitrateKbps?: number;
+                fps?: number;
+                scaleDivisor?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
