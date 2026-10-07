@@ -465,3 +465,28 @@ export interface DeviceSettingsData {
   Led: DeviceLedSettings;
   NetworkTables: DeviceNetworkTablesSettings;
 }
+
+// mirrors Server/NetworkService.cs
+export interface Ipv4Config {
+  Method: 'dhcp' | 'static';
+  Address: string | null;
+  Gateway: string | null;
+  Dns: string[];
+}
+export interface NetworkConnectionInfo {
+  Name: string;
+  Device: string;
+  Type: string;
+  Configured: Ipv4Config;
+  CurrentAddresses: string[];
+}
+export interface PendingNetworkChange {
+  Connection: string;
+  SecondsLeft: number;
+}
+export interface NetworkStatus {
+  Supported: boolean;
+  Hostname: string;
+  Connections: NetworkConnectionInfo[];
+  Pending: PendingNetworkChange | null;
+}

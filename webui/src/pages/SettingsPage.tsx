@@ -2,21 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { CheckCircle, Settings as SettingsIcon } from 'lucide-react';
 import { ApiService } from '../services/ApiService';
 import type { DeviceSettingsData } from '../types';
+import { NetworkSection } from '../components/NetworkSection';
+import { SettingsSection } from '../components/SettingsSection';
 
 const api = new ApiService();
 
 const field = 'w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white';
-
-// A titled block of the settings page.
-export const SettingsSection: React.FC<{ title: string; hint?: string; children: React.ReactNode }> = ({ title, hint, children }) => (
-  <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 space-y-4">
-    <div>
-      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
-      {hint && <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{hint}</p>}
-    </div>
-    {children}
-  </div>
-);
 
 // Device settings, routed at /settings. Everything here lives on the coprocessor (settings.json), so every browser sees the same values.
 export const SettingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error' | 'info') => void }> = ({ onToast }) => {
@@ -50,6 +41,8 @@ export const SettingsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><SettingsIcon className="w-6 h-6" />Settings</h2>
         <p className="text-gray-600 dark:text-gray-400">Stored on the coprocessor, so every browser sees the same values</p>
       </div>
+
+      <NetworkSection onToast={onToast} />
 
       {settings && nt && led && (
         <>

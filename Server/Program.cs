@@ -125,6 +125,8 @@ namespace Server
 
             Console.WriteLine("Loading database...");
             DB.Instance.Load();
+            // a network change nobody confirmed before the last shutdown is undone
+            _ = NetworkService.Instance.RecoverAsync().ContinueWith(t => { if (t.IsFaulted) Console.WriteLine($"[network] recovery failed: {t.Exception?.GetBaseException().Message}"); });
             DB.Instance.Verify();
 
             Console.WriteLine("Starting HTTP server...");

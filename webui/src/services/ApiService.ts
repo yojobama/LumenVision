@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData } from '../types';
+import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -1002,6 +1002,37 @@ export class ApiService {
     const response = await fetch(`${this.baseUrl}/networkTablesSink/createFromSettings?name=${encodeURIComponent(name)}`, { method: 'POST' });
     if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
     return response.json();
+  }
+
+  // Network: hostname and IPv4 (NetworkManager). Failures reject with the server's explanation.
+  async getNetwork(): Promise<NetworkStatus> {
+    const response = await fetch(`${this.baseUrl}/network`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async setHostname(name: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/network/hostname`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ Name: name }) });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+  }
+
+  async setIpv4(connection: string, config: Ipv4Config): Promise<PendingNetworkChange> {
+    const response = await fetch(`${this.baseUrl}/network/ipv4`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ Connection: connection, Method: config.Method, Address: config.Address, Gateway: config.Gateway, Dns: config.Dns }),
+    });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
+  async confirmNetworkChange(): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/network/confirm`, { method: 'POST' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
+  async revertNetworkChange(): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/network/revert`, { method: 'POST' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
   // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)
