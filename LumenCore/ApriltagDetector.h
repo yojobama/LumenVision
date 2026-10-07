@@ -42,8 +42,14 @@ public:
 	bool GetRefineEdges() const;
 	RefineEdgesMode GetRefineMode() const;
 	bool GetRefineModeSupported() const;
+	ApriltagFamilyKind GetFamily() const;
+	float GetQuadSigma() const;
+	bool GetQuadSigmaSupported() const;
+	int GetMaxHamming() const;
 	// what was requested at construction
 	ApriltagTuning GetRequestedTuning() const { return m_Tuning; }
+	// the tuning in effect: what the backend reports for the knobs it owns, the requested values for the ones the detector applies itself
+	ApriltagTuning GetEffectiveTuning() const;
 
 	// Driver mode: when true, Process() skips detection and the NT4 publish and republishes the raw
 	// camera frame.

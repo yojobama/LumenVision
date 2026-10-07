@@ -1,6 +1,6 @@
 #pragma once
 #include "IApriltagBackend.h"
-#include <apriltag/tag36h11.h>
+#include "ApriltagFamily.h"
 
 // Wraps apriltag_detector_detect() behind IApriltagBackend.
 class CpuApriltagBackend : public IApriltagBackend {
@@ -19,8 +19,14 @@ public:
 	bool GetRefineEdges() const override { return m_Detector->refine_edges; }
 	RefineEdgesMode GetRefineMode() const override { return REFINE_UPSTREAM; }
 	bool GetRefineModeSupported() const override { return false; }
+	ApriltagFamilyKind GetFamily() const override { return m_FamilyKind; }
+	float GetQuadSigma() const override { return m_Detector->quad_sigma; }
+	bool GetQuadSigmaSupported() const override { return true; }
+	int GetMaxHamming() const override { return m_MaxHamming; }
 
 private:
 	apriltag_detector_t* m_Detector;
 	apriltag_family_t* m_Family;
+	ApriltagFamilyKind m_FamilyKind;
+	int m_MaxHamming;
 };

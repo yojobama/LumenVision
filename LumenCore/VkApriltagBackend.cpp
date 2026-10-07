@@ -1,6 +1,5 @@
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
-#include <apriltag/tag36h11.h>
 #include <cmath>
 #include <cstdlib>
 #include <stdexcept>
@@ -53,9 +52,11 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 			std::to_string(frameWidth) + "x" + std::to_string(frameHeight) + ")");
 	}
 
-	m_Family = tag36h11_create();
+	m_FamilyKind = tuning.family;
+	m_MaxHamming = ClampMaxHamming(tuning.maxHamming);
+	m_Family = CreateApriltagFamily(m_FamilyKind);
 	m_Detector = apriltag_detector_create();
-	apriltag_detector_add_family(m_Detector, m_Family);
+	apriltag_detector_add_family_bits(m_Detector, m_Family, m_MaxHamming);
 	// set explicitly rather than left to apriltag_detector_create(), whose refine_edges default (TRUE) differs from
 	// TagDecoder's documented default (false)
 	m_Detector->refine_edges = tuning.refineEdges;
@@ -93,7 +94,7 @@ VkApriltagBackend::~VkApriltagBackend()
 	m_Context.reset();
 
 	apriltag_detector_destroy(m_Detector);
-	tag36h11_destroy(m_Family);
+	DestroyApriltagFamily(m_FamilyKind, m_Family);
 }
 
 zarray_t* VkApriltagBackend::Detect(const cv::Mat& grayFrame)

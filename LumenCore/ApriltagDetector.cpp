@@ -1,6 +1,7 @@
 #include "ApriltagDetector.h"
 #include "ApriltagDetection.h"
 #include "CameraCalibrationResult.h"
+#include "ApriltagFamily.h"
 #include "ConstrainedPnp.h"
 #include "CoordinateFrames.h"
 #include "CpuApriltagBackend.h"
@@ -11,7 +12,6 @@
 
 namespace {
 	// Number of orthogonal-iteration refinements estimate_tag_pose runs (libapriltag's own default is 50).
-	constexpr int POSE_ITERATIONS = 50;
 
 	nlohmann::json PoseToJson(const apriltag_pose_t& pose)
 	{
@@ -194,6 +194,43 @@ RefineEdgesMode ApriltagDetector::GetRefineMode() const
 	return m_Backend ? m_Backend->GetRefineMode() : m_Tuning.refineMode;
 }
 
+ApriltagFamilyKind ApriltagDetector::GetFamily() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetFamily() : m_Tuning.family;
+}
+
+float ApriltagDetector::GetQuadSigma() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetQuadSigma() : m_Tuning.quadSigma;
+}
+
+bool ApriltagDetector::GetQuadSigmaSupported() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetQuadSigmaSupported() : false;
+}
+
+int ApriltagDetector::GetMaxHamming() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetMaxHamming() : ClampMaxHamming(m_Tuning.maxHamming);
+}
+
+ApriltagTuning ApriltagDetector::GetEffectiveTuning() const
+{
+	ApriltagTuning effective = m_Tuning;
+	effective.nthreads = GetThreads();
+	effective.quadDecimate = GetQuadDecimate();
+	effective.refineEdges = GetRefineEdges();
+	effective.refineMode = GetRefineMode();
+	effective.family = GetFamily();
+	effective.quadSigma = GetQuadSigma();
+	effective.maxHamming = GetMaxHamming();
+	return effective;
+}
+
 bool ApriltagDetector::GetRefineModeSupported() const
 {
 	std::lock_guard<std::mutex> lock(m_BackendMutex);
@@ -316,6 +353,8 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 			for (int i = 0; i < zarray_size(detections); i++) {
 				apriltag_detection_t* detection;
 				zarray_get(detections, i, &detection);
+				// a weak decode is more likely a false positive than a tag
+				if (detection->decision_margin < m_Tuning.decisionMargin) continue;
 
 				// estimate_tag_pose assumes a pinhole model, so run it on undistorted corners. The JSON and
 				// overlay corners stay distorted, as they describe the actual image.
@@ -349,7 +388,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 				// estimate_tag_pose returns invalid pose pointers for degenerate intrinsics (fx=fy=0), which
 				// corrupts the heap when freed, so skip pose estimation without valid intrinsics.
-				if (m_HasCalibration) {
+				if (m_HasCalibration && m_Tuning.singleTagPose) {
 					apriltag_detection_t poseDetection = *detection;
 					if (m_HasDistortion) {
 						std::vector<cv::Point2d> distortedCorners = {
@@ -372,7 +411,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					// The second is absent (R == nullptr, error HUGE_VAL) when only one minimum was found.
 					apriltag_pose_t pose1 = {}, pose2 = {};
 					double err1 = 0.0, err2 = 0.0;
-					estimate_tag_pose_orthogonal_iteration(&m_DetectionInfo, &err1, &pose1, &err2, &pose2, POSE_ITERATIONS);
+					estimate_tag_pose_orthogonal_iteration(&m_DetectionInfo, &err1, &pose1, &err2, &pose2, std::max(1, m_Tuning.poseIterations));
 					const bool haveSecond = pose2.R != nullptr && pose2.t != nullptr;
 					const bool firstIsBest = !haveSecond || err1 <= err2;
 					apriltag_pose_t& best = firstIsBest ? pose1 : pose2;
@@ -436,8 +475,9 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			m_Backend->ReleaseResult(detections);
 
-			nlohmann::json multiTagJson = SolveMultiTagPnP(
-				multiTagObjectPoints, multiTagImagePoints, m_CameraMatrix, m_DistCoeffs, multiTagCount);
+			nlohmann::json multiTagJson = m_Tuning.multiTag
+				? SolveMultiTagPnP(multiTagObjectPoints, multiTagImagePoints, m_CameraMatrix, m_DistCoeffs, multiTagCount)
+				: nlohmann::json(nullptr);
 			if (!multiTagJson.is_null()) {
 				// SolveMultiTagPnP reports the camera in OpenCV axes; publish it in WPILib's (X forward, Y left, Z up)
 				frames::Pose3 cameraInField;

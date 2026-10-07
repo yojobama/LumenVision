@@ -2,6 +2,7 @@
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 
 #include "IApriltagBackend.h"
+#include "ApriltagFamily.h"
 #include <vkapriltag/TagDecoder.h>
 #include <vkapriltag/gpu/GpuDetector.h>
 #include <vkapriltag/gpu/QuadDecode.h>
@@ -37,6 +38,11 @@ public:
 	bool GetRefineEdges() const override { return m_Detector->refine_edges; }
 	RefineEdgesMode GetRefineMode() const override { return m_RefineMode; }
 	bool GetRefineModeSupported() const override { return true; }
+	ApriltagFamilyKind GetFamily() const override { return m_FamilyKind; }
+	// the GPU pipeline has no blur stage
+	float GetQuadSigma() const override { return 0.0f; }
+	bool GetQuadSigmaSupported() const override { return false; }
+	int GetMaxHamming() const override { return m_MaxHamming; }
 
 	// vkapriltag's RefineEdgesMethod for a mode
 	static apriltag_vulkan::RefineEdgesMethod ToRefineMethod(RefineEdgesMode mode);
@@ -53,6 +59,8 @@ public:
 private:
 	apriltag_detector_t* m_Detector;
 	apriltag_family_t* m_Family;
+	ApriltagFamilyKind m_FamilyKind = APRILTAG_FAMILY_36H11;
+	int m_MaxHamming = 2;
 	int m_FrameWidth = 0;
 	int m_FrameHeight = 0;
 	uint32_t m_Decimation = 2;

@@ -150,6 +150,9 @@ public:
 	RefineEdgesMode GetApriltagDetectorRefineMode(int sinkId);
 	// false on the CPU backend, which always runs REFINE_UPSTREAM
 	bool GetApriltagDetectorRefineModeSupported(int sinkId);
+	// every tuning knob in effect (see ApriltagTuning) and whether the blur setting does anything on this detector's backend
+	ApriltagTuning GetApriltagDetectorEffectiveTuning(int sinkId);
+	bool GetApriltagDetectorQuadSigmaSupported(int sinkId);
 	// legacy no-model overloads: inference needs a model, so these only keep generated SWIG call sites compiling and throw a clear error
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider);
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider, int id);

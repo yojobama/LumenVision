@@ -914,6 +914,21 @@ RefineEdgesMode Manager::GetApriltagDetectorRefineMode(int sinkId)
     return p_Detector->GetRefineMode();
 }
 
+ApriltagTuning Manager::GetApriltagDetectorEffectiveTuning(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    ApriltagDetector* p_Detector = sink == m_Sinks.end() ? nullptr : dynamic_cast<ApriltagDetector*>(sink->second.get());
+    if (p_Detector == nullptr) return ApriltagTuning();
+    return p_Detector->GetEffectiveTuning();
+}
+
+bool Manager::GetApriltagDetectorQuadSigmaSupported(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    ApriltagDetector* p_Detector = sink == m_Sinks.end() ? nullptr : dynamic_cast<ApriltagDetector*>(sink->second.get());
+    return p_Detector != nullptr && p_Detector->GetQuadSigmaSupported();
+}
+
 bool Manager::GetApriltagDetectorRefineModeSupported(int sinkId)
 {
     auto sink = m_Sinks.find(sinkId);

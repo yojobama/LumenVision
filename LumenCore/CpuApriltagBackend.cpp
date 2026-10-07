@@ -2,9 +2,12 @@
 
 CpuApriltagBackend::CpuApriltagBackend(ApriltagTuning tuning)
 {
-	m_Family = tag36h11_create();
+	m_FamilyKind = tuning.family;
+	m_MaxHamming = ClampMaxHamming(tuning.maxHamming);
+	m_Family = CreateApriltagFamily(m_FamilyKind);
 	m_Detector = apriltag_detector_create();
-	apriltag_detector_add_family(m_Detector, m_Family);
+	apriltag_detector_add_family_bits(m_Detector, m_Family, m_MaxHamming);
+	m_Detector->quad_sigma = tuning.quadSigma;
 
 	// <= 0 for nthreads/quadDecimate uses the library default (1 thread, quad_decimate 2.0); refine_edges defaults on.
 	// quad_decimate only lowers quad-search resolution (payload decoding stays full resolution); refine_edges offsets its coarser quads.
@@ -16,7 +19,7 @@ CpuApriltagBackend::CpuApriltagBackend(ApriltagTuning tuning)
 CpuApriltagBackend::~CpuApriltagBackend()
 {
 	apriltag_detector_destroy(m_Detector);
-	tag36h11_destroy(m_Family);
+	DestroyApriltagFamily(m_FamilyKind, m_Family);
 }
 
 zarray_t* CpuApriltagBackend::Detect(const cv::Mat& grayFrame)
