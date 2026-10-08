@@ -43,7 +43,8 @@ export interface PipelineNodeData extends Record<string, unknown> {
 export type PipelineNode = Node<PipelineNodeData, 'pipelineNode'>;
 
 const COLUMN_WIDTH = 260;
-const ROW_HEIGHT = 140;
+// a source card with a preview badge and a profile line is about 230 px tall
+const ROW_HEIGHT = 260;
 
 // Positions are held by the caller (PositionStore) so the per-tick rebuild does not fight drags;
 // unknown ids get an auto-layout slot.

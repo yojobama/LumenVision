@@ -170,7 +170,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   const placeNewNode = () => {
     // staggered placement for new nodes not yet in the snapshot
     const count = nodes.length;
-    return { x: (count % 4) * 260, y: Math.floor(count / 4) * 140 + 400 };
+    return { x: (count % 4) * 260, y: Math.floor(count / 4) * 260 + 400 };
   };
 
   const handleAddSource = async (name: string, type: string, files?: FileList, fps?: number, hardwareInfo?: CameraHardwareInfo) => {

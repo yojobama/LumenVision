@@ -50,7 +50,10 @@ export const MatchPage: React.FC = () => {
   // per camera: find the bound detection sink and the NetworkTablesSink bound to its output;
   // the recordSink is bound directly to the raw source
   const rows = snapshot.Sources.map(source => {
-    const detector = snapshot.Sinks.find(s => s.Sink.Source?.Id === source.Id);
+    // the detector is the source's active pipeline's, else any detection sink bound to it; the WebRTC/MJPEG preview sinks bound to it are not detectors
+    const isDetector = (s: (typeof snapshot.Sinks)[number]) => ['ApriltagSink', 'ObjectDetectionSink'].includes(sinkTypeName(s.Sink.Type));
+    const detector = (source.ActiveDetectionSinkId != null ? snapshot.Sinks.find(s => s.Sink.Id === source.ActiveDetectionSinkId) : undefined)
+      ?? snapshot.Sinks.find(s => isDetector(s) && s.Sink.Source?.Id === source.Id);
     const nt4Sink = detector
       ? snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'NetworkTablesSink' && s.Sink.Source?.Id === detector.Sink.Id)
       : undefined;
@@ -125,7 +128,7 @@ export const MatchPage: React.FC = () => {
             {rows.map(({ source, detector, recordSink, stats, status }) => (
               <tr key={source.Id} className="border-t border-gray-100 dark:border-gray-700">
                 <td className="px-4 py-3 text-gray-900 dark:text-white font-medium">{source.Name} <span className="text-gray-400 text-xs">#{source.Id}</span></td>
-                <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{detector ? `${sinkTypeName(detector.Sink.Type)} (#${detector.Sink.Id})` : '—'}</td>
+                <td className="px-4 py-3 text-gray-600 dark:text-gray-400">{detector ? `${detector.Sink.Name} (${sinkTypeName(detector.Sink.Type)})` : '—'}</td>
                 <td className="px-4 py-3 text-gray-900 dark:text-white">{(stats?.Fps ?? 0).toFixed(1)}</td>
                 <td className="px-4 py-3 text-gray-900 dark:text-white">{((stats?.LatencyUs ?? 0) / 1000).toFixed(1)} ms</td>
                 <td className="px-4 py-3">
