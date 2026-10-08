@@ -28,6 +28,7 @@ add_executable(LumenCoreTests
     test_constrained_pnp.cpp
     test_frame_transform.cpp
     test_logger.cpp
+    test_system_monitor.cpp
     test_mjpeg_settings.cpp
     test_stereo_calibrator.cpp
 )

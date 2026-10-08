@@ -1,5 +1,6 @@
 #include "SystemMonitor.h"
 
+#include <algorithm>
 #include <thread>
 #include <chrono>
 
@@ -36,7 +37,7 @@ void SystemMonitor::m_MonitorThreadLoop()
         }
         {
             std::lock_guard<std::mutex> guard(m_CPUTemperatureMutex);
-            m_cpu_Temperature = m_GetThermalZoneTemperature(m_FindThermalZoneIndex());
+            m_cpu_Temperature = ReadCpuTemperatureMilliC("/sys/class/thermal");
         }
         {
             std::lock_guard<std::mutex> guard(m_DiskMutex);
@@ -139,60 +140,38 @@ float SystemMonitor::m_GetDiskUsage(const std::string&)
 }
 #endif
 
-int SystemMonitor::m_FindThermalZoneIndex()
+static bool ReadFirstLine(const std::string& path, std::string& line)
 {
-#ifdef __linux__
-    int result = 0;
-    bool stop = false;
-    // scan at most 20 thermal zones
-    for (int i = 0; !stop && i < 20; ++i) {
-        std::ifstream thermal_file("/sys/class/thermal/thermal_zone" + std::to_string(i) + "/type");
-
-        if (thermal_file.good())
-        {
-            std::string line;
-            getline(thermal_file, line);
-
-            if (line.compare("x86_pkg_temp") == 0) {
-                result = i;
-                stop = true;
-            }
-
-        }
-        else {
-            stop = true;
-        }
-
-        thermal_file.close();
-    }
-    return result;
-#else
-    // LUMEN_TODO(windows-system-monitor): /sys/class/thermal has no Windows equivalent.
-    return 0;
-#endif
+    std::ifstream file(path);
+    return file.good() && static_cast<bool>(std::getline(file, line));
 }
 
-int SystemMonitor::m_GetThermalZoneTemperature(int index)
+int ReadCpuTemperatureMilliC(const std::string& thermalRoot)
 {
-    int result = -1;
-    // thermal read disabled
-    /*std::ifstream thermal_file("/sys/class/thermal/thermal_zone" + std::to_string(index) + "/temp");
+    static const char* const preferred[] = { "x86_pkg_temp", "soc-thermal", "cpu-thermal" };
+    int preferredRank = -1;
+    int preferredValue = -1;
+    int hottest = -1;
 
-    if (thermal_file.good())
-    {
-        std::string line;
-        getline(thermal_file, line);
+    // scan at most 20 thermal zones
+    for (int i = 0; i < 20; ++i) {
+        const std::string zone = thermalRoot + "/thermal_zone" + std::to_string(i);
+        std::string type, temp;
+        if (!ReadFirstLine(zone + "/temp", temp)) continue;
+        int value = -1;
+        try { value = std::stoi(temp); } catch (...) { continue; }
+        if (value <= 0) continue;
+        hottest = std::max(hottest, value);
 
-        std::stringstream iss(line);
-        iss >> result;
+        if (!ReadFirstLine(zone + "/type", type)) continue;
+        for (int rank = 0; rank < 3; ++rank) {
+            if (type == preferred[rank] && (preferredRank < 0 || rank < preferredRank)) {
+                preferredRank = rank;
+                preferredValue = value;
+            }
+        }
     }
-    else {
-        throw std::invalid_argument(std::to_string(index) + " doesn't refer to a valid thermal zone.");
-    }
-
-    thermal_file.close();*/
-
-    return result;
+    return preferredRank >= 0 ? preferredValue : hottest;
 }
 
 #ifdef __linux__

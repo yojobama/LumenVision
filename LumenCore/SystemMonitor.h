@@ -51,6 +51,10 @@ struct MEMORY_STATS {
 };
 
 
+// The CPU temperature in millidegrees Celsius from a thermal class directory (/sys/class/thermal), or -1 when none is readable.
+// A zone typed x86_pkg_temp (x86) or soc-thermal/cpu-thermal (Rockchip and other ARM boards) is preferred; otherwise the hottest zone is reported.
+int ReadCpuTemperatureMilliC(const std::string& thermalRoot);
+
 class SystemMonitor
 {
 public:
@@ -75,8 +79,6 @@ private:
 	int m_GetVal(const std::string& target, const std::string& content);
 	float m_GetCPUUsage(const CPU_STATS& first, const CPU_STATS& second);
 	float m_GetDiskUsage(const std::string& disk);
-	int m_FindThermalZoneIndex();
-	int m_GetThermalZoneTemperature(int index);
 	MEMORY_STATS m_ReadMemoryData();
     
     float m_cpuUsage;
