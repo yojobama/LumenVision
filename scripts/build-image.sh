@@ -215,6 +215,18 @@ else
     echo "librknnrt.so not found under /opt/lumenvision - this .deb may have been built without --with-rknn"
 fi
 
+echo "----> Removing network state the build host's network left behind (it would pin the board to the network the image was built on)"
+# the container shares the build host's network, so anything written while it ran belongs to that network
+rm -rf /var/lib/systemd/network/* /var/lib/NetworkManager/* /run/systemd/netif 2>/dev/null || true
+rm -f /etc/netplan/*lumenvision*.yaml /etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null || true
+# --resolv-conf=copy-host replaced the image's resolv.conf with a static copy of the host's; give it back to systemd-resolved
+if systemctl list-unit-files systemd-resolved.service >/dev/null 2>&1 && [[ -e /run/systemd/resolve/stub-resolv.conf || -d /usr/lib/systemd/resolved.conf.d || -f /usr/lib/systemd/systemd-resolved ]]; then
+    ln -sf ../run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+fi
+# machine-id and DHCP identity must be generated per device on first boot, not shared by every flashed board
+: > /etc/machine-id
+rm -f /var/lib/dbus/machine-id
+
 echo "----> Cleaning up"
 apt-get clean
 rm -rf /var/lib/apt/lists/*
