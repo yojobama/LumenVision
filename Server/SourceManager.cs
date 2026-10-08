@@ -20,12 +20,10 @@ namespace Server
 
         public void ChangeSourceName(int sourceId, string newName)
         {
-            Source source = GetSourceById(sourceId);
-            if (source != null)
-            {
-                source.Name = newName;
-                DB.Instance.Save();
-            }
+            if (string.IsNullOrWhiteSpace(newName)) throw Server.Web.ApiException.BadRequest("a name is required");
+            Source source = GetSourceById(sourceId) ?? throw Server.Web.ApiException.NotFound($"no source with id {sourceId}");
+            source.Name = newName.Trim();
+            DB.Instance.Save();
         }
 
         public int[] GetAllSourceIds()

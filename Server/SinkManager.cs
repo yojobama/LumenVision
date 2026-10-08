@@ -55,15 +55,10 @@ namespace Server
 
         public void SetSinkName(int sinkId, string dstName)
         {
-            foreach (var sink in sinks)
-            {
-                if (sink.Id == sinkId)
-                {
-                    sink.Name = dstName;
-                    DB.Instance.Save();
-                    break;
-                }
-            }
+            if (string.IsNullOrWhiteSpace(dstName)) throw Server.Web.ApiException.BadRequest("a name is required");
+            Sink sink = sinks.FirstOrDefault(s => s.Id == sinkId) ?? throw Server.Web.ApiException.NotFound($"no sink with id {sinkId}");
+            sink.Name = dstName.Trim();
+            DB.Instance.Save();
         }
 
         public void DeleteSink(int sinkId)
