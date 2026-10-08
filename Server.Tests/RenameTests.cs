@@ -1,3 +1,4 @@
+using System;
 using Server;
 using Server.Web;
 using Xunit;
@@ -101,6 +102,39 @@ public class PreviewCleanupTests
         {
             if (SinkManager.Instance.GetSinkById(orphan) != null) SinkManager.Instance.DeleteSink(orphan);
             SinkManager.Instance.DeleteSink(notAPreview);
+        }
+    }
+}
+
+[Collection("ServerSingletons")]
+public class MjpegPreviewJanitorTests
+{
+    [Fact]
+    public void AFallbackPreviewNobodyReadsFromIsDeletedAfterTheIdleLimitAndOthersAreKept()
+    {
+        var janitor = MjpegPreviewJanitor.Instance;
+        janitor.Forget();
+        int idle = SinkManager.Instance.AddMjpegSink("preview-mjpeg-1");
+        int busy = SinkManager.Instance.AddMjpegSink("preview-mjpeg-2");
+        int other = SinkManager.Instance.AddMjpegSink("my stream");
+        try
+        {
+            DateTime t0 = DateTime.UtcNow;
+            Assert.Equal(0, janitor.Sweep(t0));                                        // first sight starts the clock
+            Assert.Equal(0, janitor.Sweep(t0 + TimeSpan.FromSeconds(20)));             // not idle for long enough yet
+
+            MjpegPreviewJanitor.Touch(busy, t0 + TimeSpan.FromSeconds(25));           // a viewer is still reading from this one
+            Assert.Equal(1, janitor.Sweep(t0 + TimeSpan.FromSeconds(31)));
+
+            Assert.Null(SinkManager.Instance.GetSinkById(idle));
+            Assert.NotNull(SinkManager.Instance.GetSinkById(busy));
+            Assert.NotNull(SinkManager.Instance.GetSinkById(other));                   // not a fallback preview: never touched
+        }
+        finally
+        {
+            foreach (int id in new[] { idle, busy, other })
+                if (SinkManager.Instance.GetSinkById(id) != null) SinkManager.Instance.DeleteSink(id);
+            janitor.Forget();
         }
     }
 }

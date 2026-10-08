@@ -25,6 +25,7 @@ namespace Server.HttpModules
                 return;
             }
 
+            MjpegPreviewJanitor.Touch(sinkId);
             string frameBase64 = SinkManager.Instance.GetMjpegFrameBase64(sinkId);
             if (frameBase64.Length == 0)
             {
@@ -55,6 +56,7 @@ namespace Server.HttpModules
             string lastFrameBase64 = "";
             while (!abort.IsCancellationRequested)
             {
+                MjpegPreviewJanitor.Touch(sinkId);
                 string frameBase64 = SinkManager.Instance.GetMjpegFrameBase64(sinkId);
                 if (frameBase64.Length > 0 && frameBase64 != lastFrameBase64)
                 {

@@ -85,6 +85,7 @@ namespace Server
             builder.Services.AddHostedService(_ => new LogFileFollower(LogHub.Instance, "DBLog.txt", "db"));
 
             builder.Services.AddHostedService<AcceleratorMonitor>(_ => AcceleratorMonitor.Instance);
+            builder.Services.AddHostedService<MjpegPreviewJanitor>(_ => MjpegPreviewJanitor.Instance);
             builder.Services.AddHostedService<StateChannelBroadcaster>();
             builder.Services.AddHostedService<NetworkTablesControlService>();
 
