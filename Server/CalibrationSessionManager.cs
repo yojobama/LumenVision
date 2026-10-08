@@ -79,12 +79,18 @@ namespace Server
             return previewId;
         }
 
+        // A calibration is stored for the camera's own pixels, so a session must see untransformed frames (stereo splitting also cuts them by pixel).
+        private static void RequireNoTransform(int sourceId)
+        {
+            if (SourceManager.Instance.GetSourceById(sourceId)?.Transform is { IsIdentity: false })
+                throw ApiException.BadRequest("clear this camera's frame transform before calibrating it; the calibration is stored for the camera's own pixels and is carried across the transform automatically");
+        }
+
         public CalibrationSession StartCamera(int sourceId, CalibrationBoardType boardType, int rows, int cols,
             float squareSizeMeters, float markerSizeMeters, int arucoDictionaryId)
         {
             string cameraPath = RequireCameraPath(sourceId);
-            if (SourceManager.Instance.GetSourceById(sourceId)?.Transform is { IsIdentity: false })
-                throw ApiException.BadRequest("clear this camera's frame transform before calibrating it; the calibration is stored for the camera's own pixels and is carried across the transform automatically");
+            RequireNoTransform(sourceId);
             bool wasActive = SourceManager.Instance.IsSourceActive(sourceId);
 
             int id = ManagerWrapper.Instance.CreateCameraCalibrator(boardType, rows, cols, squareSizeMeters, markerSizeMeters, arucoDictionaryId);
@@ -119,6 +125,8 @@ namespace Server
         {
             string leftPath = RequireCameraPath(leftSourceId);
             string rightPath = RequireCameraPath(rightSourceId);
+            RequireNoTransform(leftSourceId);
+            RequireNoTransform(rightSourceId);
             return StartStereoCore(leftSourceId, rightSourceId, leftPath, rightPath, Array.Empty<int>(),
                 new[] { leftSourceId, rightSourceId }, boardType, rows, cols, squareSizeMeters);
         }
@@ -128,6 +136,7 @@ namespace Server
             int rows, int cols, float squareSizeMeters)
         {
             string cameraPath = RequireCameraPath(cameraSourceId);
+            RequireNoTransform(cameraSourceId);
             CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(cameraSourceId);
             int leftWidth = mode.width / 2;
             int rightWidth = mode.width - leftWidth;
