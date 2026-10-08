@@ -523,12 +523,7 @@ CameraMode V4l2CameraBackend::GetCurrentMode() const
 			parm.parm.capture.timeperframe.numerator;
 	}
 
-	if (m_RequestedMode.has_value()) {
-		const CameraMode& requested = m_RequestedMode.value();
-		mode.isNative = requested.width == mode.width &&
-			requested.height == mode.height &&
-			requested.pixelFormat == mode.pixelFormat;
-	}
+	mode.isNative = ModeHonoursRequest(m_RequestedMode, mode);
 
 	return mode;
 }

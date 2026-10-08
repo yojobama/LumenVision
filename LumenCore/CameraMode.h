@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include <string>
 #include <vector>
 #include "FrameFormat.h"
@@ -62,3 +63,11 @@ struct CameraControlInfo
 	std::vector<std::string> menuLabels;
 	std::vector<int> menuValues;
 };
+
+// Whether a camera's read-back mode is what was asked for. With no request at all the device is running its own default, which is by
+// definition what it is doing, so nothing was substituted.
+inline bool ModeHonoursRequest(const std::optional<CameraMode>& requested, const CameraMode& actual)
+{
+	if (!requested.has_value()) return true;
+	return requested->width == actual.width && requested->height == actual.height && requested->pixelFormat == actual.pixelFormat;
+}

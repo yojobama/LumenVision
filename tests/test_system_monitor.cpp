@@ -58,3 +58,27 @@ TEST_CASE("no thermal zones is -1, never a throw", "[system][temperature]") {
     REQUIRE(ReadCpuTemperatureMilliC(thermal.Path()) == -1);
     REQUIRE(ReadCpuTemperatureMilliC((thermal.root / "missing").string()) == -1);
 }
+
+#include "CameraMode.h"
+
+TEST_CASE("a camera running its own default mode is not reported as substituted", "[camera][mode]") {
+    CameraMode actual;
+    actual.width = 640;
+    actual.height = 480;
+    actual.pixelFormat = FrameFormat::MJPEG;
+
+    REQUIRE(ModeHonoursRequest(std::nullopt, actual));
+
+    CameraMode same = actual;
+    same.fps = 15.0; // only the size and the format decide whether a request was honoured
+    REQUIRE(ModeHonoursRequest(same, actual));
+
+    CameraMode other = actual;
+    other.width = 320;
+    other.height = 240;
+    REQUIRE_FALSE(ModeHonoursRequest(other, actual));
+
+    CameraMode otherFormat = actual;
+    otherFormat.pixelFormat = FrameFormat::YUYV;
+    REQUIRE_FALSE(ModeHonoursRequest(otherFormat, actual));
+}
