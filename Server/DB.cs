@@ -87,7 +87,7 @@ namespace Server
                                 SourceManager.Instance.InitializeVideoFileSource(source.FilePath, source.Fps ?? 30, source.Name, source.Id);
                                 break;
                             case SourceType.Camera:
-                                SourceManager.Instance.InitializeCameraSource(source.CameraHardwareInfo, id: source.Id);
+                                SourceManager.Instance.InitializeCameraSource(source.CameraHardwareInfo, source.Name, source.Id);
                                 break;
                         }
 
