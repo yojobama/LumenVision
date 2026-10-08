@@ -178,6 +178,9 @@ namespace Server
             if (ActiveOverrides(source) is CameraOverrides overrides)
             {
                 overrides.ControlValues[controlId] = value;
+                // remembered as overridden so switching pipelines or turning the override off puts the camera's own value back
+                if (!overriddenControls.TryGetValue(sourceId, out var overridden)) overriddenControls[sourceId] = overridden = new HashSet<int>();
+                overridden.Add(controlId);
             }
             else
             {
