@@ -114,6 +114,7 @@ namespace Server
             app.Map("/ws/logs", LogChannel.HandleAsync);
             // Outside /api: a long-lived response, not a REST call.
             app.MapGet("/stream/mjpeg", MjpegStreamModule.HandleAsync);
+            app.MapGet("/stream/mjpeg/frame", MjpegStreamModule.HandleFrameAsync);
             app.MapControllers();
 
             if (hasWebUi)

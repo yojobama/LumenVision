@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { WebRTCStream } from './WebRTCStream';
 import { MjpegStream } from './MjpegStream';
+import { MjpegThumbnail } from './MjpegThumbnail';
 import { ApiService } from '../services/ApiService';
 import type { WebRTCStreamProps } from '../types';
 
@@ -64,7 +65,10 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
 
 
   if (fallback?.kind === 'ready') {
-    return <MjpegStream sinkId={fallback.sinkId} onError={onError} {...rest} />;
+    // small views poll single frames; only a full-size view holds a stream connection (browsers allow about six per host)
+    return rest.compact
+      ? <MjpegThumbnail sinkId={fallback.sinkId} className={rest.className} />
+      : <MjpegStream sinkId={fallback.sinkId} onError={onError} {...rest} />;
   }
 
   if (fallback?.kind === 'creating') {

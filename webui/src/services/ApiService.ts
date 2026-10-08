@@ -525,6 +525,11 @@ export class ApiService {
     return `${window.location.origin}/stream/mjpeg?SinkID=${sinkId}`;
   }
 
+  // one JPEG of the sink's latest frame (204 until it has one): small views poll this instead of holding a stream connection open
+  getMjpegFrameUrl(sinkId: number): string {
+    return `${window.location.origin}/stream/mjpeg/frame?SinkID=${sinkId}`;
+  }
+
   // Record Sink Controller routes: segmented MP4 recording with a JSON-Lines telemetry sidecar per
   // segment. Undefined dstFolder/encoderName use server defaults.
   // Start/stop recording on every source at once (SinkManager.SetAllRecording).

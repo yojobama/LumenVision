@@ -14,6 +14,29 @@ namespace Server.HttpModules
         private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(100);
         private const string Boundary = "lumenvision-mjpeg-frame";
 
+        // The latest frame as one JPEG (mapped at /stream/mjpeg/frame), for small views that poll instead of holding a stream open: a browser allows
+        // only a handful of simultaneous connections to one host, and every open stream uses one. 204 until the sink has produced a frame.
+        public static async Task HandleFrameAsync(HttpContext context)
+        {
+            if (!int.TryParse(context.Request.Query["SinkID"], out int sinkId))
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsync("SinkID query parameter is required");
+                return;
+            }
+
+            string frameBase64 = SinkManager.Instance.GetMjpegFrameBase64(sinkId);
+            if (frameBase64.Length == 0)
+            {
+                context.Response.StatusCode = StatusCodes.Status204NoContent;
+                return;
+            }
+
+            context.Response.ContentType = "image/jpeg";
+            context.Response.Headers.CacheControl = "no-store";
+            await context.Response.Body.WriteAsync(Convert.FromBase64String(frameBase64));
+        }
+
         public static async Task HandleAsync(HttpContext context)
         {
             if (!int.TryParse(context.Request.Query["SinkID"], out int sinkId))
