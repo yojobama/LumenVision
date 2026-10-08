@@ -61,8 +61,26 @@ namespace Server
             DB.Instance.Save();
         }
 
+        // the stream sinks that only exist to preview a node: the viewer's WebRTC/MJPEG badges, which mean nothing once what they show is gone
+        public void DeletePreviewsOf(int nodeId)
+        {
+            var previews = sinks.Where(s => (s.Type == SinkType.WebRTCSink || s.Type == SinkType.MjpegSink) && s.Source != null && s.Source.Id == nodeId)
+                .Select(s => s.Id).ToList();
+            foreach (int previewId in previews) DeleteSink(previewId);
+        }
+
+        // previews the viewer made ("<node>-preview") that are bound to nothing, left behind by a node deleted before previews were removed with their node
+        public int DeleteOrphanPreviews()
+        {
+            var orphans = sinks.Where(s => (s.Type == SinkType.WebRTCSink || s.Type == SinkType.MjpegSink) && s.Source == null
+                && s.Name != null && s.Name.EndsWith("-preview", StringComparison.Ordinal)).Select(s => s.Id).ToList();
+            foreach (int id in orphans) DeleteSink(id);
+            return orphans.Count;
+        }
+
         public void DeleteSink(int sinkId)
         {
+            DeletePreviewsOf(sinkId);
             ManagerWrapper.Instance.DeleteSink(sinkId);
             sinks.RemoveAll(sink => sink.Id == sinkId);
             DB.Instance.Save();

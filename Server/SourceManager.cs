@@ -332,6 +332,7 @@ namespace Server
         // deletes a source and unbinds it from any sinks referencing it
         public void DeleteSource(int sourceId)
         {
+            SinkManager.Instance.DeletePreviewsOf(sourceId);
             ManagerWrapper.Instance.DeleteSource(sourceId);
 
             sources.RemoveAll(s => s.Id == sourceId);

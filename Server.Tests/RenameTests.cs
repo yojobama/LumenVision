@@ -60,3 +60,47 @@ public class RenameTests
         }
     }
 }
+
+[Collection("ServerSingletons")]
+public class PreviewCleanupTests
+{
+    [Fact]
+    public void DeletingANodeDeletesThePreviewsBoundToIt()
+    {
+        int detector = SinkManager.Instance.AddApriltagSinkWithBackend("tags", 0.1651, ApriltagBackendKind.APRILTAG_BACKEND_CPU, 0, 0);
+        int preview = SinkManager.Instance.AddMjpegSink("tags-preview");
+        try
+        {
+            SinkManager.Instance.BindSourceToSink(preview, detector);
+
+            SinkManager.Instance.DeleteSink(detector);
+
+            Assert.Null(SinkManager.Instance.GetSinkById(preview));
+            Assert.Null(SinkManager.Instance.GetSinkById(detector));
+        }
+        finally
+        {
+            if (SinkManager.Instance.GetSinkById(preview) != null) SinkManager.Instance.DeleteSink(preview);
+            if (SinkManager.Instance.GetSinkById(detector) != null) SinkManager.Instance.DeleteSink(detector);
+        }
+    }
+
+    [Fact]
+    public void OnlyUnboundPreviewsAreSweptAtStart()
+    {
+        int orphan = SinkManager.Instance.AddMjpegSink("gone-preview");
+        int notAPreview = SinkManager.Instance.AddMjpegSink("my stream");
+        try
+        {
+            Assert.True(SinkManager.Instance.DeleteOrphanPreviews() >= 1);
+
+            Assert.Null(SinkManager.Instance.GetSinkById(orphan));
+            Assert.NotNull(SinkManager.Instance.GetSinkById(notAPreview));
+        }
+        finally
+        {
+            if (SinkManager.Instance.GetSinkById(orphan) != null) SinkManager.Instance.DeleteSink(orphan);
+            SinkManager.Instance.DeleteSink(notAPreview);
+        }
+    }
+}

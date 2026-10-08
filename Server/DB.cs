@@ -254,6 +254,8 @@ namespace Server
 
         public void Verify()
         {
+            SinkManager.Instance.DeleteOrphanPreviews();
+
             foreach (var sink in sinks)
             {
                 if (SinkManager.Instance.GetSinkById(sink.Id) == null)
