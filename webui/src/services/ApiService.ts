@@ -303,6 +303,11 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
+  // For a page that is closing: keepalive lets the request outlive the page, so a fallback preview sink is not left behind
+  deleteSinkOnUnload(id: number): void {
+    fetch(`${this.baseUrl}/sink/delete?SinkID=${id}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+  }
+
   async deleteSink(id: number): Promise<void> {
     const response = await fetch(`${this.baseUrl}/sink/delete?SinkID=${id}`, { method: 'DELETE' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

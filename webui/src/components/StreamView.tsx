@@ -35,6 +35,16 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
     };
   }, [sinkId]);
 
+  // closing the tab or reloading skips the effect cleanup below, so delete the fallback sink as the page goes away
+  useEffect(() => {
+    const onPageHide = () => {
+      const id = fallbackSinkIdRef.current;
+      if (id != null) api.deleteSinkOnUnload(id);
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+
   const handleWebRtcError = useCallback(async (error: string) => {
     if (sourceId == null || fallbackStarted.current) {
       // no source to bind, or a fallback is already in flight/done - just surface the error
@@ -42,7 +52,7 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
       return;
     }
     fallbackStarted.current = true;
-    console.warn('StreamView: WebRTC preview failed, falling back to MJPEG', { sinkId, sourceId, error });
+    console.warn(`StreamView: WebRTC preview failed (${error}), falling back to MJPEG`, { sinkId, sourceId });
     setFallback({ kind: 'creating' });
     let mjpegId: number | null = null;
     try {

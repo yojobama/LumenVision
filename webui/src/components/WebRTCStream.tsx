@@ -11,6 +11,8 @@ import {
 import { WebRTCStreamProps } from '../types';
 import { ApiService } from '../services/ApiService';
 
+const DISCONNECT_GRACE_MS = 5000;
+
 export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
   sinkId,
   onStop,
@@ -25,11 +27,14 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
   // a ref, not state: the mount-time effect's cleanup closure would otherwise read a stale null
   // and never close the peer connection
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const disconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const api = new ApiService();
 
   useEffect(() => {
     startWebRTCConnection();
     return () => {
+      if (disconnectTimer.current) clearTimeout(disconnectTimer.current);
+      disconnectTimer.current = null;
       peerConnectionRef.current?.close();
       peerConnectionRef.current = null;
     };
@@ -47,8 +52,17 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
 
       pc.onconnectionstatechange = () => {
         setConnectionState(pc.connectionState);
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-          onError(`Connection ${pc.connectionState}`);
+        if (disconnectTimer.current) {
+          clearTimeout(disconnectTimer.current);
+          disconnectTimer.current = null;
+        }
+        if (pc.connectionState === 'failed') {
+          onError('Connection failed');
+        } else if (pc.connectionState === 'disconnected') {
+          // ICE reports "disconnected" for a brief network hiccup and usually recovers by itself; only give up (and fall back to MJPEG) if it stays down
+          disconnectTimer.current = setTimeout(() => {
+            if (pc.connectionState === 'disconnected') onError('Connection disconnected');
+          }, DISCONNECT_GRACE_MS);
         }
       };
 
