@@ -82,6 +82,8 @@ namespace Server.Controllers.sinks
                 PoseIterations = effective.poseIterations,
                 MultiTag = effective.multiTag,
                 SingleTagPose = effective.singleTagPose,
+                GpuDevice = effective.gpuDevice,
+                GpuDeviceName = ManagerWrapper.Instance.GetApriltagDetectorGpuDeviceName(sinkId),
             });
         }
 
