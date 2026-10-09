@@ -46,6 +46,9 @@ public:
 	float GetQuadSigma() const;
 	bool GetQuadSigmaSupported() const;
 	int GetMaxHamming() const;
+	// the GPU the Vulkan backend runs on (empty on CPU), and every Vulkan device a sink could be pointed at
+	std::string GetGpuDeviceName() const;
+	static std::vector<std::string> ListGpuDevices();
 	// what was requested at construction
 	ApriltagTuning GetRequestedTuning() const { return m_Tuning; }
 	// the tuning in effect: what the backend reports for the knobs it owns, the requested values for the ones the detector applies itself

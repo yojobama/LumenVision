@@ -8,6 +8,8 @@
 #include <vkapriltag/gpu/QuadDecode.h>
 #include <vkapriltag/vk/Context.h>
 #include <memory>
+#include <string>
+#include <vector>
 
 // GPU (Vulkan compute) AprilTag detection via the vkapriltag submodule (third_party/vkapriltag).
 //
@@ -43,6 +45,11 @@ public:
 	float GetQuadSigma() const override { return 0.0f; }
 	bool GetQuadSigmaSupported() const override { return false; }
 	int GetMaxHamming() const override { return m_MaxHamming; }
+	std::string GetGpuDeviceName() const override { return m_GpuDeviceName; }
+
+	// the names of the Vulkan devices a sink can run on, in vkEnumeratePhysicalDevices order (the index ApriltagTuning::gpuDevice takes);
+	// empty when there is no usable Vulkan driver
+	static std::vector<std::string> ListDevices();
 
 	// vkapriltag's RefineEdgesMethod for a mode
 	static apriltag_vulkan::RefineEdgesMethod ToRefineMethod(RefineEdgesMode mode);
@@ -61,6 +68,7 @@ private:
 	apriltag_family_t* m_Family;
 	ApriltagFamilyKind m_FamilyKind = APRILTAG_FAMILY_36H11;
 	int m_MaxHamming = 2;
+	std::string m_GpuDeviceName;
 	int m_FrameWidth = 0;
 	int m_FrameHeight = 0;
 	uint32_t m_Decimation = 2;

@@ -218,6 +218,21 @@ int ApriltagDetector::GetMaxHamming() const
 	return m_Backend ? m_Backend->GetMaxHamming() : ClampMaxHamming(m_Tuning.maxHamming);
 }
 
+std::string ApriltagDetector::GetGpuDeviceName() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetGpuDeviceName() : std::string();
+}
+
+std::vector<std::string> ApriltagDetector::ListGpuDevices()
+{
+#ifdef LUMEN_WITH_VULKAN_APRILTAG
+	return VkApriltagBackend::ListDevices();
+#else
+	return {};
+#endif
+}
+
 ApriltagTuning ApriltagDetector::GetEffectiveTuning() const
 {
 	ApriltagTuning effective = m_Tuning;

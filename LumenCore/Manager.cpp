@@ -943,6 +943,18 @@ bool Manager::GetApriltagDetectorQuadSigmaSupported(int sinkId)
     return p_Detector != nullptr && p_Detector->GetQuadSigmaSupported();
 }
 
+std::string Manager::GetApriltagDetectorGpuDeviceName(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    ApriltagDetector* p_Detector = sink == m_Sinks.end() ? nullptr : dynamic_cast<ApriltagDetector*>(sink->second.get());
+    return p_Detector == nullptr ? std::string() : p_Detector->GetGpuDeviceName();
+}
+
+std::vector<std::string> Manager::GetApriltagGpuDevices()
+{
+    return ApriltagDetector::ListGpuDevices();
+}
+
 bool Manager::GetApriltagDetectorRefineModeSupported(int sinkId)
 {
     auto sink = m_Sinks.find(sinkId);

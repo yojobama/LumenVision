@@ -433,10 +433,12 @@ export interface ApriltagAdvancedSettings {
   poseIterations: number;
   multiTag: boolean;
   singleTagPose: boolean;
+  // Vulkan backend only: index into the device list from GET apriltagSink/gpuDevices; -1 picks the best device
+  gpuDevice: number;
 }
 
 export const DEFAULT_APRILTAG_ADVANCED: ApriltagAdvancedSettings = {
-  family: 0, quadSigma: 0, maxHamming: 2, decisionMargin: 0, poseIterations: 50, multiTag: true, singleTagPose: true,
+  family: 0, quadSigma: 0, maxHamming: 2, decisionMargin: 0, poseIterations: 50, multiTag: true, singleTagPose: true, gpuDevice: -1,
 };
 
 // mirrors Server/Dtos.cs's FrameTransformDto: crop (camera pixels; 0 width/height = none), then a clockwise rotation, then mirrors

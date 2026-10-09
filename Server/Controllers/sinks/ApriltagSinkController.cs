@@ -38,11 +38,11 @@ namespace Server.Controllers.sinks
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
             [FromQuery] RefineEdgesMode? refineMode = null, [FromQuery] ApriltagFamilyKind? family = null, [FromQuery] float? quadSigma = null,
             [FromQuery] int? maxHamming = null, [FromQuery] float? decisionMargin = null, [FromQuery] int? poseIterations = null,
-            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null)
+            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null, [FromQuery] int? gpuDevice = null)
         {
             int sinkId = SinkManager.Instance.AddApriltagSinkWithBackend(name, tagSize, backend, frameWidth, frameHeight,
                 nthreads ?? 0, quadDecimate ?? 0.0f, refineEdges ?? true, refineMode ?? RefineEdgesMode.REFINE_EXACT,
-                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose));
+                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose, gpuDevice));
             return Task.FromResult(sinkId);
         }
 
@@ -85,6 +85,13 @@ namespace Server.Controllers.sinks
             });
         }
 
+        // GET: the Vulkan devices an AprilTag sink can run on, in the order its gpuDevice index refers to (empty without a Vulkan driver)
+        [HttpGet("apriltagSink/gpuDevices")]
+        public Task<List<string>> GetGpuDevices()
+        {
+            return Task.FromResult(ManagerWrapper.Instance.GetApriltagGpuDevices().ToList());
+        }
+
         // PATCH: switch an existing sink between CPU/Vulkan in place, keeping its id, settings and bindings.
         // nthreads/quadDecimate/refineEdges/refineMode are optional; when omitted the current tuning is carried over.
         [HttpPatch("apriltagSink/backend")]
@@ -92,10 +99,10 @@ namespace Server.Controllers.sinks
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
             [FromQuery] RefineEdgesMode? refineMode = null, [FromQuery] ApriltagFamilyKind? family = null, [FromQuery] float? quadSigma = null,
             [FromQuery] int? maxHamming = null, [FromQuery] float? decisionMargin = null, [FromQuery] int? poseIterations = null,
-            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null)
+            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null, [FromQuery] int? gpuDevice = null)
         {
             SinkManager.Instance.SetApriltagBackend(sinkId, backend, nthreads, quadDecimate, refineEdges, refineMode,
-                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose));
+                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose, gpuDevice));
             return Task.CompletedTask;
         }
 

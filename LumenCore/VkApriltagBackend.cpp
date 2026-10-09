@@ -43,6 +43,17 @@ std::string VkApriltagBackend::RefineEnvOverride()
 #endif
 }
 
+std::vector<std::string> VkApriltagBackend::ListDevices()
+{
+	std::vector<std::string> names;
+	try {
+		for (const vk::DeviceCaps& caps : vk::Context::EnumerateDevices()) names.push_back(caps.name);
+	} catch (const std::exception&) {
+		// no Vulkan loader or driver: no devices to choose from
+	}
+	return names;
+}
+
 VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTuning tuning)
 	: m_FrameWidth(frameWidth), m_FrameHeight(frameHeight), m_RefineMode(tuning.refineMode)
 {
@@ -63,7 +74,10 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 
 	m_Decimation = ResolveDecimation(tuning.quadDecimate, frameWidth, frameHeight);
 
-	m_Context = std::make_unique<vk::Context>();
+	vk::ContextOptions contextOptions;
+	contextOptions.device_index = tuning.gpuDevice;
+	m_Context = std::make_unique<vk::Context>(contextOptions);
+	m_GpuDeviceName = m_Context->caps().name;
 
 	DetectorConfig config;
 	config.width = static_cast<uint32_t>(frameWidth);

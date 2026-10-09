@@ -361,18 +361,25 @@ export class ApiService {
   // Current threads/quad_decimate/refine_edges in effect; on Vulkan quadDecimate is the integer the
   // GPU pipeline actually runs.
   async getApriltagTuning(sinkId: number): Promise<{ threads: number; quadDecimate: number; quadDecimateSupported: boolean; refineEdges: boolean; refineMode: number; refineModeSupported: boolean;
-    advanced: ApriltagAdvancedSettings; quadSigmaSupported: boolean }> {
+    advanced: ApriltagAdvancedSettings; quadSigmaSupported: boolean; gpuDeviceName: string }> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/tuning?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const dto = await response.json();
     return {
       threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges,
-      refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported, quadSigmaSupported: dto.QuadSigmaSupported,
+      refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported, quadSigmaSupported: dto.QuadSigmaSupported, gpuDeviceName: dto.GpuDeviceName ?? '',
       advanced: {
         family: dto.Family, quadSigma: dto.QuadSigma, maxHamming: dto.MaxHamming, decisionMargin: dto.DecisionMargin,
-        poseIterations: dto.PoseIterations, multiTag: dto.MultiTag, singleTagPose: dto.SingleTagPose,
+        poseIterations: dto.PoseIterations, multiTag: dto.MultiTag, singleTagPose: dto.SingleTagPose, gpuDevice: dto.GpuDevice ?? -1,
       },
     };
+  }
+
+  // The Vulkan devices an AprilTag sink can run on, in the order its gpuDevice index refers to
+  async getApriltagGpuDevices(): Promise<string[]> {
+    const response = await fetch(`${this.baseUrl}/apriltagSink/gpuDevices`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
   }
 
   // Object Detection Sink Controller routes

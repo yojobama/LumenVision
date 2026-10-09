@@ -157,6 +157,9 @@ public:
 	// every tuning knob in effect (see ApriltagTuning) and whether the blur setting does anything on this detector's backend
 	ApriltagTuning GetApriltagDetectorEffectiveTuning(int sinkId);
 	bool GetApriltagDetectorQuadSigmaSupported(int sinkId);
+	// the GPU an AprilTag sink's Vulkan backend runs on (empty on CPU), and the Vulkan devices a sink can choose between (index = ApriltagTuning::gpuDevice)
+	std::string GetApriltagDetectorGpuDeviceName(int sinkId);
+	std::vector<std::string> GetApriltagGpuDevices();
 	// legacy no-model overloads: inference needs a model, so these only keep generated SWIG call sites compiling and throw a clear error
 	// the confidence/NMS cutoffs of a running ObjectDetectionSink's model; Set throws if sinkId is not one
 	void SetObjectDetectionThresholds(int sinkId, float confThreshold, float nmsThreshold);

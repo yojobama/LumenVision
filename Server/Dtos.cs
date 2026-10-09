@@ -174,10 +174,10 @@ namespace Server
     // Threads/QuadDecimate are user-adjustable; QuadDecimateSupported is false for Vulkan (fixed 2x decimation),
     // so the Inspector disables that control.
     // RefineModeSupported is false on the CPU backend, which always runs upstream's refine_edges.
-    // Family .. SingleTagPose are the settings in effect (see ApriltagAdvancedTuning); QuadSigmaSupported is false on the Vulkan backend (no blur stage).
+    // Family .. SingleTagPose are the settings in effect (see ApriltagAdvancedTuning); GpuDevice is the requested Vulkan device index (-1 automatic) and GpuDeviceName the GPU actually in use (empty on CPU); QuadSigmaSupported is false on the Vulkan backend (no blur stage).
     public record struct ApriltagTuningDto(int Threads, float QuadDecimate, bool QuadDecimateSupported, bool RefineEdges,
         RefineEdgesMode RefineMode, bool RefineModeSupported, ApriltagFamilyKind Family, float QuadSigma, bool QuadSigmaSupported,
-        int MaxHamming, float DecisionMargin, int PoseIterations, bool MultiTag, bool SingleTagPose);
+        int MaxHamming, float DecisionMargin, int PoseIterations, bool MultiTag, bool SingleTagPose, int GpuDevice = -1, string GpuDeviceName = "");
 
     // Every saved snapshot/pair's detected corners for the calibration coverage heatmap;
     // each Snapshots entry is one snapshot flattened as [x0,y0,x1,y1,...].

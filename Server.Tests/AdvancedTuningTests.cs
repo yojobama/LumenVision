@@ -28,6 +28,21 @@ public class AdvancedTuningTests
     }
 
     [Fact]
+    public void TheGpuDeviceIsPartOfTheAdvancedTuning()
+    {
+        Assert.NotNull(ApriltagAdvancedTuning.FromQuery(null, null, null, null, null, null, null, gpuDevice: 1));
+
+        var saved = new ApriltagAdvancedTuning { GpuDevice = 1 };
+        Assert.Equal(1, new ApriltagAdvancedTuning { DecisionMargin = 10f }.MergedOver(saved).GpuDevice);
+        Assert.Equal(2, new ApriltagAdvancedTuning { GpuDevice = 2 }.MergedOver(saved).GpuDevice);
+
+        var tuning = new ApriltagTuning();
+        Assert.Equal(-1, tuning.gpuDevice);
+        saved.ApplyTo(tuning);
+        Assert.Equal(1, tuning.gpuDevice);
+    }
+
+    [Fact]
     public void RecordsSavedBeforeTheSettingsExistedStillLoad()
     {
         var sink = JsonSerializer.Deserialize<Sink>("""{"Type":0,"Id":7,"Name":"tags","ApriltagTagSize":0.1651}""");

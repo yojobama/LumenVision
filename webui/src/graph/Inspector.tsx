@@ -62,6 +62,8 @@ export const Inspector: React.FC<{
   const [newObjectProfileModel, setNewObjectProfileModel] = useState<number | ''>('');
   const [newObjectProfileThresholds, setNewObjectProfileThresholds] = useState<{ confThreshold: number; nmsThreshold: number } | null>(null);
   const [advanced, setAdvanced] = useState<ApriltagAdvancedSettings>(DEFAULT_APRILTAG_ADVANCED);
+  const [gpuDevices, setGpuDevices] = useState<string[]>([]);
+  const [gpuDeviceName, setGpuDeviceName] = useState('');
   const [quadSigmaSupported, setQuadSigmaSupported] = useState(true);
   const [applyingTuning, setApplyingTuning] = useState(false);
 
@@ -211,8 +213,12 @@ export const Inspector: React.FC<{
         setRefineModeSupported(tuning.refineModeSupported);
         setAdvanced(tuning.advanced);
         setQuadSigmaSupported(tuning.quadSigmaSupported);
+        setGpuDeviceName(tuning.gpuDeviceName);
       })
       .catch(() => { if (!cancelled) onToast('Failed to load detector tuning', 'error'); });
+    api.getApriltagGpuDevices()
+      .then(devices => { if (!cancelled) setGpuDevices(devices); })
+      .catch(() => { /* no device list: the picker keeps only Automatic */ });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id, isApriltagSink]);
@@ -230,6 +236,7 @@ export const Inspector: React.FC<{
       setRefineModeSupported(actual.refineModeSupported);
       setAdvanced(actual.advanced);
       setQuadSigmaSupported(actual.quadSigmaSupported);
+      setGpuDeviceName(actual.gpuDeviceName);
       onToast('Backend switched', 'success');
     } catch {
       onToast('Failed to switch backend', 'error');
@@ -247,6 +254,7 @@ export const Inspector: React.FC<{
       const actual = await api.getApriltagTuning(sink.Id);
       setAdvanced(actual.advanced);
       setQuadSigmaSupported(actual.quadSigmaSupported);
+      setGpuDeviceName(actual.gpuDeviceName);
       setThreadsValue(actual.threads);
       setQuadDecimateValue(actual.quadDecimate);
       setRefineEdgesValue(actual.refineEdges);
@@ -605,6 +613,20 @@ export const Inspector: React.FC<{
                   <option value={0}>CPU (apriltag)</option>
                   <option value={1}>Vulkan (vkapriltag)</option>
                 </select>
+              </div>
+            )}
+
+            {isApriltagSink && sinkBackend === 1 && (
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">GPU device</label>
+                <select value={advanced.gpuDevice} onChange={e => setAdvanced({ ...advanced, gpuDevice: parseInt(e.target.value) })}
+                  title="Applied with Apply tuning; the detector restarts on the chosen device. An index that no longer exists falls back to the CPU backend."
+                  className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white">
+                  <option value={-1}>Automatic (best available)</option>
+                  {gpuDevices.map((name, index) => <option key={index} value={index}>{index}: {name}</option>)}
+                  {advanced.gpuDevice >= gpuDevices.length && <option value={advanced.gpuDevice}>{advanced.gpuDevice}: not available</option>}
+                </select>
+                {gpuDeviceName && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Running on {gpuDeviceName}</p>}
               </div>
             )}
 

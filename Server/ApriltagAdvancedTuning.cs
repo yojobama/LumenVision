@@ -12,11 +12,13 @@ namespace Server
         public int? PoseIterations { get; set; }
         public bool? MultiTag { get; set; }
         public bool? SingleTagPose { get; set; }
+        // Vulkan backend only: index into the Vulkan device list (ManagerWrapper.GetApriltagGpuDevices); null picks the best device automatically
+        public int? GpuDevice { get; set; }
 
         // true when every member is the default
         [System.Text.Json.Serialization.JsonIgnore]
         public bool IsDefault => !Family.HasValue && !QuadSigma.HasValue && !MaxHamming.HasValue && !DecisionMargin.HasValue
-            && !PoseIterations.HasValue && !MultiTag.HasValue && !SingleTagPose.HasValue;
+            && !PoseIterations.HasValue && !MultiTag.HasValue && !SingleTagPose.HasValue && !GpuDevice.HasValue;
 
         // the members set here carried onto a native tuning
         public void ApplyTo(ApriltagTuning tuning)
@@ -28,6 +30,7 @@ namespace Server
             if (PoseIterations.HasValue) tuning.poseIterations = PoseIterations.Value;
             if (MultiTag.HasValue) tuning.multiTag = MultiTag.Value;
             if (SingleTagPose.HasValue) tuning.singleTagPose = SingleTagPose.Value;
+            if (GpuDevice.HasValue) tuning.gpuDevice = GpuDevice.Value;
         }
 
         // these members where set, otherwise `other`'s
@@ -40,18 +43,19 @@ namespace Server
             PoseIterations = PoseIterations ?? other?.PoseIterations,
             MultiTag = MultiTag ?? other?.MultiTag,
             SingleTagPose = SingleTagPose ?? other?.SingleTagPose,
+            GpuDevice = GpuDevice ?? other?.GpuDevice,
         };
 
         public ApriltagAdvancedTuning Clone() => (ApriltagAdvancedTuning)MemberwiseClone();
 
         // from optional query parameters; null when none was given
         public static ApriltagAdvancedTuning? FromQuery(ApriltagFamilyKind? family, float? quadSigma, int? maxHamming, float? decisionMargin,
-            int? poseIterations, bool? multiTag, bool? singleTagPose)
+            int? poseIterations, bool? multiTag, bool? singleTagPose, int? gpuDevice = null)
         {
             var tuning = new ApriltagAdvancedTuning
             {
                 Family = family, QuadSigma = quadSigma, MaxHamming = maxHamming, DecisionMargin = decisionMargin,
-                PoseIterations = poseIterations, MultiTag = multiTag, SingleTagPose = singleTagPose,
+                PoseIterations = poseIterations, MultiTag = multiTag, SingleTagPose = singleTagPose, GpuDevice = gpuDevice,
             };
             return tuning.IsDefault ? null : tuning;
         }

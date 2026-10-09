@@ -41,6 +41,8 @@ enum ApriltagFamilyKind {
 //   family:            which tag family to detect.
 //   quadSigma:         gaussian blur applied before the quad search (apriltag's quad_sigma; 0 = none). CPU backend only: the GPU pipeline has
 //                      no blur stage, so GetQuadSigmaSupported() is false there.
+//   gpuDevice:         Vulkan backend only: index into the Vulkan device list (see ApriltagDetector::ListGpuDevices); -1 picks the best device
+//                      automatically. An index that doesn't exist makes the Vulkan backend fail to build, so the detector falls back to CPU.
 //   maxHamming:        how many corrupted bits a tag may have and still decode (0 to 2; more makes the decode tables huge). Default 2.
 // The next three are applied by ApriltagDetector after detection, on either backend:
 //   decisionMargin:    detections with a lower decision margin are dropped (0 keeps every detection).
@@ -55,6 +57,7 @@ struct ApriltagTuning {
 	ApriltagFamilyKind family = APRILTAG_FAMILY_36H11;
 	float quadSigma = 0.0f;
 	int maxHamming = 2;
+	int gpuDevice = -1;
 	float decisionMargin = 0.0f;
 	int poseIterations = 50;
 	bool multiTag = true;
@@ -91,4 +94,6 @@ public:
 	virtual float GetQuadSigma() const = 0;
 	virtual bool GetQuadSigmaSupported() const = 0;
 	virtual int GetMaxHamming() const = 0;
+	// the GPU the backend runs on; empty on the CPU backend
+	virtual std::string GetGpuDeviceName() const { return std::string(); }
 };
