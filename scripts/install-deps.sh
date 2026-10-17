@@ -316,13 +316,16 @@ build_apriltag() {
         git reset --hard -q
         git clean -fdq -e build
         # strip CRLF: git apply rejects a CRLF patch against the LF clone
-        git apply <(sed 's/\r$//' "$patch_file")
+        for patch_file in "${patch_files[@]}"; do
+            git apply <(sed 's/\r$//' "$patch_file")
+        done
+        # the code-probe patch uses _Thread_local, which upstream's C99 build (-Wpedantic with -Werror) rejects
+        sed -i 's/C_STANDARD 99/C_STANDARD 11/' CMakeLists.txt
     )
     mkdir -p "$src/build"
     (
         cd "$src/build"
-        # gnu17 as vkapriltag pins it: the code-probe patch uses _Thread_local, which upstream's -Werror=pedantic C99 build rejects
-        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-std=gnu17 -DCMAKE_INSTALL_PREFIX="$PREFIX" ..
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" ..
         cmake --build . --parallel "$JOBS"
         sudo cmake --install .
         sudo ldconfig
