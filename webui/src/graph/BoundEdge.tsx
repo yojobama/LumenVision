@@ -7,7 +7,7 @@ export interface BoundEdgeData extends Record<string, unknown> {
   onDisconnect?: (edgeId: string) => void;
 }
 
-// A smoothstep edge with a disconnect button at its midpoint, shown while the edge is hovered or selected. Together with dragging an edge's end off its handle and Delete on a selected edge, it gives
+// A smoothstep edge with a disconnect button beside its target handle (faint until the link is hovered or selected). Together with dragging an edge's end off its handle and Delete on a selected edge, it gives
 // disconnecting the same one-gesture ease as dragging a connection out.
 export const BoundEdge: React.FC<EdgeProps> = ({
   id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, selected, markerEnd, style, data,
@@ -15,7 +15,8 @@ export const BoundEdge: React.FC<EdgeProps> = ({
   const [hovered, setHovered] = useState(false);
   const [path, labelX, labelY] = getSmoothStepPath({ sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition });
   const onDisconnect = (data as BoundEdgeData | undefined)?.onDisconnect;
-  const showButton = !!onDisconnect && (hovered || selected);
+  const showButton = !!onDisconnect;
+  const emphasised = hovered || selected;
 
   return (
     <g onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
@@ -24,29 +25,30 @@ export const BoundEdge: React.FC<EdgeProps> = ({
       {/* a wide invisible stroke so the thin line is easy to hover and click */}
       <path d={path} fill="none" stroke="transparent" strokeWidth={20} className="react-flow__edge-interaction" />
       <EdgeLabelRenderer>
-        <div
-          className="nodrag nopan absolute flex items-center gap-1"
-          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all' }}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-        >
-          {label && (
-            <span className="px-1.5 py-0.5 rounded bg-white dark:bg-gray-800 text-xs text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600">
-              {label}
-            </span>
-          )}
-          {showButton && (
-            <button
-              type="button"
-              aria-label="Disconnect"
-              title="Disconnect"
-              onClick={(e) => { e.stopPropagation(); onDisconnect?.(id); }}
-              className="w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow"
-            >
-              <X className="w-3 h-3" />
-            </button>
-          )}
-        </div>
+        {label && (
+          <div
+            className="nodrag nopan absolute px-1.5 py-0.5 rounded bg-white dark:bg-gray-800 text-xs text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600"
+            style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'none' }}
+          >
+            {label}
+          </div>
+        )}
+        {showButton && (
+          // beside the target handle, not the midpoint: links from one source share their first stretch, so only the
+          // end of a link is unambiguous
+          <button
+            type="button"
+            aria-label="Disconnect"
+            title="Disconnect"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
+            onClick={(e) => { e.stopPropagation(); onDisconnect?.(id); }}
+            className="nodrag nopan absolute w-5 h-5 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow transition-opacity"
+            style={{ transform: `translate(-50%, -50%) translate(${targetX - 22}px, ${targetY}px)`, pointerEvents: 'all', opacity: emphasised ? 1 : 0.35 }}
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
       </EdgeLabelRenderer>
     </g>
   );
