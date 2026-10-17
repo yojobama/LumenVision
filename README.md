@@ -153,7 +153,7 @@ stale" badge when a saved calibration is for a different resolution).
 ## AprilTag detection
 
 `ApriltagSink` runs on the CPU (libapriltag) or on the GPU through the vkapriltag submodule (Vulkan compute,
-pinned to tag `v1.6.0`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
+pinned to tag `v1.7.0`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
 `PATCH /api/apriltagSink/backend` (or `refine*` parameters on `createWithBackend` and
 `POST /api/source/profiles/apriltag`); `GET /api/apriltagSink/tuning` returns what is actually in effect.
 

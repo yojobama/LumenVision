@@ -258,31 +258,35 @@ build_opencv() {
 # ---------------------------------------------------------------------------
 # 3. AprilTag (AprilRobotics)
 # ---------------------------------------------------------------------------
-# Built from the patched v3.4.5 source vkapriltag uses and installed as the only apriltag: both the CPU
+# Built from the patched v3.4.5 source vkapriltag uses (both of its patches) and installed as the only apriltag: both the CPU
 # backend and VkApriltagBackend load libapriltag.so.3, and only the patch exports the symbols the latter needs.
 APRILTAG_TAG="${APRILTAG_TAG:-v3.4.5}"
 
 build_apriltag() {
     log "AprilTag ${APRILTAG_TAG} (patched for vkapriltag)"
 
-    local patch_file="$BUILD_ROOT/../third_party/vkapriltag/apriltags_vulkan/cmake/patches/apriltag-expose-decode-steps.patch"
+    # vkapriltag's patches, applied in this order (the second one needs the first)
+    local patch_dir="$BUILD_ROOT/../third_party/vkapriltag/apriltags_vulkan/cmake/patches"
     # resolve relative to this script's location too, in case BUILD_ROOT isn't under the repo
-    if [[ ! -f "$patch_file" ]]; then
-        patch_file="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/third_party/vkapriltag/apriltags_vulkan/cmake/patches/apriltag-expose-decode-steps.patch"
+    if [[ ! -d "$patch_dir" ]]; then
+        patch_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/third_party/vkapriltag/apriltags_vulkan/cmake/patches"
     fi
-    if [[ ! -f "$patch_file" ]]; then
-        fail "can't find vkapriltag's apriltag patch file - is the third_party/vkapriltag submodule checked out? (git submodule update --init)"
-        return 1
-    fi
+    local patch_files=("$patch_dir/apriltag-expose-decode-steps.patch" "$patch_dir/apriltag-expose-code-probe.patch")
+    for patch_file in "${patch_files[@]}"; do
+        if [[ ! -f "$patch_file" ]]; then
+            fail "can't find vkapriltag's apriltag patch $(basename "$patch_file") - is the third_party/vkapriltag submodule checked out at v1.7.0 or later? (git submodule update --init)"
+            return 1
+        fi
+    done
 
-    # Stamp the install with the SHA-256 of the vkapriltag patch and rebuild when it changes (the patch
-    # adds symbols, not headers); under /usr/local/lib so the CI dependency caches keep it
+    # Stamp the install with the SHA-256 of the vkapriltag patches and rebuild when they change (the patches
+    # add symbols, not headers); under /usr/local/lib so the CI dependency caches keep it
     local stamp="$PREFIX/lib/apriltag/lumenvision-patch.sha256"
     local want_sha
-    want_sha="$(sha256sum "$patch_file" | cut -d' ' -f1)"
+    want_sha="$(cat "${patch_files[@]}" | sha256sum | cut -d' ' -f1)"
     if require_header /usr/local/include/apriltag/apriltag_pose.h 2>/dev/null \
         && [[ -f "$stamp" && "$(cat "$stamp")" == "$want_sha" ]]; then
-        log "apriltag already installed under /usr/local (built with the current vkapriltag patch)"
+        log "apriltag already installed under /usr/local (built with the current vkapriltag patches)"
         return 0
     fi
 
@@ -298,7 +302,7 @@ build_apriltag() {
     fi
 
     if [[ "$CHECK_ONLY" -eq 1 ]]; then
-        note_missing "AprilTag ${APRILTAG_TAG} (patched) not installed, or built with an older vkapriltag patch"
+        note_missing "AprilTag ${APRILTAG_TAG} (patched) not installed, or built with older vkapriltag patches"
         return 0
     fi
 

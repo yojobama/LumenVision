@@ -13,8 +13,8 @@
 
 // GPU (Vulkan compute) AprilTag detection via the vkapriltag submodule (third_party/vkapriltag).
 //
-// Requires the patched apriltag build (v3.4.5 plus exported quad_decode_index/reconcile_detections; see
-// third_party/vkapriltag/apriltags_vulkan/cmake/patches/apriltag-expose-decode-steps.patch) as the only
+// Requires the patched apriltag build (v3.4.5 plus exported quad_decode_index/reconcile_detections/quad_sample_code/apriltag_min_hamming; see
+// third_party/vkapriltag/apriltags_vulkan/cmake/patches/apriltag-expose-decode-steps.patch and apriltag-expose-code-probe.patch) as the only
 // libapriltag.so.3 (same SONAME as vanilla); install-deps.sh build_apriltag() installs it.
 //
 // TagDecoder::Decode() returns the same zarray_t* of apriltag_detection_t* as apriltag_detector_detect(), stopping at
