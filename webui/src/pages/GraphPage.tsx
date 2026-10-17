@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap,
   useNodesState, type Edge, type Connection, type IsValidConnection,
@@ -9,6 +9,7 @@ import { useStateSocket } from '../hooks/useStateSocket';
 import { ApiService } from '../services/ApiService';
 import { buildGraph, edgesEqual, type PipelineNode, type PositionStore } from '../graph/model';
 import { nodeTypes } from '../graph/PipelineNode';
+import { edgeTypes, type BoundEdgeData } from '../graph/BoundEdge';
 import { Inspector } from '../graph/Inspector';
 import { GraphProfileBar } from '../graph/GraphProfileBar';
 import { LeftRail } from '../graph/LeftRail';
@@ -28,6 +29,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   const [nodes, setNodes, onNodesChange] = useNodesState<PipelineNode>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [showAddSource, setShowAddSource] = useState(false);
   const [showAddSink, setShowAddSink] = useState(false);
   const positionsRef = useRef(new Map<string, { x: number; y: number }>());
@@ -58,13 +60,14 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   // Keyboard shortcuts on the selected node: Ctrl+C remembers it, Ctrl+V copies it on the server (Ctrl+Shift+V also keeps its source
   // binding), F2 renames it in the Inspector and Delete removes it. Ignored while typing in a field.
   const copiedRef = useRef<PipelineNode | null>(null);
-  const shortcutState = useRef({ selectedNode, onToast });
-  shortcutState.current = { selectedNode, onToast };
+  const shortcutState = useRef<{ selectedNode: PipelineNode | null; onToast: typeof onToast; selectedEdgeId: string | null; disconnect: (edgeId: string) => Promise<void> }>(
+    { selectedNode, onToast, selectedEdgeId: null, disconnect: async () => {} });
+  shortcutState.current = { selectedNode, onToast, selectedEdgeId, disconnect: (edgeId) => disconnectEdge(edgeId) };
   useEffect(() => {
     const handler = async (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-      const { selectedNode: current, onToast: toast } = shortcutState.current;
+      const { selectedNode: current, onToast: toast, selectedEdgeId: edgeId, disconnect } = shortcutState.current;
       const modifier = e.ctrlKey || e.metaKey;
 
       try {
@@ -84,6 +87,10 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
           const field = document.getElementById('inspector-name') as HTMLInputElement | null;
           field?.focus();
           field?.select();
+        } else if ((e.key === 'Delete' || e.key === 'Backspace') && edgeId) {
+          // a selected connection: only the connection goes, never a node that happens to be selected too
+          e.preventDefault();
+          await disconnect(edgeId);
         } else if ((e.key === 'Delete' || e.key === 'Backspace') && current) {
           e.preventDefault();
           if (await deleteNode(current)) {
@@ -143,6 +150,54 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
       onToast('Failed to connect - check the connection is valid for these node types', 'error');
     }
   }, [nodes, edges, onToast]);
+
+  // Detaches what an edge draws. Edge ids come from graph/model.ts: "<sink>" (one source), "<sink>-left"/"-right" (stereo cameras;
+  // the server unbinds both) and "<sink>-depth" (a DepthFusionSink's depth source).
+  const disconnectEdge = useCallback(async (edgeId: string) => {
+    const edge = edges.find(e => e.id === edgeId);
+    if (!edge) return;
+    const targetSinkId = Number(edge.target.split('-')[1]);
+    try {
+      if (edgeId.endsWith('-depth')) {
+        await api.detachDepthFusionSource(targetSinkId);
+        onToast('Depth source detached', 'success');
+      } else {
+        await api.unbindSinkFromSource(targetSinkId);
+        onToast(edgeId.endsWith('-left') || edgeId.endsWith('-right') ? 'Disconnected both cameras' : 'Disconnected', 'success');
+      }
+      setSelectedEdgeId(null);
+    } catch {
+      onToast('Failed to disconnect', 'error');
+    }
+  }, [edges, onToast]);
+
+  // Dragging an edge's end off its handle: onto another valid node it rebinds (single-source edges), onto empty canvas it detaches.
+  const reconnectedRef = useRef(false);
+  const onReconnectStart = useCallback(() => { reconnectedRef.current = false; }, []);
+  const onReconnect = useCallback(async (oldEdge: Edge, connection: Connection) => {
+    reconnectedRef.current = true;
+    const plain = !oldEdge.id.endsWith('-left') && !oldEdge.id.endsWith('-right') && !oldEdge.id.endsWith('-depth');
+    if (!plain || !connection.source || !connection.target) return; // stereo/depth edges cannot move; dropping them on a handle keeps them
+    if (connection.source === oldEdge.source && connection.target === oldEdge.target) return;
+    try {
+      const oldTarget = Number(oldEdge.target.split('-')[1]);
+      const newTarget = Number(connection.target.split('-')[1]);
+      const newSource = Number(connection.source.split('-')[1]);
+      if (newTarget !== oldTarget) await api.unbindSinkFromSource(oldTarget);
+      await api.bindSinkToSource(newTarget, newSource);
+      onToast('Reconnected', 'success');
+    } catch {
+      onToast('Failed to reconnect', 'error');
+    }
+  }, [onToast]);
+  const onReconnectEnd = useCallback((_: unknown, edge: Edge) => {
+    if (!reconnectedRef.current) void disconnectEdge(edge.id);
+  }, [disconnectEdge]);
+
+  // every edge carries the disconnect action its button calls
+  const edgesWithActions = useMemo(
+    () => edges.map(e => ({ ...e, selected: e.id === selectedEdgeId, data: { onDisconnect: (id: string) => void disconnectEdge(id) } as BoundEdgeData })),
+    [edges, selectedEdgeId, disconnectEdge]);
 
   const isValidConnection: IsValidConnection = useCallback((edgeOrConn) => {
     const sourceId = 'source' in edgeOrConn ? edgeOrConn.source : undefined;
@@ -231,18 +286,24 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
             <GraphProfileBar onToast={onToast} />
             <span className="px-3 py-2 bg-white/80 dark:bg-gray-800/80 text-gray-500 dark:text-gray-400 rounded text-xs hidden xl:inline"
               title="Select a node first. Ctrl+Shift+V also keeps the copy's source binding. Cameras cannot be copied (a device opens once); copy a detector or a file source.">
-              Ctrl+C / Ctrl+V copy &middot; F2 rename &middot; Del delete
+              Ctrl+C / Ctrl+V copy &middot; F2 rename &middot; Del delete node or selected link &middot; drag a link's end away to disconnect
             </span>
           </div>
           <ReactFlow
             nodes={nodes}
-            edges={edges}
+            edges={edgesWithActions}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             onNodesChange={onNodesChange}
             onConnect={onConnect}
+            onReconnectStart={onReconnectStart}
+            onReconnect={onReconnect}
+            onReconnectEnd={onReconnectEnd}
+            edgesReconnectable
             isValidConnection={isValidConnection}
-            onNodeClick={(_, node) => setSelectedId(node.id)}
-            onPaneClick={() => setSelectedId(null)}
+            onNodeClick={(_, node) => { setSelectedId(node.id); setSelectedEdgeId(null); }}
+            onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedId(null); }}
+            onPaneClick={() => { setSelectedId(null); setSelectedEdgeId(null); }}
             colorMode={darkMode ? 'dark' : 'light'}
             fitView
           >

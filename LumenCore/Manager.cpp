@@ -1329,6 +1329,15 @@ bool Manager::SetDepthFusionDepthNode(int fusionSinkId, int depthNodeSourceId)
     return true;
 }
 
+bool Manager::ClearDepthFusionDepthNode(int fusionSinkId)
+{
+    auto sinkIt = m_Sinks.find(fusionSinkId);
+    DepthFusionNode* p_Fusion = sinkIt == m_Sinks.end() ? nullptr : dynamic_cast<DepthFusionNode*>(sinkIt->second.get());
+    if (p_Fusion == nullptr) return false;
+    p_Fusion->SetStereoDepthNode(nullptr);
+    return true;
+}
+
 int Manager::CreateObjectDetectionSink(ObjectDetectionProvider provider)
 {
     throw std::runtime_error("CreateObjectDetectionSink requires a model - use the overload that takes modelPath/labelsPath/variant/thresholds");

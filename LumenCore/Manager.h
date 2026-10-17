@@ -258,6 +258,8 @@ public:
 	int CreateDepthFusionNode();
 	int CreateDepthFusionNode(int id);
 	bool SetDepthFusionDepthNode(int fusionSinkId, int depthNodeSourceId);
+	// detaches the depth source again (the fusion sink publishes nothing until another is attached); false if fusionSinkId is not a DepthFusionNode
+	bool ClearDepthFusionDepthNode(int fusionSinkId);
 
 	// terminal sink: bind any JSON-producing source to it and it publishes onto the configured NT4 server. Takes only primitive parameters, as
 	// NetworkTablesSink.h's ntcore C++ API must never reach swig.i.

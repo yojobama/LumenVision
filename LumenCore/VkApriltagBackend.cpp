@@ -1,6 +1,7 @@
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
 #include <cmath>
+#include <map>
 #include "FramePool.h"
 #include <cstdlib>
 #include <stdexcept>
@@ -59,6 +60,43 @@ static bool FrameImportDisabledByEnv()
 #endif
 }
 
+namespace {
+// the live shared contexts by requested device index (-1 = automatic); a context lives as long as some sink uses it
+struct ContextEntry {
+	std::weak_ptr<vk::Context> context;
+	uint32_t nextStream = 0;
+};
+std::mutex g_ContextMutex;
+std::map<int, ContextEntry> g_Contexts;
+
+// Context::StreamSlot spreads this many streams over a device's compute families; more sinks than this just share queues
+constexpr uint32_t kExpectedStreams = 4;
+}
+
+VkApriltagBackend::SharedContext VkApriltagBackend::AcquireContext(int deviceIndex)
+{
+	std::lock_guard<std::mutex> lock(g_ContextMutex);
+	ContextEntry& entry = g_Contexts[deviceIndex];
+	std::shared_ptr<vk::Context> context = entry.context.lock();
+	if (!context) {
+		vk::ContextOptions options;
+		options.device_index = deviceIndex;
+		options.expected_streams = kExpectedStreams;
+		context = std::make_shared<vk::Context>(options); // throws without a usable device; nothing is cached then
+		entry.context = context;
+		entry.nextStream = 0;
+	}
+	return SharedContext{ context, entry.nextStream++ };
+}
+
+size_t VkApriltagBackend::LiveContextCount()
+{
+	std::lock_guard<std::mutex> lock(g_ContextMutex);
+	size_t live = 0;
+	for (const auto& entry : g_Contexts) if (!entry.second.context.expired()) live++;
+	return live;
+}
+
 std::vector<std::string> VkApriltagBackend::ListDevices()
 {
 	std::vector<std::string> names;
@@ -90,9 +128,9 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 
 	m_Decimation = ResolveDecimation(tuning.quadDecimate, frameWidth, frameHeight);
 
-	vk::ContextOptions contextOptions;
-	contextOptions.device_index = tuning.gpuDevice;
-	m_Context = std::make_unique<vk::Context>(contextOptions);
+	SharedContext shared = AcquireContext(tuning.gpuDevice);
+	m_Context = shared.context;
+	m_Lane = m_Context->CreateLane(m_Context->StreamSlot(shared.stream));
 	m_GpuDeviceName = m_Context->caps().name;
 	// importing needs the extension and an alignment our pool blocks satisfy
 	const vk::DeviceCaps& caps = m_Context->caps();
@@ -110,7 +148,7 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	// fixed at construction, so changing this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
 	config.cpu_threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
 
-	m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, config);
+	m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, *m_Lane, config);
 	m_QuadDecode = std::make_unique<QuadDecode>(config);
 	// TagDecoder must be told the same decimation as the GPU pass: refine_edges derives its per-edge search radius from it.
 	// APRILTAG_VK_REFINE, if set, overrides the requested method inside the library.
@@ -125,6 +163,7 @@ VkApriltagBackend::~VkApriltagBackend()
 	m_TagDecoder.reset();
 	m_QuadDecode.reset();
 	m_GpuDetector.reset();
+	m_Lane.reset();
 	m_Context.reset();
 
 	apriltag_detector_destroy(m_Detector);

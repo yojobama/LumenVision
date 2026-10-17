@@ -294,6 +294,47 @@ TEST_CASE("the Vulkan backend reads a pooled frame in place and finds the same t
 	corners(pooled);
 }
 
+TEST_CASE("Vulkan sinks share one context per GPU, each with its own lane, and it is released with the last of them", "[hitl][vulkan][apriltag][tuning]") {
+	const cv::Mat image = RenderTag(APRILTAG_FAMILY_36H11, 3);
+	ApriltagTuning tuning;
+	tuning.quadDecimate = 1.0f;
+	REQUIRE(VkApriltagBackend::LiveContextCount() == 0);
+
+	std::unique_ptr<VkApriltagBackend> first, second, third;
+	try {
+		first = std::make_unique<VkApriltagBackend>(image.cols, image.rows, tuning);
+	} catch (const std::exception& e) {
+		SKIP("no usable Vulkan compute device (" << e.what() << ")");
+	}
+	second = std::make_unique<VkApriltagBackend>(image.cols, image.rows, tuning);
+	// a different frame size is a different pipeline but the same device context
+	third = std::make_unique<VkApriltagBackend>(image.cols / 2 * 2, image.rows, tuning);
+	REQUIRE(VkApriltagBackend::LiveContextCount() == 1);
+	REQUIRE(first->GetGpuDeviceName() == second->GetGpuDeviceName());
+
+	for (VkApriltagBackend* backend : { first.get(), second.get(), third.get() }) {
+		for (int frame = 0; frame < 3; frame++) { // interleaved, as sinks on separate cameras are
+			zarray_t* detections = backend->Detect(image);
+			REQUIRE(zarray_size(detections) == 1);
+			apriltag_detection_t* detection;
+			zarray_get(detections, 0, &detection);
+			REQUIRE(detection->id == 3);
+		}
+	}
+
+	first.reset();
+	REQUIRE(VkApriltagBackend::LiveContextCount() == 1); // the others still hold it
+	REQUIRE(zarray_size(second->Detect(image)) == 1);
+	second.reset();
+	third.reset();
+	REQUIRE(VkApriltagBackend::LiveContextCount() == 0);
+
+	// and a later sink gets a fresh one
+	VkApriltagBackend again(image.cols, image.rows, tuning);
+	REQUIRE(VkApriltagBackend::LiveContextCount() == 1);
+	REQUIRE(zarray_size(again.Detect(image)) == 1);
+}
+
 TEST_CASE("the Vulkan backend detects every tag family too, and reports no blur support", "[hitl][vulkan][apriltag][tuning]") {
 	const ApriltagFamilyKind kind = GENERATE(APRILTAG_FAMILY_36H11, APRILTAG_FAMILY_16H5, APRILTAG_FAMILY_25H9, APRILTAG_FAMILY_STANDARD41H12);
 	INFO("family " << static_cast<int>(kind));

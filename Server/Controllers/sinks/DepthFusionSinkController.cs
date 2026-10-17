@@ -24,5 +24,13 @@ namespace Server.Controllers.sinks
             SinkManager.Instance.AttachDepthFusionSource(id, stereoDepthSinkId);
             return Task.CompletedTask;
         }
+
+        // PATCH: detach the depth source again
+        [HttpPatch("depthFusionSink/{id}/detachDepthSource")]
+        public Task DetachDepthSource(int id)
+        {
+            SinkManager.Instance.DetachDepthFusionSource(id);
+            return Task.CompletedTask;
+        }
     }
 }

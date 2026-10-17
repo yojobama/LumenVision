@@ -831,6 +831,20 @@ namespace Server
             }
         }
 
+        // detaches a DepthFusionNode's depth source (the inverse of AttachDepthFusionSource)
+        public void DetachDepthFusionSource(int fusionSinkId)
+        {
+            if (!ManagerWrapper.Instance.ClearDepthFusionDepthNode(fusionSinkId))
+                throw new Exception($"DetachDepthFusionSource failed: {fusionSinkId} is not a depth fusion sink");
+
+            var sink = sinks.FirstOrDefault(s => s.Id == fusionSinkId);
+            if (sink != null)
+            {
+                sink.DepthSourceId = null;
+                DB.Instance.Save();
+            }
+        }
+
         // stop sink by id
         public void DisableSinkById(int id)
         {

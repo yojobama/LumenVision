@@ -9,6 +9,7 @@
 #include <vkapriltag/vk/Context.h>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -73,6 +74,18 @@ private:
 	// detector will read it without an upload copy. False for any other frame, which Detect() uploads as before.
 	bool ImportFrameIfPossible(const cv::Mat& gray);
 
+	// One Vulkan context per GPU is shared by every Vulkan AprilTag sink in the process (one instance, device and pipeline cache
+	// instead of one each), and each sink gets its own submission lane, spread over the device's compute queue families.
+	struct SharedContext {
+		std::shared_ptr<apriltag_vulkan::vk::Context> context;
+		uint32_t stream = 0; // this sink's index among the context's streams
+	};
+	static SharedContext AcquireContext(int deviceIndex);
+public:
+	// how many Vulkan contexts are alive (one per distinct GPU in use); for tests
+	static size_t LiveContextCount();
+private:
+
 	// each frame is a different pooled buffer for a while, so the import cache is capped; frames beyond it are copied
 	static constexpr size_t kMaxImportedFrames = 32;
 
@@ -90,7 +103,9 @@ private:
 	std::unordered_set<const uint8_t*> m_ImportedFrames;
 	std::atomic<bool> m_LastFrameImported{ false };
 
-	std::unique_ptr<apriltag_vulkan::vk::Context> m_Context;
+	// declaration order is destruction order in reverse: the detector, then the lane it submits through, then the shared context
+	std::shared_ptr<apriltag_vulkan::vk::Context> m_Context;
+	std::unique_ptr<apriltag_vulkan::vk::Lane> m_Lane;
 	std::unique_ptr<apriltag_vulkan::GpuDetector> m_GpuDetector;
 	std::unique_ptr<apriltag_vulkan::QuadDecode> m_QuadDecode;
 	std::unique_ptr<apriltag_vulkan::TagDecoder> m_TagDecoder;

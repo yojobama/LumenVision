@@ -158,15 +158,15 @@ export function buildGraph(
 
     if (sink.Source && sink.Source2) {
       // stereo sink: Source is LEFT, Source2 is RIGHT
-      edges.push({ id: `${id}-left`, source: `source-${sink.Source.Id}`, target: id, label: 'left', type: 'smoothstep' });
-      edges.push({ id: `${id}-right`, source: `source-${sink.Source2.Id}`, target: id, label: 'right', type: 'smoothstep' });
+      edges.push({ id: `${id}-left`, source: `source-${sink.Source.Id}`, target: id, label: 'left', type: 'bound' });
+      edges.push({ id: `${id}-right`, source: `source-${sink.Source2.Id}`, target: id, label: 'right', type: 'bound' });
     } else if (sink.Source) {
-      edges.push({ id, source: `source-${sink.Source.Id}`, target: id, type: 'smoothstep' });
+      edges.push({ id, source: `source-${sink.Source.Id}`, target: id, type: 'bound' });
     }
 
     if (sink.DepthSourceId != null) {
       // DepthFusionSink depth attach: not an ordinary Source bind
-      edges.push({ id: `${id}-depth`, source: `sink-${sink.DepthSourceId}`, target: id, label: 'depth', type: 'smoothstep' });
+      edges.push({ id: `${id}-depth`, source: `sink-${sink.DepthSourceId}`, target: id, label: 'depth', type: 'bound' });
     }
   }
 

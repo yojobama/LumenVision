@@ -643,6 +643,11 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
+  async detachDepthFusionSource(fusionSinkId: number): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/depthFusionSink/${fusionSinkId}/detachDepthSource`, { method: 'PATCH' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
   // Device Controller routes
   async getDeviceCPUUsage(): Promise<number> {
     const response = await fetch(`${this.baseUrl}/device/cpuUsage`);
