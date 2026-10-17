@@ -144,6 +144,16 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 	std::vector<cv::Rect2d> boxesForNms;
 	std::vector<float> scores;
 	std::vector<int> classIds;
+
+	// The rknn_model_zoo export applies the class sigmoid inside the graph; other recipes leave raw logits. Probabilities
+	// stay within [0,1] while logits of a real model go well below 0 (background cells sit around -5 to -10), so the range tells them apart.
+	bool classScoresAreProbabilities = true;
+	for (const DflScaleOutput& scale : scales) {
+		const size_t count = static_cast<size_t>(scale.gridH) * scale.gridW * numClasses;
+		for (size_t i = 0; i < count && classScoresAreProbabilities; i++)
+			if (scale.clsData[i] < -0.05f || scale.clsData[i] > 1.05f) classScoresAreProbabilities = false; // a little slack for dequantisation noise
+	}
+
 	std::vector<float> expVals(static_cast<size_t>(std::max(regMax, 1)));
 
 	for (const DflScaleOutput& scale : scales) {
@@ -155,7 +165,7 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 				int cell = gy * gridW + gx;
 
 				int bestClassId = -1;
-				float bestLogit = -std::numeric_limits<float>::infinity();
+				float bestLogit = -std::numeric_limits<float>::infinity(); // the best class's raw output (a probability or a logit)
 				for (int c = 0; c < numClasses; c++) {
 					float logit = scale.clsData[c * cellCount + cell];
 					if (logit > bestLogit) {
@@ -163,7 +173,7 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 						bestClassId = c;
 					}
 				}
-				float bestScore = Sigmoid(bestLogit);
+				float bestScore = classScoresAreProbabilities ? bestLogit : Sigmoid(bestLogit);
 				if (bestScore < confThreshold) continue;
 
 				// DFL: each of the 4 sides (left, top, right, bottom) is a softmax distribution over regMax bins;

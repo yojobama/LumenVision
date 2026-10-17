@@ -159,3 +159,27 @@ TEST_CASE("a transposed [anchors, 4+classes] output converts to the channel-majo
     REQUIRE(channelMajor[2] == 13.0f);  // channel 0, anchor 2
     REQUIRE(channelMajor[3 * 5 + 2] == 18.0f); // channel 5, anchor 2
 }
+
+TEST_CASE("DFL decoding takes class scores that are already probabilities as they are, and applies a sigmoid only to logits", "[YoloPostProcess]") {
+    const int regMax = 2;
+    // box[4*regMax, 1, 1]: bin 0 vs bin 1 logits per side, mass on bin 1
+    const float box[8] = { 0, 20, 0, 20, 0, 20, 0, 20 };
+    std::vector<std::string> labels = {"a", "b"};
+    auto run = [&](float cls0, float cls1, float confThreshold) {
+        const float cls[2] = { cls0, cls1 };
+        YoloPostProcess::DflScaleOutput scale{ box, cls, 1, 1, 32 };
+        return YoloPostProcess::DecodeDflMultiScaleAndNms({ scale }, regMax, 2, labels, IdentityLetterbox(640, 640), confThreshold, 0.45f);
+    };
+
+    // sigmoided head output (the rknn_model_zoo export): 0.9 stays 0.9, and a 0.02 background cell is not promoted to 0.5
+    auto probabilities = run(0.9f, 0.1f, 0.5f);
+    REQUIRE(probabilities.size() == 1);
+    REQUIRE(probabilities[0].GetConfidence() == Catch::Approx(0.9).margin(0.001));
+    REQUIRE(run(0.02f, 0.01f, 0.25f).empty());
+
+    // raw logits: sigmoid(2.2) ~ 0.9, sigmoid(-4) ~ 0.02
+    auto logits = run(2.2f, -4.0f, 0.5f);
+    REQUIRE(logits.size() == 1);
+    REQUIRE(logits[0].GetConfidence() == Catch::Approx(0.9).margin(0.01));
+    REQUIRE(run(-4.0f, -5.0f, 0.25f).empty());
+}

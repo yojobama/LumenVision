@@ -64,6 +64,11 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 		m_FusedOutputAttr = rknn_tensor_attr{};
 		m_FusedOutputAttr.index = 0;
 		if (rknn_query(m_Context, RKNN_QUERY_OUTPUT_ATTR, &m_FusedOutputAttr, sizeof(m_FusedOutputAttr)) != RKNN_SUCC) return false;
+		// A fused head packs box pixels (hundreds) and class scores (0..1) into one tensor, so an int8 export's single scale is
+		// coarse enough that every score rounds to zero and the model never detects anything: refuse it rather than load a dead model.
+		// Export such a model as fp16, or as the un-fused multi-output layout, whose class tensors quantise on their own.
+		const bool quantised = m_FusedOutputAttr.type == RKNN_TENSOR_INT8 || m_FusedOutputAttr.type == RKNN_TENSOR_UINT8;
+		if (quantised && m_FusedOutputAttr.scale > 0.05f) return false;
 	} else if (m_NumOutputs % 3 == 0) {
 		// airockchip/rknn_model_zoo yolov8 export: each FPN scale gives three outputs (box[4*regMax,H,W],
 		// class[numClasses,H,W], scoreSum[1,H,W] - unused), ordered largest grid to smallest (stride 8, 16, 32 for a 640 input)
