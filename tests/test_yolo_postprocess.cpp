@@ -79,3 +79,83 @@ TEST_CASE("DecodeAndNms drops detections below the confidence threshold", "[Yolo
 
     REQUIRE(detections.empty());
 }
+
+namespace {
+YoloPostProcess::LetterboxInfo IdentityLetterbox(int width, int height) {
+    YoloPostProcess::LetterboxInfo letterbox;
+    letterbox.scale = 1.0f;
+    letterbox.padLeft = 0;
+    letterbox.padTop = 0;
+    letterbox.originalWidth = width;
+    letterbox.originalHeight = height;
+    return letterbox;
+}
+}
+
+TEST_CASE("NMS runs per class, so overlapping boxes of different classes both survive", "[YoloPostProcess]") {
+    // two anchors on the same box: [cx][2], [cy][2], [w][2], [h][2], class0[2], class1[2]
+    const float outputData[] = {
+        300.0f, 300.0f,
+        300.0f, 300.0f,
+        100.0f, 100.0f,
+        100.0f, 100.0f,
+        0.9f, 0.0f,
+        0.0f, 0.8f,
+    };
+    std::vector<std::string> labels = {"person", "horse"};
+    auto detections = YoloPostProcess::DecodeAndNms(outputData, 2, 2, labels, IdentityLetterbox(640, 640), 0.5f, 0.45f);
+    REQUIRE(detections.size() == 2);
+
+    // the same two anchors both scoring class 0 are still deduplicated
+    const float sameClass[] = {
+        300.0f, 300.0f,
+        300.0f, 300.0f,
+        100.0f, 100.0f,
+        100.0f, 100.0f,
+        0.9f, 0.8f,
+        0.0f, 0.0f,
+    };
+    REQUIRE(YoloPostProcess::DecodeAndNms(sameClass, 2, 2, labels, IdentityLetterbox(640, 640), 0.5f, 0.45f).size() == 1);
+}
+
+TEST_CASE("a box hanging over the frame edge is clipped on every side", "[YoloPostProcess]") {
+    std::vector<std::string> labels = {"widget"};
+    auto run = [&](float cx, float cy) {
+        const float data[] = {cx, cy, 100.0f, 100.0f, 0.9f};
+        return YoloPostProcess::DecodeAndNms(data, 1, 1, labels, IdentityLetterbox(640, 480), 0.5f, 0.5f);
+    };
+
+    // left/top overhang: x spans [-40, 60], y spans [-30, 70]
+    auto topLeft = run(10.0f, 20.0f);
+    REQUIRE(topLeft.size() == 1);
+    cv::Rect2d box = topLeft[0].GetBoundingBox();
+    REQUIRE(box.x == Catch::Approx(0.0));
+    REQUIRE(box.y == Catch::Approx(0.0));
+    REQUIRE(box.x + box.width == Catch::Approx(60.0).margin(1.0));
+    REQUIRE(box.y + box.height == Catch::Approx(70.0).margin(1.0));
+
+    // right/bottom overhang: x spans [590, 690], y spans [430, 530]
+    auto bottomRight = run(640.0f, 480.0f);
+    REQUIRE(bottomRight.size() == 1);
+    box = bottomRight[0].GetBoundingBox();
+    REQUIRE(box.x + box.width == Catch::Approx(640.0).margin(1.0));
+    REQUIRE(box.y + box.height == Catch::Approx(480.0).margin(1.0));
+
+    // a box entirely in the padding has nothing left to report
+    REQUIRE(run(-200.0f, 240.0f).empty());
+}
+
+TEST_CASE("a transposed [anchors, 4+classes] output converts to the channel-major layout the decoder reads", "[YoloPostProcess]") {
+    // 3 anchors x (4 box values + 2 classes), anchor-major
+    const float transposed[] = {
+        1, 2, 3, 4, 5, 6,
+        7, 8, 9, 10, 11, 12,
+        13, 14, 15, 16, 17, 18,
+    };
+    std::vector<float> channelMajor = YoloPostProcess::ToChannelMajor(transposed, 3, 6);
+    REQUIRE(channelMajor.size() == 18);
+    REQUIRE(channelMajor[0] == 1.0f);   // channel 0, anchor 0
+    REQUIRE(channelMajor[1] == 7.0f);   // channel 0, anchor 1
+    REQUIRE(channelMajor[2] == 13.0f);  // channel 0, anchor 2
+    REQUIRE(channelMajor[3 * 5 + 2] == 18.0f); // channel 5, anchor 2
+}

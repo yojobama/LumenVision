@@ -26,6 +26,10 @@ private:
 	DetectionBackendConfig m_Config;
 	std::vector<std::string> m_Labels;
 
+	// the model's own input size (config.inputWidth/Height when the model leaves it dynamic)
+	int m_InputWidth = 640;
+	int m_InputHeight = 640;
+
 	std::string m_InputName;
 	std::string m_OutputName;
 };

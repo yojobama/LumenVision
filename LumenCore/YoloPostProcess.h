@@ -19,6 +19,10 @@ namespace YoloPostProcess {
 	// fill), preserving aspect ratio, and returns the bookkeeping needed to undo it afterwards
 	cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo);
 
+	// Rearranges a [numAnchors, channels] (anchor-major) head output, as some exporters produce, into the channel-major
+	// [channels, numAnchors] layout DecodeAndNms reads.
+	std::vector<float> ToChannelMajor(const float* anchorMajor, int numAnchors, int channels);
+
 	// Decodes one anchor-free YOLOv8/11 head output [4 + numClasses, numAnchors] (batch stripped) into detections in the
 	// original image's pixel space. `outputData` is channel-major (as ultralytics ONNX export produces); raw DFL distributions are not handled.
 	std::vector<ObjectDetection> DecodeAndNms(
@@ -30,10 +34,10 @@ namespace YoloPostProcess {
 		float confThreshold,
 		float nmsThreshold);
 
-	// The shared tail of every decoder: NMS over candidate boxes (in letterboxed-frame pixel space), then map survivors
-	// back to the original frame's pixel coordinates.
+	// The shared tail of every decoder: NMS per class (as ultralytics does, so a person on a horse keeps both) over candidate boxes
+	// (in letterboxed-frame pixel space), then map survivors back to the original frame's pixel coordinates, clipped to the frame.
 	std::vector<ObjectDetection> NmsAndBuildDetections(
-		const std::vector<cv::Rect>& boxesForNms,
+		const std::vector<cv::Rect2d>& boxesForNms,
 		const std::vector<float>& scores,
 		const std::vector<int>& classIds,
 		const std::vector<std::string>& labels,

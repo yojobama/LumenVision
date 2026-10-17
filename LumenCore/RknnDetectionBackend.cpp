@@ -14,6 +14,17 @@ RknnDetectionBackend::~RknnDetectionBackend()
 
 bool RknnDetectionBackend::Load(const DetectionBackendConfig& config)
 {
+	if (Initialise(config)) return true;
+	// a half-built backend must not answer Infer() with a missing or wrongly-shaped model
+	if (m_Loaded) rknn_destroy(m_Context);
+	m_Loaded = false;
+	return false;
+}
+
+bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
+{
+	if (m_Loaded) { rknn_destroy(m_Context); m_Loaded = false; }
+	m_NumClasses = 0;
 	m_Config = config;
 	m_ConfThreshold = config.confThreshold;
 	m_NmsThreshold = config.nmsThreshold;

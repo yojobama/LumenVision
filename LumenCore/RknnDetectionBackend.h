@@ -27,6 +27,8 @@ private:
 	};
 
 	rknn_context m_Context = 0;
+	bool Initialise(const DetectionBackendConfig& config);
+
 	bool m_Loaded = false;
 	bool m_IsMultiScaleDfl = false;
 

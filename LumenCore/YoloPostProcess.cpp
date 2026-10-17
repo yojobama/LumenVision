@@ -33,6 +33,15 @@ cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, Le
 	return padded;
 }
 
+std::vector<float> ToChannelMajor(const float* anchorMajor, int numAnchors, int channels)
+{
+	std::vector<float> channelMajor(static_cast<size_t>(numAnchors) * channels);
+	for (int anchor = 0; anchor < numAnchors; anchor++)
+		for (int channel = 0; channel < channels; channel++)
+			channelMajor[static_cast<size_t>(channel) * numAnchors + anchor] = anchorMajor[static_cast<size_t>(anchor) * channels + channel];
+	return channelMajor;
+}
+
 std::vector<ObjectDetection> DecodeAndNms(
 	const float* outputData,
 	int numClasses,
@@ -42,7 +51,7 @@ std::vector<ObjectDetection> DecodeAndNms(
 	float confThreshold,
 	float nmsThreshold)
 {
-	std::vector<cv::Rect> boxesForNms; // in letterboxed-frame pixel space, NMS only needs relative geometry
+	std::vector<cv::Rect2d> boxesForNms; // in letterboxed-frame pixel space, NMS only needs relative geometry
 	std::vector<float> scores;
 	std::vector<int> classIds;
 
@@ -64,10 +73,7 @@ std::vector<ObjectDetection> DecodeAndNms(
 		float w = outputData[2 * numAnchors + anchor];
 		float h = outputData[3 * numAnchors + anchor];
 
-		int left = static_cast<int>(std::round(cx - w / 2.0f));
-		int top = static_cast<int>(std::round(cy - h / 2.0f));
-
-		boxesForNms.emplace_back(left, top, static_cast<int>(std::round(w)), static_cast<int>(std::round(h)));
+		boxesForNms.emplace_back(cx - w / 2.0f, cy - h / 2.0f, w, h);
 		scores.push_back(bestScore);
 		classIds.push_back(bestClassId);
 	}
@@ -76,7 +82,7 @@ std::vector<ObjectDetection> DecodeAndNms(
 }
 
 std::vector<ObjectDetection> NmsAndBuildDetections(
-	const std::vector<cv::Rect>& boxesForNms,
+	const std::vector<cv::Rect2d>& boxesForNms,
 	const std::vector<float>& scores,
 	const std::vector<int>& classIds,
 	const std::vector<std::string>& labels,
@@ -85,26 +91,28 @@ std::vector<ObjectDetection> NmsAndBuildDetections(
 	float nmsThreshold)
 {
 	std::vector<int> keptIndices;
-	cv::dnn::NMSBoxes(boxesForNms, scores, confThreshold, nmsThreshold, keptIndices);
+	cv::dnn::NMSBoxesBatched(boxesForNms, scores, classIds, confThreshold, nmsThreshold, keptIndices);
 
 	std::vector<ObjectDetection> detections;
 	detections.reserve(keptIndices.size());
 
 	for (int idx : keptIndices) {
-		const cv::Rect& letterboxedBox = boxesForNms[idx];
+		const cv::Rect2d& letterboxedBox = boxesForNms[idx];
 
 		// map the box out of letterbox space back into the original frame's pixel coordinates
-		double origLeft = (letterboxedBox.x - letterbox.padLeft) / letterbox.scale;
-		double origTop = (letterboxedBox.y - letterbox.padTop) / letterbox.scale;
-		double origWidth = letterboxedBox.width / letterbox.scale;
-		double origHeight = letterboxedBox.height / letterbox.scale;
+		double left = (letterboxedBox.x - letterbox.padLeft) / letterbox.scale;
+		double top = (letterboxedBox.y - letterbox.padTop) / letterbox.scale;
+		double right = (letterboxedBox.x + letterboxedBox.width - letterbox.padLeft) / letterbox.scale;
+		double bottom = (letterboxedBox.y + letterboxedBox.height - letterbox.padTop) / letterbox.scale;
 
-		// clamp to the original frame - a box near the letterbox padding can extend slightly
-		// outside it after unscaling
-		origLeft = std::clamp(origLeft, 0.0, static_cast<double>(letterbox.originalWidth));
-		origTop = std::clamp(origTop, 0.0, static_cast<double>(letterbox.originalHeight));
-		origWidth = std::min(origWidth, letterbox.originalWidth - origLeft);
-		origHeight = std::min(origHeight, letterbox.originalHeight - origTop);
+		// clip each edge to the original frame - a box near the letterbox padding can extend outside it after unscaling,
+		// and clipping the origin alone would leave the far edge where it was
+		const double frameWidth = letterbox.originalWidth, frameHeight = letterbox.originalHeight;
+		double origLeft = std::clamp(left, 0.0, frameWidth);
+		double origTop = std::clamp(top, 0.0, frameHeight);
+		double origWidth = std::clamp(right, 0.0, frameWidth) - origLeft;
+		double origHeight = std::clamp(bottom, 0.0, frameHeight) - origTop;
+		if (origWidth <= 0.0 || origHeight <= 0.0) continue; // entirely in the padding
 
 		ObjectDetection detection;
 		detection.SetBoundingBox(cv::Rect2d(origLeft, origTop, origWidth, origHeight));
@@ -133,9 +141,10 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 	float confThreshold,
 	float nmsThreshold)
 {
-	std::vector<cv::Rect> boxesForNms;
+	std::vector<cv::Rect2d> boxesForNms;
 	std::vector<float> scores;
 	std::vector<int> classIds;
+	std::vector<float> expVals(static_cast<size_t>(std::max(regMax, 1)));
 
 	for (const DflScaleOutput& scale : scales) {
 		const int gridH = scale.gridH, gridW = scale.gridW, stride = scale.stride;
@@ -167,7 +176,6 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 					for (int b = 0; b < regMax; b++) maxLogit = std::max(maxLogit, binLogits[b * cellCount + cell]);
 
 					float sumExp = 0.0f;
-					std::vector<float> expVals(regMax);
 					for (int b = 0; b < regMax; b++) {
 						expVals[b] = std::exp(binLogits[b * cellCount + cell] - maxLogit);
 						sumExp += expVals[b];
@@ -185,9 +193,7 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 				float x2 = cx + distance[2] * stride;
 				float y2 = cy + distance[3] * stride;
 
-				boxesForNms.emplace_back(
-					static_cast<int>(std::round(x1)), static_cast<int>(std::round(y1)),
-					static_cast<int>(std::round(x2 - x1)), static_cast<int>(std::round(y2 - y1)));
+				boxesForNms.emplace_back(x1, y1, x2 - x1, y2 - y1);
 				scores.push_back(bestScore);
 				classIds.push_back(bestClassId);
 			}
