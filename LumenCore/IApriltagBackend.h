@@ -101,4 +101,6 @@ public:
 	virtual std::string GetGpuDeviceName() const { return std::string(); }
 	// the margin gate in effect (see ApriltagTuning::probeMargin); 0 on the CPU backend, which has none
 	virtual float GetProbeMargin() const { return 0.0f; }
+	// how the last frame reached the detector: "host-import" (the GPU read the pooled frame in place), "copy" (uploaded), or "" on the CPU backend
+	virtual std::string GetIngestMode() const { return std::string(); }
 };

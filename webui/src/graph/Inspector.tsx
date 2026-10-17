@@ -64,6 +64,7 @@ export const Inspector: React.FC<{
   const [advanced, setAdvanced] = useState<ApriltagAdvancedSettings>(DEFAULT_APRILTAG_ADVANCED);
   const [gpuDevices, setGpuDevices] = useState<string[]>([]);
   const [gpuDeviceName, setGpuDeviceName] = useState('');
+  const [ingestMode, setIngestMode] = useState('');
   const [quadSigmaSupported, setQuadSigmaSupported] = useState(true);
   const [applyingTuning, setApplyingTuning] = useState(false);
 
@@ -214,6 +215,7 @@ export const Inspector: React.FC<{
         setAdvanced(tuning.advanced);
         setQuadSigmaSupported(tuning.quadSigmaSupported);
         setGpuDeviceName(tuning.gpuDeviceName);
+        setIngestMode(tuning.ingestMode);
       })
       .catch(() => { if (!cancelled) onToast('Failed to load detector tuning', 'error'); });
     api.getApriltagGpuDevices()
@@ -237,6 +239,7 @@ export const Inspector: React.FC<{
       setAdvanced(actual.advanced);
       setQuadSigmaSupported(actual.quadSigmaSupported);
       setGpuDeviceName(actual.gpuDeviceName);
+      setIngestMode(actual.ingestMode);
       onToast('Backend switched', 'success');
     } catch {
       onToast('Failed to switch backend', 'error');
@@ -255,6 +258,7 @@ export const Inspector: React.FC<{
       setAdvanced(actual.advanced);
       setQuadSigmaSupported(actual.quadSigmaSupported);
       setGpuDeviceName(actual.gpuDeviceName);
+      setIngestMode(actual.ingestMode);
       setThreadsValue(actual.threads);
       setQuadDecimateValue(actual.quadDecimate);
       setRefineEdgesValue(actual.refineEdges);
@@ -626,7 +630,7 @@ export const Inspector: React.FC<{
                   {gpuDevices.map((name, index) => <option key={index} value={index}>{index}: {name}</option>)}
                   {advanced.gpuDevice >= gpuDevices.length && <option value={advanced.gpuDevice}>{advanced.gpuDevice}: not available</option>}
                 </select>
-                {gpuDeviceName && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Running on {gpuDeviceName}</p>}
+                {gpuDeviceName && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Running on {gpuDeviceName}{ingestMode && ` · frames: ${ingestMode === 'host-import' ? 'read in place' : 'uploaded'}`}</p>}
               </div>
             )}
 

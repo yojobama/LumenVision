@@ -7,8 +7,10 @@
 #include <vkapriltag/gpu/GpuDetector.h>
 #include <vkapriltag/gpu/QuadDecode.h>
 #include <vkapriltag/vk/Context.h>
+#include <atomic>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 // GPU (Vulkan compute) AprilTag detection via the vkapriltag submodule (third_party/vkapriltag).
@@ -48,6 +50,7 @@ public:
 	std::string GetGpuDeviceName() const override { return m_GpuDeviceName; }
 	// the library's gate, so an APRILTAG_VK_PROBE_MARGIN override shows
 	float GetProbeMargin() const override { return m_TagDecoder->probe_margin(); }
+	std::string GetIngestMode() const override { return m_LastFrameImported.load() ? "host-import" : "copy"; }
 
 	// the names of the Vulkan devices a sink can run on, in vkEnumeratePhysicalDevices order (the index ApriltagTuning::gpuDevice takes);
 	// empty when there is no usable Vulkan driver
@@ -66,6 +69,13 @@ public:
 	static uint32_t ResolveDecimation(float requested, int frameWidth, int frameHeight);
 
 private:
+	// Registers `gray` with the GPU detector for in-place reads when it is a whole pooled (page-aligned) frame; true when the
+	// detector will read it without an upload copy. False for any other frame, which Detect() uploads as before.
+	bool ImportFrameIfPossible(const cv::Mat& gray);
+
+	// each frame is a different pooled buffer for a while, so the import cache is capped; frames beyond it are copied
+	static constexpr size_t kMaxImportedFrames = 32;
+
 	apriltag_detector_t* m_Detector;
 	apriltag_family_t* m_Family;
 	ApriltagFamilyKind m_FamilyKind = APRILTAG_FAMILY_36H11;
@@ -75,6 +85,10 @@ private:
 	int m_FrameHeight = 0;
 	uint32_t m_Decimation = 2;
 	RefineEdgesMode m_RefineMode = REFINE_EXACT;
+
+	bool m_HostImportAvailable = false;
+	std::unordered_set<const uint8_t*> m_ImportedFrames;
+	std::atomic<bool> m_LastFrameImported{ false };
 
 	std::unique_ptr<apriltag_vulkan::vk::Context> m_Context;
 	std::unique_ptr<apriltag_vulkan::GpuDetector> m_GpuDetector;

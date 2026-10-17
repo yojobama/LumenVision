@@ -950,6 +950,13 @@ std::string Manager::GetApriltagDetectorGpuDeviceName(int sinkId)
     return p_Detector == nullptr ? std::string() : p_Detector->GetGpuDeviceName();
 }
 
+std::string Manager::GetApriltagDetectorIngestMode(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    ApriltagDetector* p_Detector = sink == m_Sinks.end() ? nullptr : dynamic_cast<ApriltagDetector*>(sink->second.get());
+    return p_Detector == nullptr ? std::string() : p_Detector->GetIngestMode();
+}
+
 std::vector<std::string> Manager::GetApriltagGpuDevices()
 {
     return ApriltagDetector::ListGpuDevices();

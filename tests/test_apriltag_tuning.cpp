@@ -1,7 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include "ApriltagDetector.h"
 #include "CpuApriltagBackend.h"
+#include "FramePool.h"
 #include <catch2/generators/catch_generators.hpp>
+#include <catch2/catch_approx.hpp>
 #include <cstdlib>
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
@@ -198,6 +200,27 @@ TEST_CASE("the detector reports the tuning in effect, including the knobs it app
 	REQUIRE(detector.GetQuadSigmaSupported());
 }
 
+TEST_CASE("pooled frames are page-aligned, sized in whole pages, and recycled at the same address", "[framepool]") {
+	std::shared_ptr<void> owner;
+	cv::Mat first = FramePool::Instance().Acquire(481, 641, CV_8UC1, owner);
+	const uint8_t* address = first.data;
+	REQUIRE(reinterpret_cast<uintptr_t>(address) % FramePool::kBlockAlignment == 0);
+	const size_t capacity = FramePool::Instance().BlockCapacity(address);
+	REQUIRE(capacity >= 481u * 641u);
+	REQUIRE(capacity % FramePool::kBlockAlignment == 0);
+	REQUIRE(first.isContinuous());
+
+	std::vector<uint8_t> foreign(16);
+	REQUIRE(FramePool::Instance().BlockCapacity(foreign.data()) == 0);
+	REQUIRE(FramePool::Instance().BlockCapacity(address + 1) == 0);
+
+	first.release();
+	owner.reset();
+	std::shared_ptr<void> again;
+	cv::Mat second = FramePool::Instance().Acquire(481, 641, CV_8UC1, again);
+	REQUIRE(second.data == address);
+}
+
 TEST_CASE("the margin gate is off by default and the CPU backend, which has none, always reports it off", "[apriltag][tuning]") {
 	REQUIRE(ApriltagTuning().probeMargin == 0.0f);
 
@@ -229,6 +252,46 @@ TEST_CASE("the Vulkan backend applies the margin gate and still finds a clean ta
 	apriltag_detection_t* detection;
 	zarray_get(detections, 0, &detection);
 	REQUIRE(detection->id == 3);
+}
+
+TEST_CASE("the Vulkan backend reads a pooled frame in place and finds the same tag as an uploaded copy", "[hitl][vulkan][apriltag][tuning]") {
+	const cv::Mat image = RenderTag(APRILTAG_FAMILY_36H11, 3);
+	ApriltagTuning tuning;
+	tuning.quadDecimate = 1.0f;
+	std::unique_ptr<VkApriltagBackend> backend;
+	try {
+		backend = std::make_unique<VkApriltagBackend>(image.cols, image.rows, tuning);
+	} catch (const std::exception& e) {
+		SKIP("no usable Vulkan compute device (" << e.what() << ")");
+	}
+
+	auto corners = [&](const cv::Mat& frame) {
+		zarray_t* detections = backend->Detect(frame);
+		REQUIRE(zarray_size(detections) == 1);
+		apriltag_detection_t* detection;
+		zarray_get(detections, 0, &detection);
+		REQUIRE(detection->id == 3);
+		std::vector<cv::Point2d> points;
+		for (auto& p : detection->p) points.emplace_back(p[0], p[1]);
+		return points;
+	};
+
+	std::shared_ptr<void> owner;
+	cv::Mat pooled = FramePool::Instance().Acquire(image.rows, image.cols, CV_8UC1, owner);
+	image.copyTo(pooled);
+
+	const std::vector<cv::Point2d> uploaded = corners(image); // not a pool buffer: always uploaded
+	REQUIRE(backend->GetIngestMode() == "copy");
+	const std::vector<cv::Point2d> inPlace = corners(pooled);
+	const bool importable = backend->GetIngestMode() == "host-import";
+	WARN("host import " << (importable ? "active" : "not available on this device"));
+	for (size_t i = 0; i < 4; i++) {
+		REQUIRE(inPlace[i].x == Catch::Approx(uploaded[i].x).margin(1e-4));
+		REQUIRE(inPlace[i].y == Catch::Approx(uploaded[i].y).margin(1e-4));
+	}
+	// a second frame in the same buffer is still read correctly after the first import
+	image.copyTo(pooled);
+	corners(pooled);
 }
 
 TEST_CASE("the Vulkan backend detects every tag family too, and reports no blur support", "[hitl][vulkan][apriltag][tuning]") {

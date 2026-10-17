@@ -231,6 +231,12 @@ float ApriltagDetector::GetProbeMargin() const
 	return m_Backend ? m_Backend->GetProbeMargin() : m_Tuning.probeMargin;
 }
 
+std::string ApriltagDetector::GetIngestMode() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetIngestMode() : std::string();
+}
+
 std::vector<std::string> ApriltagDetector::ListGpuDevices()
 {
 #ifdef LUMEN_WITH_VULKAN_APRILTAG

@@ -20,7 +20,26 @@ public:
 	// copied from it) is in use. The Mat wraps `owner`'s buffer without owning it; .clone() gives a self-contained copy.
 	cv::Mat Acquire(int rows, int cols, int type, std::shared_ptr<void>& owner);
 
+	// Every buffer starts on a kBlockAlignment boundary and is sized up to a multiple of it, so a GPU can import a pooled
+	// frame in place (VK_EXT_external_memory_host wants an aligned pointer and size). Buffers are never freed while the
+	// process runs, so an import of one stays valid.
+	static constexpr size_t kBlockAlignment = 4096;
+
+	// The size to import for a pooled buffer starting at `data`: its capacity (the row data rounded up to kBlockAlignment).
+	// 0 when `data` is not the start of a buffer from this pool.
+	size_t BlockCapacity(const void* data);
+
 private:
+	// an aligned allocation, released with the pool
+	struct Block {
+		explicit Block(size_t capacity);
+		~Block();
+		Block(const Block&) = delete;
+		Block& operator=(const Block&) = delete;
+		uint8_t* data = nullptr;
+		size_t capacity = 0;
+	};
+
 	struct Key {
 		int rows, cols, type;
 		bool operator==(const Key& other) const {
@@ -36,5 +55,6 @@ private:
 	};
 
 	std::mutex m_Mutex;
-	std::unordered_map<Key, std::vector<std::shared_ptr<std::vector<uint8_t>>>, KeyHash> m_Free;
+	std::unordered_map<Key, std::vector<std::shared_ptr<Block>>, KeyHash> m_Free;
+	std::unordered_map<const void*, size_t> m_Capacities; // every block ever allocated, by start address
 };

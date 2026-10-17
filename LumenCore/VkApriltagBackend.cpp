@@ -1,6 +1,7 @@
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
 #include <cmath>
+#include "FramePool.h"
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -43,6 +44,21 @@ std::string VkApriltagBackend::RefineEnvOverride()
 #endif
 }
 
+// LUMEN_APRILTAG_FRAME_IMPORT=0 uploads every frame, for comparing against the zero-copy path
+static bool FrameImportDisabledByEnv()
+{
+#ifdef _MSC_VER
+	char* env = nullptr;
+	size_t length = 0;
+	bool disabled = _dupenv_s(&env, &length, "LUMEN_APRILTAG_FRAME_IMPORT") == 0 && env != nullptr && std::string(env) == "0";
+	std::free(env);
+	return disabled;
+#else
+	const char* env = std::getenv("LUMEN_APRILTAG_FRAME_IMPORT");
+	return env != nullptr && std::string(env) == "0";
+#endif
+}
+
 std::vector<std::string> VkApriltagBackend::ListDevices()
 {
 	std::vector<std::string> names;
@@ -78,6 +94,10 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	contextOptions.device_index = tuning.gpuDevice;
 	m_Context = std::make_unique<vk::Context>(contextOptions);
 	m_GpuDeviceName = m_Context->caps().name;
+	// importing needs the extension and an alignment our pool blocks satisfy
+	const vk::DeviceCaps& caps = m_Context->caps();
+	m_HostImportAvailable = !FrameImportDisabledByEnv() && caps.has_external_memory_host &&
+		caps.min_host_pointer_alignment > 0 && FramePool::kBlockAlignment % caps.min_host_pointer_alignment == 0;
 
 	DetectorConfig config;
 	config.width = static_cast<uint32_t>(frameWidth);
@@ -111,8 +131,30 @@ VkApriltagBackend::~VkApriltagBackend()
 	DestroyApriltagFamily(m_FamilyKind, m_Family);
 }
 
+bool VkApriltagBackend::ImportFrameIfPossible(const cv::Mat& gray)
+{
+	if (!m_HostImportAvailable || !gray.isContinuous()) return false;
+	const uint8_t* data = gray.data;
+	if (m_ImportedFrames.count(data) != 0) return true;
+	if (m_ImportedFrames.size() >= kMaxImportedFrames) return false;
+
+	// only a buffer from the pool is known to be aligned, sized in whole pages and kept alive for the process
+	const size_t bytes = FramePool::Instance().BlockCapacity(data);
+	if (bytes < gray.total() * gray.elemSize()) return false;
+	try {
+		m_GpuDetector->ImportHostFrame(data, bytes);
+	} catch (const std::exception&) {
+		// the driver refused this memory: stop trying and keep uploading
+		m_HostImportAvailable = false;
+		return false;
+	}
+	m_ImportedFrames.insert(data);
+	return true;
+}
+
 zarray_t* VkApriltagBackend::Detect(const cv::Mat& grayFrame)
 {
+	m_LastFrameImported = ImportFrameIfPossible(grayFrame);
 	m_GpuDetector->Detect(grayFrame.data);
 
 	std::vector<DetectedQuad> quads = m_QuadDecode->Decode(m_GpuDetector->last_line_fit_points);

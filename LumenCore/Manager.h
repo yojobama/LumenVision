@@ -159,6 +159,8 @@ public:
 	bool GetApriltagDetectorQuadSigmaSupported(int sinkId);
 	// the GPU an AprilTag sink's Vulkan backend runs on (empty on CPU), and the Vulkan devices a sink can choose between (index = ApriltagTuning::gpuDevice)
 	std::string GetApriltagDetectorGpuDeviceName(int sinkId);
+	// how that backend's last frame reached the GPU: "host-import" (read in place) or "copy"; empty on CPU
+	std::string GetApriltagDetectorIngestMode(int sinkId);
 	std::vector<std::string> GetApriltagGpuDevices();
 	// legacy no-model overloads: inference needs a model, so these only keep generated SWIG call sites compiling and throw a clear error
 	// the confidence/NMS cutoffs of a running ObjectDetectionSink's model; Set throws if sinkId is not one

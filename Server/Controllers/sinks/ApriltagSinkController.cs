@@ -84,6 +84,7 @@ namespace Server.Controllers.sinks
                 SingleTagPose = effective.singleTagPose,
                 GpuDevice = effective.gpuDevice,
                 ProbeMargin = effective.probeMargin,
+                IngestMode = ManagerWrapper.Instance.GetApriltagDetectorIngestMode(sinkId),
                 GpuDeviceName = ManagerWrapper.Instance.GetApriltagDetectorGpuDeviceName(sinkId),
             });
         }

@@ -50,6 +50,8 @@ public:
 	std::string GetGpuDeviceName() const;
 	// the Vulkan backend's pre-refinement margin gate in effect (0 = off, and always 0 on CPU)
 	float GetProbeMargin() const;
+	// how the Vulkan backend's last frame reached the GPU ("host-import" or "copy"); empty on CPU
+	std::string GetIngestMode() const;
 	static std::vector<std::string> ListGpuDevices();
 	// what was requested at construction
 	ApriltagTuning GetRequestedTuning() const { return m_Tuning; }

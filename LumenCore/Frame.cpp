@@ -67,8 +67,10 @@ const cv::Mat& Frame::AsGray() const
 			cv::cvtColor(m_Storage->mat, gray, cv::COLOR_RGB2GRAY);
 			break;
 		case FrameFormat::NV12:
-			// NV12's Y plane is the top 2/3 of the packed buffer (W x (H*3/2): Y, then interleaved UV). Not pooled.
-			gray = m_Storage->mat(cv::Rect(0, 0, m_Storage->mat.cols, m_Storage->mat.rows * 2 / 3)).clone();
+			// NV12's Y plane is the top 2/3 of the packed buffer (W x (H*3/2): Y, then interleaved UV). Copied into a
+			// pooled (aligned, importable) buffer rather than cloned.
+			gray = FramePool::Instance().Acquire(m_Storage->mat.rows * 2 / 3, m_Storage->mat.cols, CV_8UC1, owner);
+			m_Storage->mat(cv::Rect(0, 0, m_Storage->mat.cols, m_Storage->mat.rows * 2 / 3)).copyTo(gray);
 			break;
 		default:
 			// MJPEG/YUYV have no decode path here; fail loudly rather than return garbage pixels.
