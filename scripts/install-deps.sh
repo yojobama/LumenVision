@@ -321,7 +321,8 @@ build_apriltag() {
     mkdir -p "$src/build"
     (
         cd "$src/build"
-        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" ..
+        # gnu17 as vkapriltag pins it: the code-probe patch uses _Thread_local, which upstream's -Werror=pedantic C99 build rejects
+        cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-std=gnu17 -DCMAKE_INSTALL_PREFIX="$PREFIX" ..
         cmake --build . --parallel "$JOBS"
         sudo cmake --install .
         sudo ldconfig
