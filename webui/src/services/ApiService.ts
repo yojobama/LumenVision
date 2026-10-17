@@ -361,13 +361,13 @@ export class ApiService {
   // Current threads/quad_decimate/refine_edges in effect; on Vulkan quadDecimate is the integer the
   // GPU pipeline actually runs.
   async getApriltagTuning(sinkId: number): Promise<{ threads: number; quadDecimate: number; quadDecimateSupported: boolean; refineEdges: boolean; refineMode: number; refineModeSupported: boolean;
-    advanced: ApriltagAdvancedSettings; quadSigmaSupported: boolean; gpuDeviceName: string; ingestMode: string }> {
+    advanced: ApriltagAdvancedSettings; quadSigmaSupported: boolean; gpuDeviceName: string; ingestMode: string; hasCalibration: boolean }> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/tuning?sinkId=${sinkId}`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const dto = await response.json();
     return {
       threads: dto.Threads, quadDecimate: dto.QuadDecimate, quadDecimateSupported: dto.QuadDecimateSupported, refineEdges: dto.RefineEdges,
-      refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported, quadSigmaSupported: dto.QuadSigmaSupported, gpuDeviceName: dto.GpuDeviceName ?? '', ingestMode: dto.IngestMode ?? '',
+      refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported, quadSigmaSupported: dto.QuadSigmaSupported, gpuDeviceName: dto.GpuDeviceName ?? '', ingestMode: dto.IngestMode ?? '', hasCalibration: dto.HasCalibration ?? false,
       advanced: {
         family: dto.Family, quadSigma: dto.QuadSigma, maxHamming: dto.MaxHamming, decisionMargin: dto.DecisionMargin,
         poseIterations: dto.PoseIterations, multiTag: dto.MultiTag, singleTagPose: dto.SingleTagPose, gpuDevice: dto.GpuDevice ?? -1, probeMargin: dto.ProbeMargin ?? 0,

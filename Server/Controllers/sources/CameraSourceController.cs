@@ -113,7 +113,9 @@ namespace Server.Controllers.sources
         {
             string body = await HttpContext.GetRequestBodyAsStringAsync();
             CameraModeDto mode = System.Text.Json.JsonSerializer.Deserialize<CameraModeDto>(body);
-            return ManagerWrapper.Instance.SetCameraMode(id, mode.ToNative());
+            bool applied = ManagerWrapper.Instance.SetCameraMode(id, mode.ToNative());
+            SinkManager.Instance.RefreshApriltagCalibrations(id); // the saved calibration is per resolution
+            return applied;
         }
 
         // PATCH: exposure/gain control. Set autoExposure=false before exposureAbsolute for it to take effect on most UVC hardware.

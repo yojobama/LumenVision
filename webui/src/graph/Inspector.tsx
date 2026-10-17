@@ -65,6 +65,7 @@ export const Inspector: React.FC<{
   const [gpuDevices, setGpuDevices] = useState<string[]>([]);
   const [gpuDeviceName, setGpuDeviceName] = useState('');
   const [ingestMode, setIngestMode] = useState('');
+  const [hasCalibration, setHasCalibration] = useState(true);
   const [quadSigmaSupported, setQuadSigmaSupported] = useState(true);
   const [applyingTuning, setApplyingTuning] = useState(false);
 
@@ -216,6 +217,7 @@ export const Inspector: React.FC<{
         setQuadSigmaSupported(tuning.quadSigmaSupported);
         setGpuDeviceName(tuning.gpuDeviceName);
         setIngestMode(tuning.ingestMode);
+        setHasCalibration(tuning.hasCalibration);
       })
       .catch(() => { if (!cancelled) onToast('Failed to load detector tuning', 'error'); });
     api.getApriltagGpuDevices()
@@ -240,6 +242,7 @@ export const Inspector: React.FC<{
       setQuadSigmaSupported(actual.quadSigmaSupported);
       setGpuDeviceName(actual.gpuDeviceName);
       setIngestMode(actual.ingestMode);
+      setHasCalibration(actual.hasCalibration);
       onToast('Backend switched', 'success');
     } catch {
       onToast('Failed to switch backend', 'error');
@@ -259,6 +262,7 @@ export const Inspector: React.FC<{
       setQuadSigmaSupported(actual.quadSigmaSupported);
       setGpuDeviceName(actual.gpuDeviceName);
       setIngestMode(actual.ingestMode);
+      setHasCalibration(actual.hasCalibration);
       setThreadsValue(actual.threads);
       setQuadDecimateValue(actual.quadDecimate);
       setRefineEdgesValue(actual.refineEdges);
@@ -630,7 +634,7 @@ export const Inspector: React.FC<{
                   {gpuDevices.map((name, index) => <option key={index} value={index}>{index}: {name}</option>)}
                   {advanced.gpuDevice >= gpuDevices.length && <option value={advanced.gpuDevice}>{advanced.gpuDevice}: not available</option>}
                 </select>
-                {gpuDeviceName && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Running on {gpuDeviceName}{ingestMode && ` · frames: ${ingestMode === 'host-import' ? 'read in place' : 'uploaded'}`}</p>}
+                {gpuDeviceName && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Running on {gpuDeviceName}{ingestMode && ` Â· frames: ${ingestMode === 'host-import' ? 'read in place' : 'uploaded'}`}</p>}
               </div>
             )}
 
@@ -678,6 +682,7 @@ export const Inspector: React.FC<{
                   </select>
                 </div>
                 <FieldLayoutPicker resetKey={node.id} onToast={onToast}
+                  warning={hasCalibration ? undefined : 'This detector has no calibration for its camera at the current resolution, so it can give no pose and the layout has no effect yet. Calibrate the camera on the Calibration tab, then connect or reconnect this detector to it.'}
                   loadTagCount={() => api.getSinkFieldLayoutTagCount(sink!.Id)}
                   applyBundled={layout => api.setSinkBundledFieldLayout(sink!.Id, layout)}
                   applyUpload={json => api.uploadSinkFieldLayout(sink!.Id, json)} />

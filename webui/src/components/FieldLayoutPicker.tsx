@@ -13,7 +13,9 @@ export const FieldLayoutPicker: React.FC<{
   onToast: (message: string, type: 'success' | 'error' | 'info') => void;
   // changes when the thing being edited does, so the tag count is read again
   resetKey: string | number;
-}> = ({ loadTagCount, applyBundled, applyUpload, onToast, resetKey }) => {
+  // shown under the picker when the layout cannot do anything yet (for instance, no camera calibration)
+  warning?: string;
+}> = ({ loadTagCount, applyBundled, applyUpload, onToast, resetKey, warning }) => {
   const [layouts, setLayouts] = useState<FieldLayoutInfo[]>([]);
   const [tagCount, setTagCount] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,7 +49,7 @@ export const FieldLayoutPicker: React.FC<{
   const describe = () => {
     if (tagCount === null) return 'Reading...';
     if (tagCount < 0) return 'The saved layout is not valid';
-    return tagCount === 0 ? 'No field layout (multi-tag and field poses off)' : `${tagCount} tags loaded`;
+    return tagCount === 0 ? 'No field layout (multi-tag and field poses off)' : `${tagCount} tags loaded - a field pose needs two or more of them in view`;
   };
 
   return (
@@ -69,6 +71,7 @@ export const FieldLayoutPicker: React.FC<{
           }} />
       </div>
       <div className="text-xs text-gray-500 dark:text-gray-400">{describe()}</div>
+      {warning && tagCount !== null && tagCount > 0 && <div className="text-xs text-amber-600 dark:text-amber-400">{warning}</div>}
     </div>
   );
 };

@@ -862,6 +862,22 @@ double Manager::GetApriltagDetectorTagSize(int sinkId)
     return p_Detector->GetTagSize();
 }
 
+bool Manager::SetApriltagDetectorCalibration(int sinkId, CameraCalibrationResult calibration)
+{
+    auto sink = m_Sinks.find(sinkId);
+    ApriltagDetector* p_Detector = sink == m_Sinks.end() ? nullptr : dynamic_cast<ApriltagDetector*>(sink->second.get());
+    if (p_Detector == nullptr) return false;
+    p_Detector->SetCalibration(calibration);
+    return true;
+}
+
+bool Manager::GetApriltagDetectorHasCalibration(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    ApriltagDetector* p_Detector = sink == m_Sinks.end() ? nullptr : dynamic_cast<ApriltagDetector*>(sink->second.get());
+    return p_Detector != nullptr && p_Detector->HasCalibration();
+}
+
 CameraCalibrationResult Manager::GetApriltagDetectorCalibration(int sinkId)
 {
     auto sink = m_Sinks.find(sinkId);

@@ -50,6 +50,8 @@ TEST_CASE("each refine mode maps to its vkapriltag method", "[apriltag][tuning]"
 
 #include "ApriltagFamily.h"
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <thread>
 
 namespace {
@@ -219,6 +221,58 @@ TEST_CASE("pooled frames are page-aligned, sized in whole pages, and recycled at
 	std::shared_ptr<void> again;
 	cv::Mat second = FramePool::Instance().Acquire(481, 641, CV_8UC1, again);
 	REQUIRE(second.data == address);
+}
+
+TEST_CASE("a running detector given its camera's calibration afterwards starts posing, and a field layout then yields a multi-tag pose", "[apriltag][calibration]") {
+	// two tags side by side: a multi-tag pose needs at least two layout tags in view
+	cv::Mat image;
+	cv::hconcat(RenderTag(APRILTAG_FAMILY_36H11, 3), RenderTag(APRILTAG_FAMILY_36H11, 4), image);
+	auto logger = std::make_shared<Logger>("LumenCoreTests-apriltag-calibration.log");
+	auto source = std::make_shared<StillFrameSource>(logger, "calibration-source", image);
+
+	// a sink made from the graph starts like this: no calibration at all
+	ApriltagDetector detector(logger, "calibration-detector", CameraCalibrationResult(), 0.1651, APRILTAG_BACKEND_CPU);
+	REQUIRE_FALSE(detector.HasCalibration());
+
+	const std::filesystem::path layoutPath = std::filesystem::temp_directory_path() / "lumen-calibration-test-layout.json";
+	{
+		std::ofstream layout(layoutPath);
+		layout << R"({"tags":[{"ID":3,"pose":{"translation":{"x":4.0,"y":2.0,"z":0.5},"rotation":{"quaternion":{"W":1.0,"X":0.0,"Y":0.0,"Z":0.0}}}},{"ID":4,"pose":{"translation":{"x":4.0,"y":2.5,"z":0.5},"rotation":{"quaternion":{"W":1.0,"X":0.0,"Y":0.0,"Z":0.0}}}}],"field":{"length":16.5,"width":8.2}})";
+	}
+	REQUIRE(detector.LoadFieldLayout(layoutPath.string()));
+	REQUIRE(detector.GetFieldLayoutTagCount() == 2);
+
+	REQUIRE(detector.BindSource(source));
+	source->Toggle(true);
+	static_cast<ISink&>(detector).Toggle(true);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+	nlohmann::json before = *detector.GetLatestResult().json;
+	REQUIRE(before["tags"].size() == 2);
+	REQUIRE(before["calibration"].is_null());
+	REQUIRE_FALSE(before["tags"][0].contains("pose")); // the layout is loaded and the tag is seen, but without intrinsics nothing can be posed
+	REQUIRE(before["multiTag"].is_null());
+
+	const double focal = 700.0;
+	detector.SetCalibration(CameraCalibrationResult(focal, focal, image.cols / 2.0, image.rows / 2.0, 0.2, {}, image.cols, image.rows));
+	REQUIRE(detector.HasCalibration());
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+	nlohmann::json after = *detector.GetLatestResult().json;
+	REQUIRE_FALSE(after["calibration"].is_null());
+	REQUIRE(after["calibration"]["fx"] == focal);
+	REQUIRE(after["tags"][0].contains("pose"));
+	REQUIRE_FALSE(after["multiTag"].is_null());
+	REQUIRE(after["multiTag"]["fiducialIds"].size() == 2);
+
+	// taking it away again returns to the uncalibrated behaviour
+	detector.SetCalibration(CameraCalibrationResult());
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	REQUIRE(detector.GetLatestResult().json->at("calibration").is_null());
+
+	source->Toggle(false);
+	static_cast<ISink&>(detector).Toggle(false);
+	std::filesystem::remove(layoutPath);
 }
 
 TEST_CASE("the margin gate is off by default and the CPU backend, which has none, always reports it off", "[apriltag][tuning]") {

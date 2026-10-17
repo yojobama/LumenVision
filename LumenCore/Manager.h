@@ -147,6 +147,9 @@ public:
 	ApriltagBackendKind GetApriltagDetectorBackendKind(int sinkId);
 	double GetApriltagDetectorTagSize(int sinkId);
 	CameraCalibrationResult GetApriltagDetectorCalibration(int sinkId);
+	// gives an ApriltagDetector the calibration of the camera it is bound to, while it runs; false if sinkId is not one
+	bool SetApriltagDetectorCalibration(int sinkId, CameraCalibrationResult calibration);
+	bool GetApriltagDetectorHasCalibration(int sinkId);
 	int GetApriltagDetectorThreads(int sinkId);
 	float GetApriltagDetectorQuadDecimate(int sinkId);
 	bool GetApriltagDetectorQuadDecimateSupported(int sinkId);

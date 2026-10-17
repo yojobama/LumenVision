@@ -203,6 +203,7 @@ namespace Server
             int id = ManagerWrapper.Instance.CreateApriltagDetector(persisted.Id, new CameraCalibrationResult(), tagSize,
                 backend, 0, 0, MakeTuning(nthreads, quadDecimate, refineEdges, refineMode, persisted.ApriltagAdvanced));
             sinks.Add(NewApriltagSinkRecord(id, persisted.Name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode, persisted.ApriltagAdvanced));
+            ReloadFieldLayout(id);
             return id;
         }
 
@@ -242,6 +243,7 @@ namespace Server
             ManagerWrapper.Instance.CreateApriltagDetector(sinkId, calibration, tagSize, backend, 0, 0,
                 MakeTuning(effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode, effectiveAdvanced));
             sinks.Add(NewApriltagSinkRecord(sinkId, name, tagSize, backend, effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode, effectiveAdvanced));
+            ReloadFieldLayout(sinkId);
             if (driverMode) ManagerWrapper.Instance.SetDriverMode(sinkId, true);
 
             // a camera's active pipeline keeps what was tuned here, so activating another pipeline and coming back (or a restart) does not lose it
@@ -528,6 +530,58 @@ namespace Server
             Sink sink = RequireSink(sinkId, SinkType.ObjectDetectionSink);
             return (ManagerWrapper.Instance.GetObjectDetectionConfThreshold(sinkId), ManagerWrapper.Instance.GetObjectDetectionNmsThreshold(sinkId),
                 sink.ObjectDetectionModelId);
+        }
+
+        // Gives every AprilTag detector fed by this camera its saved calibration at the camera's current resolution. A detector made from the
+        // graph starts without one, and without one it can give no pose, so no multi-tag or field pose from a field layout either. A camera
+        // with no calibration at the current resolution leaves its detectors uncalibrated rather than posing with intrinsics for another size.
+        public void RefreshApriltagCalibrations(int sourceId)
+        {
+            Source? source = SourceManager.Instance.GetSourceById(sourceId);
+            if (source?.CameraHardwareInfo == null) return; // only a camera has a calibration to look up; a file source keeps what it was given
+            CameraCalibrationResult calibration;
+            try
+            {
+                calibration = CalibrationManager.Instance.GetForSource(sourceId) ?? new CameraCalibrationResult();
+            }
+            catch (Exception)
+            {
+                return; // the camera's mode cannot be read right now (it is still opening): the periodic check tries again
+            }
+            foreach (Sink sink in sinks.Where(s => s.Type == SinkType.ApriltagSink && s.Source?.Id == sourceId).ToList())
+            {
+                CameraCalibrationResult current = ManagerWrapper.Instance.GetApriltagDetectorCalibration(sink.Id);
+                bool same = current.fx == calibration.fx && current.fy == calibration.fy && current.cx == calibration.cx && current.cy == calibration.cy
+                    && current.imageWidth == calibration.imageWidth && current.imageHeight == calibration.imageHeight;
+                if (!same) ManagerWrapper.Instance.SetApriltagDetectorCalibration(sink.Id, calibration);
+            }
+        }
+
+        // A camera's mode is not always known the moment a detector is bound (a restart opens the camera in the background), so a slow
+        // check also brings every camera-fed detector in line with the saved calibration of its camera's current resolution.
+        private System.Threading.Timer? calibrationReconciler;
+        private void StartCalibrationReconciler()
+        {
+            calibrationReconciler ??= new System.Threading.Timer(_ =>
+            {
+                try
+                {
+                    foreach (int sourceId in sinks.Where(s => s.Type == SinkType.ApriltagSink && s.Source != null).Select(s => s.Source!.Id).Distinct().ToList())
+                        RefreshApriltagCalibrations(sourceId);
+                }
+                catch (Exception)
+                {
+                    // the sink list changed under the enumeration, or a camera is mid-restart: the next tick tries again
+                }
+            }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+        }
+
+        // Re-applies the layout a detector was given after the native detector was rebuilt (backend switch, tuning, restart): the layout lives
+        // in a file, the detector only in memory.
+        private void ReloadFieldLayout(int sinkId)
+        {
+            string? path = FindFieldLayoutPath(sinkId);
+            if (path != null) ManagerWrapper.Instance.LoadFieldLayout(sinkId, path);
         }
 
         // The field-layout file a detector was given: its own upload, or the active profile's layout of the camera it is the detector for.
@@ -952,6 +1006,8 @@ namespace Server
                     ManagerWrapper.Instance.BindSourceToSink(sourceId, sinkId);
                     // Only a SourceManager-tracked source has an enable/disable lifecycle here; a dual-role sink is toggled via EnableSinkById.
                     if (isRealSource) SourceManager.Instance.EnableSourceById(source.Id);
+                    if (isRealSource) RefreshApriltagCalibrations(source.Id);
+                    StartCalibrationReconciler();
                     DB.Instance.Save();
                     break;
                 }

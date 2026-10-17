@@ -292,6 +292,7 @@ namespace Server
             if (ActiveOverrides(source) is CameraOverrides overrides) overrides.Transform = transform;
             else source.Transform = transform.IsIdentity ? null : transform;
             DB.Instance.Save();
+            SinkManager.Instance.RefreshApriltagCalibrations(sourceId); // a calibration is carried across a transform
         }
 
         public FrameTransformDto GetCameraTransform(int sourceId)

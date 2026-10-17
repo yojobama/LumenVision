@@ -68,28 +68,8 @@ ApriltagDetector::ApriltagDetector(std::shared_ptr<Logger> logger, std::string i
 			m_ActiveBackendKind = APRILTAG_BACKEND_VULKAN; // pending - reported as the request
 	}
 
-	m_OriginalCalibration = cameraCalibrationResult;
 	m_DetectionInfo.tagsize = tagSize;
-	m_DetectionInfo.fx = cameraCalibrationResult.fx;
-	m_DetectionInfo.fy = cameraCalibrationResult.fy;
-	m_DetectionInfo.cx = cameraCalibrationResult.cx;
-	m_DetectionInfo.cy = cameraCalibrationResult.cy;
-	m_HasCalibration = cameraCalibrationResult.fx > 0.0 && cameraCalibrationResult.fy > 0.0;
-
-	// m_CameraMatrix must exist whenever m_HasCalibration does; multi-tag PnP needs intrinsics even
-	// when the fitted distortion is zero.
-	if (m_HasCalibration) {
-		m_CameraMatrix = (cv::Mat_<double>(3, 3) <<
-			cameraCalibrationResult.fx, 0, cameraCalibrationResult.cx,
-			0, cameraCalibrationResult.fy, cameraCalibrationResult.cy,
-			0, 0, 1);
-	}
-	if (cameraCalibrationResult.HasDistortion()) {
-		m_HasDistortion = true;
-		m_DistCoeffs = cv::Mat(cameraCalibrationResult.distCoeffs, true /* copy */);
-	} else {
-		m_DistCoeffs = cv::Mat::zeros(5, 1, CV_64F);
-	}
+	SetCalibration(cameraCalibrationResult);
 
 	m_Logger = logger;
 
@@ -110,7 +90,43 @@ void ApriltagDetector::SetConstrainedSeed(double x, double y, double yawRadians,
 
 CameraCalibrationResult ApriltagDetector::GetCalibration() const
 {
+	std::lock_guard<std::recursive_mutex> lock(m_CalibrationMutex);
 	return m_OriginalCalibration;
+}
+
+void ApriltagDetector::SetCalibration(const CameraCalibrationResult& calibration)
+{
+	std::lock_guard<std::recursive_mutex> lock(m_CalibrationMutex);
+	m_HasDistortion = false;
+	m_CameraMatrix = cv::Mat();
+	m_OriginalCalibration = calibration;
+	m_DetectionInfo.fx = calibration.fx;
+	m_DetectionInfo.fy = calibration.fy;
+	m_DetectionInfo.cx = calibration.cx;
+	m_DetectionInfo.cy = calibration.cy;
+	m_HasCalibration = calibration.fx > 0.0 && calibration.fy > 0.0;
+
+	// m_CameraMatrix must exist whenever m_HasCalibration does; multi-tag PnP needs intrinsics even
+	// when the fitted distortion is zero.
+	if (m_HasCalibration) {
+		m_CameraMatrix = (cv::Mat_<double>(3, 3) <<
+			calibration.fx, 0, calibration.cx,
+			0, calibration.fy, calibration.cy,
+			0, 0, 1);
+	}
+	if (calibration.HasDistortion()) {
+		m_HasDistortion = true;
+		m_DistCoeffs = cv::Mat(calibration.distCoeffs, true /* copy */);
+	} else {
+		m_DistCoeffs = cv::Mat::zeros(5, 1, CV_64F);
+	}
+
+}
+
+bool ApriltagDetector::HasCalibration() const
+{
+	std::lock_guard<std::recursive_mutex> lock(m_CalibrationMutex);
+	return m_HasCalibration;
 }
 
 void ApriltagDetector::BuildBackendLocked(int frameWidth, int frameHeight)
@@ -325,6 +341,7 @@ nlohmann::json ApriltagDetector::BuildCalibrationJson() const
 
 void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 {
+	std::lock_guard<std::recursive_mutex> calibrationLock(m_CalibrationMutex);
 	for (const SourceResult& result : results)
 	{
 		if (result.frame.has_value())

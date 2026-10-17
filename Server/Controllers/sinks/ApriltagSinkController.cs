@@ -85,6 +85,7 @@ namespace Server.Controllers.sinks
                 GpuDevice = effective.gpuDevice,
                 ProbeMargin = effective.probeMargin,
                 IngestMode = ManagerWrapper.Instance.GetApriltagDetectorIngestMode(sinkId),
+                HasCalibration = ManagerWrapper.Instance.GetApriltagDetectorHasCalibration(sinkId),
                 GpuDeviceName = ManagerWrapper.Instance.GetApriltagDetectorGpuDeviceName(sinkId),
             });
         }

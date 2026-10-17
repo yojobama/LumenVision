@@ -34,6 +34,10 @@ public:
 	// lets a caller rebuild an equivalent detector (e.g. to switch backend) without separate tracking
 	double GetTagSize() const { return m_DetectionInfo.tagsize; }
 	CameraCalibrationResult GetCalibration() const;
+	// Gives a running detector its camera's calibration (a sink made from the graph starts without one, and needs it for any pose, multi-tag
+	// or field pose). Safe between frames: the next frame is solved with it. An empty calibration (fx/fy 0) takes it away again.
+	void SetCalibration(const CameraCalibrationResult& calibration);
+	bool HasCalibration() const;
 
 	// Pass-throughs to the active backend (or the requested tuning while a Vulkan backend is pending).
 	int GetThreads() const;
@@ -104,6 +108,8 @@ private:
 	// the CameraCalibrationResult as constructed, kept verbatim (rms/imageWidth/imageHeight are lost in
 	// m_CameraMatrix/m_DistCoeffs) so GetCalibration() can return it unchanged
 	CameraCalibrationResult m_OriginalCalibration;
+	// held while a batch of frames is processed and while the calibration is replaced, so a frame never sees half of one
+	mutable std::recursive_mutex m_CalibrationMutex;
 
 	// present only when the calibration had distortion coefficients; otherwise pose estimation runs on
 	// the raw corners

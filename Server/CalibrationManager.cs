@@ -55,6 +55,11 @@ namespace Server
                 CalibratedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             });
             Save();
+
+            // detectors already bound to this camera pick the new calibration up now, not at their next restart
+            foreach (int sourceId in SourceManager.Instance.GetAllSourceIds())
+                if (SourceManager.Instance.GetSourceById(sourceId)?.CameraHardwareInfo?.path == cameraPath)
+                    SinkManager.Instance.RefreshApriltagCalibrations(sourceId);
         }
 
         public StoredCalibration? GetLatest(string cameraPath, int width, int height)
