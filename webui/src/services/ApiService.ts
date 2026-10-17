@@ -370,7 +370,7 @@ export class ApiService {
       refineMode: dto.RefineMode, refineModeSupported: dto.RefineModeSupported, quadSigmaSupported: dto.QuadSigmaSupported, gpuDeviceName: dto.GpuDeviceName ?? '',
       advanced: {
         family: dto.Family, quadSigma: dto.QuadSigma, maxHamming: dto.MaxHamming, decisionMargin: dto.DecisionMargin,
-        poseIterations: dto.PoseIterations, multiTag: dto.MultiTag, singleTagPose: dto.SingleTagPose, gpuDevice: dto.GpuDevice ?? -1,
+        poseIterations: dto.PoseIterations, multiTag: dto.MultiTag, singleTagPose: dto.SingleTagPose, gpuDevice: dto.GpuDevice ?? -1, probeMargin: dto.ProbeMargin ?? 0,
       },
     };
   }

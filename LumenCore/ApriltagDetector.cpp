@@ -123,7 +123,8 @@ void ApriltagDetector::BuildBackendLocked(int frameWidth, int frameHeight)
 				std::string msg = "Vulkan AprilTag backend built for " + std::to_string(frameWidth) + "x" +
 					std::to_string(frameHeight) + ", decimation " + std::to_string(static_cast<int>(vk->GetQuadDecimate())) +
 					", refineEdges " + (vk->GetRefineEdges() ? "on" : "off") +
-					", refineMode " + std::to_string(static_cast<int>(vk->GetRefineMode()));
+					", refineMode " + std::to_string(static_cast<int>(vk->GetRefineMode())) +
+					", probeMargin " + std::to_string(vk->GetProbeMargin());
 				if (m_Tuning.quadDecimate > 0.0f && vk->GetQuadDecimate() != m_Tuning.quadDecimate)
 					msg += " (requested decimation " + std::to_string(m_Tuning.quadDecimate) +
 						" isn't an integer that divides the frame size)";
@@ -224,6 +225,12 @@ std::string ApriltagDetector::GetGpuDeviceName() const
 	return m_Backend ? m_Backend->GetGpuDeviceName() : std::string();
 }
 
+float ApriltagDetector::GetProbeMargin() const
+{
+	std::lock_guard<std::mutex> lock(m_BackendMutex);
+	return m_Backend ? m_Backend->GetProbeMargin() : m_Tuning.probeMargin;
+}
+
 std::vector<std::string> ApriltagDetector::ListGpuDevices()
 {
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
@@ -243,6 +250,7 @@ ApriltagTuning ApriltagDetector::GetEffectiveTuning() const
 	effective.family = GetFamily();
 	effective.quadSigma = GetQuadSigma();
 	effective.maxHamming = GetMaxHamming();
+	effective.probeMargin = GetProbeMargin();
 	return effective;
 }
 

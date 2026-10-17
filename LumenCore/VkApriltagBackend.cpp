@@ -95,7 +95,7 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	// TagDecoder must be told the same decimation as the GPU pass: refine_edges derives its per-edge search radius from it.
 	// APRILTAG_VK_REFINE, if set, overrides the requested method inside the library.
 	m_TagDecoder = std::make_unique<TagDecoder>(m_Detector, m_Decimation, config.cpu_threads,
-		ToRefineMethod(tuning.refineMode));
+		ToRefineMethod(tuning.refineMode), tuning.probeMargin > 0.0f ? tuning.probeMargin : 0.0f);
 }
 
 VkApriltagBackend::~VkApriltagBackend()

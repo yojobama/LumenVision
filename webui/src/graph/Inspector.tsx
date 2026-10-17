@@ -630,6 +630,16 @@ export const Inspector: React.FC<{
               </div>
             )}
 
+            {isApriltagSink && sinkBackend === 1 && (
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Refine margin cutoff</label>
+                <input type="number" min={0} step={1} value={advanced.probeMargin} disabled={!refineEdgesValue}
+                  title="Quads whose decision margin before edge refinement is below this many grey levels skip refinement, which saves CPU time on frames full of non-tag shapes. 0 refines every quad."
+                  onChange={e => setAdvanced({ ...advanced, probeMargin: Math.max(0, parseFloat(e.target.value) || 0) })}
+                  className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+              </div>
+            )}
+
             {/* Threads maps to libapriltag nthreads / vkapriltag cpu_threads; Vulkan decimation is integer-only
                 and must divide the frame size; the refine method is chosen on Vulkan only (the CPU backend always runs upstream's). */}
             {isApriltagSink && (

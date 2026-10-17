@@ -46,6 +46,8 @@ public:
 	bool GetQuadSigmaSupported() const override { return false; }
 	int GetMaxHamming() const override { return m_MaxHamming; }
 	std::string GetGpuDeviceName() const override { return m_GpuDeviceName; }
+	// the library's gate, so an APRILTAG_VK_PROBE_MARGIN override shows
+	float GetProbeMargin() const override { return m_TagDecoder->probe_margin(); }
 
 	// the names of the Vulkan devices a sink can run on, in vkEnumeratePhysicalDevices order (the index ApriltagTuning::gpuDevice takes);
 	// empty when there is no usable Vulkan driver

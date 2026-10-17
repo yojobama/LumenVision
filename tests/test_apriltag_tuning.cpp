@@ -2,6 +2,7 @@
 #include "ApriltagDetector.h"
 #include "CpuApriltagBackend.h"
 #include <catch2/generators/catch_generators.hpp>
+#include <cstdlib>
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
 #endif
@@ -197,7 +198,39 @@ TEST_CASE("the detector reports the tuning in effect, including the knobs it app
 	REQUIRE(detector.GetQuadSigmaSupported());
 }
 
+TEST_CASE("the margin gate is off by default and the CPU backend, which has none, always reports it off", "[apriltag][tuning]") {
+	REQUIRE(ApriltagTuning().probeMargin == 0.0f);
+
+	ApriltagTuning tuning;
+	tuning.probeMargin = 12.0f;
+	ApriltagDetector detector(nullptr, "tuning-probe-margin", CameraCalibrationResult(), 0.1651, APRILTAG_BACKEND_CPU, 0, 0, tuning);
+	REQUIRE(detector.GetRequestedTuning().probeMargin == 12.0f);
+	REQUIRE(detector.GetProbeMargin() == 0.0f);
+	REQUIRE(detector.GetEffectiveTuning().probeMargin == 0.0f);
+}
+
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
+TEST_CASE("the Vulkan backend applies the margin gate and still finds a clean tag", "[hitl][vulkan][apriltag][tuning]") {
+	const cv::Mat image = RenderTag(APRILTAG_FAMILY_36H11, 3);
+	ApriltagTuning tuning;
+	tuning.quadDecimate = 1.0f;
+	tuning.probeMargin = 10.0f;
+	std::unique_ptr<VkApriltagBackend> backend;
+	try {
+		backend = std::make_unique<VkApriltagBackend>(image.cols, image.rows, tuning);
+	} catch (const std::exception& e) {
+		SKIP("no usable Vulkan compute device (" << e.what() << ")");
+	}
+	// APRILTAG_VK_PROBE_MARGIN, when set, wins over the request
+	if (std::getenv("APRILTAG_VK_PROBE_MARGIN") == nullptr) REQUIRE(backend->GetProbeMargin() == 10.0f);
+
+	zarray_t* detections = backend->Detect(image);
+	REQUIRE(zarray_size(detections) == 1);
+	apriltag_detection_t* detection;
+	zarray_get(detections, 0, &detection);
+	REQUIRE(detection->id == 3);
+}
+
 TEST_CASE("the Vulkan backend detects every tag family too, and reports no blur support", "[hitl][vulkan][apriltag][tuning]") {
 	const ApriltagFamilyKind kind = GENERATE(APRILTAG_FAMILY_36H11, APRILTAG_FAMILY_16H5, APRILTAG_FAMILY_25H9, APRILTAG_FAMILY_STANDARD41H12);
 	INFO("family " << static_cast<int>(kind));

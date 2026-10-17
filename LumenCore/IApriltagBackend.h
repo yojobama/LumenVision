@@ -43,6 +43,8 @@ enum ApriltagFamilyKind {
 //                      no blur stage, so GetQuadSigmaSupported() is false there.
 //   gpuDevice:         Vulkan backend only: index into the Vulkan device list (see ApriltagDetector::ListGpuDevices); -1 picks the best device
 //                      automatically. An index that doesn't exist makes the Vulkan backend fail to build, so the detector falls back to CPU.
+//   probeMargin:       Vulkan backend only (needs refineEdges): a quad whose decision margin before edge refinement is below this many grey levels
+//                      skips refinement, since it cannot be a tag. 0 (the default) refines every quad. APRILTAG_VK_PROBE_MARGIN overrides it.
 //   maxHamming:        how many corrupted bits a tag may have and still decode (0 to 2; more makes the decode tables huge). Default 2.
 // The next three are applied by ApriltagDetector after detection, on either backend:
 //   decisionMargin:    detections with a lower decision margin are dropped (0 keeps every detection).
@@ -58,6 +60,7 @@ struct ApriltagTuning {
 	float quadSigma = 0.0f;
 	int maxHamming = 2;
 	int gpuDevice = -1;
+	float probeMargin = 0.0f;
 	float decisionMargin = 0.0f;
 	int poseIterations = 50;
 	bool multiTag = true;
@@ -96,4 +99,6 @@ public:
 	virtual int GetMaxHamming() const = 0;
 	// the GPU the backend runs on; empty on the CPU backend
 	virtual std::string GetGpuDeviceName() const { return std::string(); }
+	// the margin gate in effect (see ApriltagTuning::probeMargin); 0 on the CPU backend, which has none
+	virtual float GetProbeMargin() const { return 0.0f; }
 };

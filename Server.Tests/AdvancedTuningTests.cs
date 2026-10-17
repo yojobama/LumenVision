@@ -28,6 +28,22 @@ public class AdvancedTuningTests
     }
 
     [Fact]
+    public void TheProbeMarginIsPartOfTheAdvancedTuning()
+    {
+        Assert.NotNull(ApriltagAdvancedTuning.FromQuery(null, null, null, null, null, null, null, probeMargin: 8f));
+        Assert.Null(ApriltagAdvancedTuning.FromQuery(null, null, null, null, null, null, null));
+
+        var saved = new ApriltagAdvancedTuning { ProbeMargin = 8f };
+        Assert.Equal(8f, new ApriltagAdvancedTuning { DecisionMargin = 10f }.MergedOver(saved).ProbeMargin);
+        Assert.Equal(3f, new ApriltagAdvancedTuning { ProbeMargin = 3f }.MergedOver(saved).ProbeMargin);
+
+        var tuning = new ApriltagTuning();
+        Assert.Equal(0f, tuning.probeMargin);
+        saved.ApplyTo(tuning);
+        Assert.Equal(8f, tuning.probeMargin);
+    }
+
+    [Fact]
     public void TheGpuDeviceIsPartOfTheAdvancedTuning()
     {
         Assert.NotNull(ApriltagAdvancedTuning.FromQuery(null, null, null, null, null, null, null, gpuDevice: 1));
