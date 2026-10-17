@@ -7,8 +7,9 @@ import '@xyflow/react/dist/style.css';
 import { Plus, Camera as CameraIcon, Target } from 'lucide-react';
 import { useStateSocket } from '../hooks/useStateSocket';
 import { ApiService } from '../services/ApiService';
-import { buildGraph, edgesEqual, type PipelineNode, type PositionStore } from '../graph/model';
+import { buildGraph, edgesEqual, type PipelineNode } from '../graph/model';
 import { nodeTypes } from '../graph/PipelineNode';
+import { graphPositions } from '../graph/positionStore';
 import { edgeTypes, type BoundEdgeData } from '../graph/BoundEdge';
 import { Inspector } from '../graph/Inspector';
 import { GraphProfileBar } from '../graph/GraphProfileBar';
@@ -32,24 +33,20 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [showAddSource, setShowAddSource] = useState(false);
   const [showAddSink, setShowAddSink] = useState(false);
-  const positionsRef = useRef(new Map<string, { x: number; y: number }>());
 
   useEffect(() => {
     api.getNodeTypeCapabilities().then(setCapabilities).catch(() => onToast('Failed to load node capabilities', 'error'));
   }, []);
 
-  // sync the position store with React Flow's drags so the next rebuild keeps them
+  // sync the position store with React Flow's drags so the next rebuild (and the next visit to this page) keeps them
   useEffect(() => {
-    for (const n of nodes) positionsRef.current.set(n.id, n.position);
+    for (const n of nodes) graphPositions.set(n.id, n.position);
   }, [nodes]);
 
   useEffect(() => {
     if (!snapshot) return;
-    const store: PositionStore = {
-      get: (id) => positionsRef.current.get(id),
-      set: (id, pos) => positionsRef.current.set(id, pos),
-    };
-    const built = buildGraph(snapshot, capabilities, store);
+    const built = buildGraph(snapshot, capabilities, graphPositions);
+    graphPositions.retainOnly(new Set(built.nodes.map(n => n.id)));
     setNodes(built.nodes);
     // reuse the previous array reference when the edge set is unchanged (see edgesEqual)
     setEdges(prev => (edgesEqual(prev, built.edges) ? prev : built.edges));
@@ -78,8 +75,8 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
           e.preventDefault();
           const original = copiedRef.current;
           const newId = await duplicateNode(original, e.shiftKey);
-          const origin = positionsRef.current.get(original.id) ?? original.position;
-          positionsRef.current.set(newId, { x: origin.x + 40, y: origin.y + 60 });
+          const origin = graphPositions.get(original.id) ?? original.position;
+          graphPositions.set(newId, { x: origin.x + 40, y: origin.y + 60 });
           setSelectedId(newId);
           toast(`Pasted a copy of "${original.data.label}"`, 'success');
         } else if (e.key === 'F2' && current) {
