@@ -160,6 +160,12 @@ pinned to tag `v1.7.0`); Vulkan falls back to CPU when no usable device exists. 
 - **Refine edges** sharpens corner positions. On the Vulkan backend its implementation is selectable with `refineMode`
   (`0` upstream, `1` exact — the default, bit-identical to upstream, `2` fast, `3` ultra-fast, which only refines quads
   that already decode unrefined); `refineModeSupported` is false on the CPU backend, which always runs upstream's.
+- **Refine margin cutoff** (`probeMargin`, grey levels, Vulkan only, `0` = off) skips edge refinement for quads whose decision
+  margin before refinement is below it, which saves CPU time on frames full of non-tag shapes. `APRILTAG_VK_PROBE_MARGIN`
+  overrides it; `GET /api/apriltagSink/tuning` reports the value in effect.
+- **Frame ingest**: pooled gray frames are page-aligned so a GPU with `VK_EXT_external_memory_host` reads them in place
+  (`ingestMode` is `host-import`; `LUMEN_APRILTAG_FRAME_IMPORT=0` forces the upload path). The Orange Pi's Mali driver does not
+  offer that extension, but its unified memory already takes the frame as a direct write, so it reports `copy`.
   Setting the `APRILTAG_VK_REFINE` environment variable (`upstream|exact|fast|ultrafast`) overrides the mode inside the
   library, and the log warns when it differs from the request.
 - Measured on the reference 1280x800 image (RX 9060 XT, Windows, 50 iterations, decimation 2): CPU 9.57 ms; Vulkan
