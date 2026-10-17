@@ -128,6 +128,18 @@ Plus removing encoder/contention jitter (§4, §6) is what converts "30ms averag
 8. MJPEG fallback: drop the base64 round trip (raw bytes over SWIG), tie the server poll to frame-ready notification instead of 100ms polling.
 9. Instrument per-stage timings (decode / gray / detect / pose / publish) and run with `APRILTAG_VK_TIMESTAMPS=1` to confirm the split on-device.
 
+## vkapriltag 1.7.0 findings on the Orange Pi 5 Plus (Mali-G610)
+
+- `VK_EXT_external_memory_host` is not exposed by the Mali driver (`external_memory_dma_buf` is), so host-pointer import is
+  inactive on the board and every frame takes the direct-write upload: 0.12-0.17 ms of a ~3.5 ms frame at 1280x800
+  (`pipeline_total` median 3.55 ms, GPU 2.1 ms, quad decode 0.35 ms, tag decode 1.1 ms). Host import is active on the RX 9060 XT
+  development GPU, with corners identical to the upload path.
+- dma-buf import (`ImportDmaBufFrame`) is available on the Mali. It would only save the upload plus the CPU gray conversion, and
+  needs a dma-buf per frame from the V4L2/MPP path (the library reads an NV12 buffer's Y plane as a packed 8-bit frame), so it
+  is left as a follow-up that needs a camera attached to measure.
+- RKNN on the same board, bus.jpg, ms/frame: yolov8n fused fp16 45, DFL fp16 44, DFL int8 20; yolo11n fused fp16 51,
+  DFL fp16 50, DFL int8 26.
+
 ## On-device verification checklist (pending SSH access)
 
 SSH access could not be established during this analysis (password rejected), so these remain to be confirmed on the target:
