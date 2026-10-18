@@ -38,6 +38,10 @@ namespace Server
         // generic camera control values the user has set (control id -> value), reapplied when the source is restored
         public Dictionary<int, int>? ControlValues { get; set; }
 
+        // the capture mode (resolution, frame rate, pixel format) last requested for this camera and accepted by the device, reapplied when the
+        // source is restored; null = never chosen, so the camera opens in its default mode (often 640x480)
+        public CameraModeDto? Mode { get; set; }
+
         // crop/rotate/mirror applied to every frame this camera publishes; null = none
         public FrameTransformDto? Transform { get; set; }
 

@@ -301,10 +301,38 @@ namespace Server
             return ActiveOverrides(source)?.Transform ?? source.Transform ?? default;
         }
 
-        // reapplies the remembered control values; a control the device no longer has is skipped
+        // Requests a capture mode and, when the device accepts it, remembers it so the camera comes back in it after a restart. Returns whether
+        // the request was accepted, not whether the device honours it exactly (re-read the current mode).
+        public bool SetCameraMode(int sourceId, CameraModeDto mode)
+        {
+            Source source = GetSourceById(sourceId) ?? throw Server.Web.ApiException.NotFound($"no source with id {sourceId}");
+            bool applied = ManagerWrapper.Instance.SetCameraMode(sourceId, mode.ToNative());
+            if (applied)
+            {
+                source.Mode = mode;
+                DB.Instance.Save();
+            }
+            SinkManager.Instance.RefreshApriltagCalibrations(sourceId); // the saved calibration is per resolution
+            return applied;
+        }
+
+        // reapplies the remembered mode, transform and control values; a control the device no longer has is skipped
         public void ApplyCameraControls(int sourceId)
         {
             Source? source = GetSourceById(sourceId);
+            if (source?.Mode is CameraModeDto mode)
+            {
+                // first: the transform and controls are read against the mode the camera ends up in
+                try
+                {
+                    if (!ManagerWrapper.Instance.SetCameraMode(sourceId, mode.ToNative()))
+                        Console.WriteLine($"The camera on source {sourceId} did not accept its saved mode {mode.Width}x{mode.Height}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Restoring the capture mode on source {sourceId} failed: {ex.Message}");
+                }
+            }
             if (source?.Transform is FrameTransformDto transform)
             {
                 try

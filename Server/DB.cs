@@ -101,6 +101,7 @@ namespace Server
                             if (source.FpsLimit.HasValue) SourceManager.Instance.SetFpsLimit(restored.Id, source.FpsLimit.Value);
                             restored.ControlValues = source.ControlValues;
                             restored.Transform = source.Transform;
+                            restored.Mode = source.Mode;
                             if (source.Type == SourceType.Camera) SourceManager.Instance.ApplyCameraControls(restored.Id);
                         }
                     }
