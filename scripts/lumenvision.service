@@ -17,6 +17,13 @@ ExecStart=/opt/lumenvision/Server
 Restart=always
 RestartSec=2
 
+# One CPU priority for every thread. A thread inherits its creator's nice value, and the NPU runtime raises the thread that loads a model
+# to -19 without being asked (a process holding no capabilities cannot do that itself), so a pipeline started at boot ran at -19 while one
+# started later from a web request (an ASP.NET thread, nice 0) got a small fraction of the CPU: restarting or rebuilding a detector made it 30-60%
+# slower until the next service restart (measured: Vulkan AprilTag 30 -> 48 ms, RKNN 35 -> 41 ms of frame age). -19 for the whole service
+# makes them all equal and matches what the boot-time threads already had.
+Nice=-19
+
 # libLumenCore.so sits next to the Server binary
 Environment=LD_LIBRARY_PATH=/opt/lumenvision
 

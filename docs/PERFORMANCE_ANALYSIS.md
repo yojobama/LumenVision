@@ -140,6 +140,38 @@ Plus removing encoder/contention jitter (§4, §6) is what converts "30ms averag
 - RKNN on the same board, bus.jpg, ms/frame: yolov8n fused fp16 45, DFL fp16 44, DFL int8 20; yolo11n fused fp16 51,
   DFL fp16 50, DFL int8 26.
 
+## Where the time goes: stage profiler measurements (Orange Pi 5 Plus, 2026-10-18)
+
+Every node records per-stage timings over its last ~240 results (`StageProfile`; `GET /api/profile`, `POST /api/profile/reset`, the
+Inspector's Timing section). "age" is the end-to-end latency a node publishes at (capture timestamp to published result), "wait" is how long the
+newest frame sat before the sink started on it, "process" is the sink's work. Measured on the live pipeline: one 720p MJPEG 30 fps camera feeding
+a Vulkan AprilTag sink (decimation 1, ultra-fast refine, 8 threads), a CPU AprilTag sink (8 threads) and a YOLO11 RKNN sink at once.
+
+| Node | age | = camera | + wait | + work | the work |
+| --- | --- | --- | --- | --- | --- |
+| Camera | 15-16 ms | | | | hardware JPEG decode 3.9 ms; the rest is the USB transfer of the frame |
+| Vulkan AprilTag | 29-30 ms | 15.5 | 0.1 | 13.6 | GPU 8.7 (upload 0.13, readback 0.03), CPU quad fit 3.9, tag decode 0.4, gray 0.3 |
+| RKNN YOLO11 | 34 ms | 15.5 | 0.3 | 18.2 | NPU run 16.1, letterbox 0.7, output fetch 0.8, convert 0.2, decode+NMS 0.1 |
+| CPU AprilTag | 69 ms | 15.5 | 17 | 36 | libapriltag detect 36 > the 33 ms frame interval, so frames queue |
+
+- **The framework adds nothing.** Age is camera + wait + work to within 0.2 ms for every node: no hidden queueing between nodes, JSON and
+  publishing cost 0.02 ms. Latency is the camera's USB transfer plus each node's own compute.
+- **Thread priority was inconsistent (fixed).** A thread inherits its creator's nice value, and the NPU runtime raises the thread that loads a
+  model to nice -19 without being asked (the service holds no capabilities, so it cannot do that itself; a standalone process that merely loads
+  librknnrt shows the same). So everything started at boot ran at -19 and anything started later from a web request (an ASP.NET thread, nice 0)
+  got a small share of the saturated fast cores. Stopping and starting a sink, or rebuilding the Vulkan sink with Apply Tuning, made it
+  30-60% slower until the service restarted (Vulkan 30 -> 38-48 ms, its start wait 0.2 -> 3.5 ms; RKNN 34 -> 41 ms). Renicing that one
+  thread to -19 restored it (RKNN 40.5 -> 35.0 ms); `Nice=-19` in the unit puts every thread at -19, and then restarting all three sinks and
+  rebuilding the Vulkan sink leave the numbers unchanged.
+- **Decimation is the lever for the Vulkan sink.** Decimation 2 halves its work (GPU 8.7 -> 4.0 ms, CPU tail 3.9 -> 1.8): age 29 -> 22.6 ms.
+  It costs detection range (a tag needs about twice the pixels), so it was left at the user's setting.
+- **Worker threads matter a little for the Vulkan sink's CPU tail.** Quad fitting takes 6.8 ms with 2 threads, 4.9 with 4, 4.5 with 6 and
+  4.2 with 8 (frame age 32.5, 30.6, 29.2 and 30.3 ms; measured with `Nice=-19`, so the rebuilds are comparable). More than 4 gains under 1 ms.
+- **CPU governor `performance` vs `ondemand`**: no difference once the cores are busy (they sit at their maximum frequency under this load).
+- **NPU core masks** (`rknn_set_core_mask`, three cores) gave no gain for the deployed YOLO11 model (25.6 vs 25.2 ms per frame with the system
+  loaded) and 20% for a YOLOv8n; not adopted.
+- The remaining frame age is the camera: exposure is already 2 ms, the 12 ms before decode is the USB transfer.
+
 ## On-device verification checklist (pending SSH access)
 
 SSH access could not be established during this analysis (password rejected), so these remain to be confirmed on the target:
