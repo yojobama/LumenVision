@@ -292,6 +292,10 @@ public:
 	void SetNetworkTablesSinkLedStatus(int sinkId, int mode);
 	// publishes "<root>/<node>/status/{pipelineIndex,driverMode,fpsLimit}" (see NetworkTablesSink::PublishNodeStatus)
 	void SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int pipelineIndex, bool driverMode, int fpsLimit);
+	// publishes "<root>/<node>/status/enabled" (see NetworkTablesSink::PublishNodeEnabled)
+	void SetNetworkTablesSinkNodeEnabled(int sinkId, string nodeId, bool enabled);
+	// the JSON the sink republishes as "<root>/.graph" (see NetworkTablesSink::SetGraphJson)
+	void SetNetworkTablesSinkGraph(int sinkId, string json);
 	// publishes a node's topics under `alias` instead of its id (see NetworkTablesSink::SetNodeAlias); "" clears it
 	void SetNetworkTablesSinkNodeAlias(int sinkId, string nodeId, string alias);
 

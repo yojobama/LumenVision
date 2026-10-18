@@ -42,9 +42,7 @@ namespace Server.Controllers.sinks
         [HttpPatch("sink/toggle")]
         public Task Toggle([FromQuery] int SinkID, [FromQuery] bool Enabled)
         {
-            if (!Enabled) SinkManager.Instance.DisableSinkById(SinkID);
-            else SinkManager.Instance.EnableSinkById(SinkID);
-            DB.Instance.Save();
+            SinkManager.Instance.SetSinkEnabled(SinkID, Enabled);
             return Task.CompletedTask;
         }
 

@@ -231,6 +231,10 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 	} else if (leaf == "robotToCamera" && valueData->value.IsDoubleArray() && valueData->value.GetDoubleArray().size() == 7) {
 		auto transform = valueData->value.GetDoubleArray();
 		m_PendingConfig[sourceId].robotToCamera = std::vector<double>(transform.begin(), transform.end());
+	} else if (leaf == "enabled" && valueData->value.IsBoolean()) {
+		m_PendingConfig[sourceId].enabled = valueData->value.GetBoolean();
+	} else if (leaf == "snapshot") {
+		m_PendingConfig[sourceId].snapshots++;
 	} else if (leaf == "inputSnapshot") {
 		m_PendingConfig[sourceId].inputSnapshots++;
 	} else if (leaf == "outputSnapshot") {
@@ -252,6 +256,8 @@ std::string NetworkTablesSink::PollConfigRequests()
 		if (request.pipelineIndex.has_value()) entry["pipelineIndex"] = request.pipelineIndex.value();
 		if (request.driverMode.has_value()) entry["driverMode"] = request.driverMode.value();
 		if (request.fpsLimit.has_value()) entry["fpsLimit"] = request.fpsLimit.value();
+		if (request.enabled.has_value()) entry["enabled"] = request.enabled.value();
+		if (request.snapshots > 0) entry["snapshots"] = request.snapshots;
 		if (request.constrainedSeed.has_value()) entry["constrainedSeed"] = request.constrainedSeed.value();
 		if (request.robotToCamera.has_value()) entry["robotToCamera"] = request.robotToCamera.value();
 		if (request.inputSnapshots > 0) entry["inputSnapshots"] = request.inputSnapshots;
@@ -295,6 +301,17 @@ void NetworkTablesSink::PublishNodeStatus(const std::string& nodeId, int pipelin
 	table->PutNumber("status/pipelineIndex", pipelineIndex);
 	table->PutBoolean("status/driverMode", driverMode);
 	table->PutNumber("status/fpsLimit", fpsLimit);
+}
+
+void NetworkTablesSink::PublishNodeEnabled(const std::string& nodeId, bool enabled)
+{
+	m_Instance.GetTable(m_Config.rootTable + "/" + TableNameForNode(nodeId))->PutBoolean("status/enabled", enabled);
+}
+
+void NetworkTablesSink::SetGraphJson(const std::string& json)
+{
+	std::lock_guard<std::mutex> lock(m_ConfigMutex);
+	m_GraphJson = json;
 }
 
 bool NetworkTablesSink::IsConnected() const
@@ -536,6 +553,11 @@ void NetworkTablesSink::Process(const std::vector<SourceResult>& results)
 
 	// re-published every tick: a value Set() before the NT4 client first connects doesn't reliably reach the server (as with heartbeat/.status)
 	rootTable->PutString(".version", LUMEN_VERSION_STRING);
+	rootTable->PutNumber(".protocol", kNetworkTablesProtocol);
+	{
+		std::lock_guard<std::mutex> lock(m_ConfigMutex);
+		if (!m_GraphJson.empty()) rootTable->PutString(".graph", m_GraphJson);
+	}
 
 	// server time offset (nt::GetServerTimeOffset), surfaced as-is so a robot program can tell when its addVisionMeasurement() timestamps can't be trusted yet
 	std::optional<int64_t> serverTimeOffsetUs = m_Instance.GetServerTimeOffset();

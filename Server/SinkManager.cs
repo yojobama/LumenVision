@@ -1017,5 +1017,36 @@ namespace Server
         {
             return ManagerWrapper.Instance.IsSinkActive(id);
         }
+
+        // detection nodes a robot or the UI can switch off; the ones switched off stay off after a restart
+        private readonly HashSet<int> disabledNodes = new HashSet<int>();
+
+        private static bool HasSavedEnabledState(SinkType type) => type == SinkType.ApriltagSink || type == SinkType.ObjectDetectionSink;
+
+        public bool IsNodeDisabled(int id) { lock (disabledNodes) return disabledNodes.Contains(id); }
+
+        // the saved disabled nodes that still exist
+        public List<int> GetDisabledNodeIds()
+        {
+            lock (disabledNodes) return disabledNodes.Where(id => sinks.Any(s => s.Id == id)).OrderBy(id => id).ToList();
+        }
+
+        public void RestoreDisabledNodes(IEnumerable<int> ids)
+        {
+            lock (disabledNodes) { disabledNodes.Clear(); foreach (int id in ids) disabledNodes.Add(id); }
+        }
+
+        // Starts or stops a sink and, for a detection node, remembers the choice across restarts.
+        public void SetSinkEnabled(int id, bool enabled)
+        {
+            Sink sink = GetSinkById(id) ?? throw Server.Web.ApiException.NotFound($"no sink with id {id}");
+            if (enabled) EnableSinkById(id);
+            else DisableSinkById(id);
+            if (HasSavedEnabledState(sink.Type))
+            {
+                lock (disabledNodes) { if (enabled) disabledNodes.Remove(id); else disabledNodes.Add(id); }
+            }
+            DB.Instance.Save();
+        }
     }
 }

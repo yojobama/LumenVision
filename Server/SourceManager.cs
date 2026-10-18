@@ -617,7 +617,7 @@ namespace Server
             {
                 SinkManager.Instance.BindSourceToSink(downstreamId, sinkId);
             }
-            SinkManager.Instance.EnableSinkById(sinkId);
+            if (!SinkManager.Instance.IsNodeDisabled(sinkId)) SinkManager.Instance.EnableSinkById(sinkId);
 
             source.ActiveDetectionSinkId = sinkId;
             source.ActiveProfileIndex = profileIndex;

@@ -14,6 +14,8 @@ namespace Server
         {
             public List<Sink> Sinks { get; set; }
             public List<Source> Sources { get; set; }
+            // detection nodes switched off, so they stay off after a restart (see SinkManager.SetSinkEnabled)
+            public List<int>? DisabledNodes { get; set; }
         }
 
         public static DB Instance { get; } = new DB("data.json");
@@ -40,7 +42,8 @@ namespace Server
             var dbData = new DBData
             {
                 Sinks = sinks,
-                Sources = sources
+                Sources = sources,
+                DisabledNodes = SinkManager.Instance.GetDisabledNodeIds()
             };
             return JsonSerializer.Serialize(dbData, new JsonSerializerOptions { WriteIndented = true });
         }
@@ -74,6 +77,7 @@ namespace Server
                             .Where(s => s.Type != SinkType.CameraCalibrationSink && s.Type != SinkType.StereoCalibrationSink)
                             .ToList();
                         sources = dbData.Sources ?? new List<Source>();
+                        SinkManager.Instance.RestoreDisabledNodes(dbData.DisabledNodes ?? new List<int>());
                     }
 
                     // crops last: each is cut from a source that has to exist (and be in its saved mode) by then
@@ -174,7 +178,7 @@ namespace Server
                     // (its encoder runs on every frame even with no peer). StartSinkById also starts a sink's bound source; RecordSink is included so recordings resume.
                     foreach (var sink in sinks)
                     {
-                        if (sink.Type != SinkType.WebRTCSink)
+                        if (sink.Type != SinkType.WebRTCSink && !SinkManager.Instance.IsNodeDisabled(sink.Id))
                         {
                             SinkManager.Instance.EnableSinkById(sink.Id);
                         }
@@ -236,7 +240,8 @@ namespace Server
             var dbData = new DBData
             {
                 Sinks = sinks,
-                Sources = sources
+                Sources = sources,
+                DisabledNodes = SinkManager.Instance.GetDisabledNodeIds()
             };
 
             string jsonData = JsonSerializer.Serialize(dbData, new JsonSerializerOptions { WriteIndented = true });

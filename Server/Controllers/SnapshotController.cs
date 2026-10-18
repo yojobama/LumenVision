@@ -38,5 +38,12 @@ namespace Server.Controllers
             SnapshotKind kind = string.Equals(Kind, "output", StringComparison.OrdinalIgnoreCase) ? SnapshotKind.Output : SnapshotKind.Input;
             return Task.Run(() => SnapshotService.Instance.Save(SourceID, kind));
         }
+
+        // POST: save the latest frame of any node (camera, crop or detector); null when it has none yet
+        [HttpPost("snapshot/takeNode")]
+        public Task<string?> TakeNode([FromQuery] int NodeID)
+        {
+            return Task.Run(() => SnapshotService.Instance.SaveNode(NodeID));
+        }
     }
 }

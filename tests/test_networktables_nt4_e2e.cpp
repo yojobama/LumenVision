@@ -339,6 +339,65 @@ TEST_CASE("NetworkTablesSink surfaces the robot's fps, snapshot and LED requests
 	nt::NetworkTableInstance::Destroy(server);
 }
 
+TEST_CASE("NetworkTablesSink surfaces per-node enabled and snapshot writes and publishes the graph and protocol", "[nt4]") {
+	constexpr unsigned int TEST_NT3_PORT = 17851;
+	constexpr unsigned int TEST_NT4_PORT = 17852;
+
+	nt::NetworkTableInstance server = nt::NetworkTableInstance::Create();
+	server.StartServer("", "127.0.0.1", TEST_NT3_PORT, TEST_NT4_PORT);
+
+	auto logger = std::make_shared<Logger>("LumenCoreTests-nt4-node-controls.log");
+	NetworkTablesConfig config;
+	config.serverAddress = "127.0.0.1";
+	config.port = TEST_NT4_PORT;
+	config.rootTable = "lumenvision";
+	config.clientIdentity = "LumenCoreTests-nt4-node-controls-sink";
+	auto ntSink = std::make_shared<NetworkTablesSink>(logger, "nt4-node-controls-sink", config);
+	ntSink->SetNodeAlias("node-9", "tags");
+
+	nt::NetworkTableInstance robot = nt::NetworkTableInstance::Create();
+	robot.SetServer("127.0.0.1", TEST_NT4_PORT);
+	robot.StartClient4("LumenCoreTests-nt4-node-controls-robot");
+	auto tags = robot.GetTable("lumenvision/tags");
+	tags->PutBoolean("config/enabled", false);
+	tags->PutNumber("config/snapshot", 1);
+
+	// ntcore may coalesce back-to-back writes, so one write per poll is checked here
+	int snapshots = 0;
+	bool sawDisable = false;
+	REQUIRE(WaitUntil([&] {
+		nlohmann::json requests = nlohmann::json::parse(ntSink->PollConfigRequests(), nullptr, false);
+		if (requests.is_discarded()) return false;
+		for (const auto& request : requests) {
+			REQUIRE(request["sourceId"] == "node-9");
+			if (request.contains("enabled") && request["enabled"] == false) sawDisable = true;
+			snapshots += request.value("snapshots", 0);
+		}
+		return sawDisable && snapshots == 1;
+	}));
+	REQUIRE(ntSink->PollConfigRequests() == "[]");
+
+	ntSink->PublishNodeEnabled("node-9", false);
+	REQUIRE(WaitUntil([&] { return tags->GetEntry("status/enabled").Exists() && !tags->GetBoolean("status/enabled", true); }));
+
+	// .graph and .protocol ride on Process(), which runs once a bound source has produced a result
+	ntSink->SetGraphJson("{\"nodes\":[]}");
+	auto upstream = std::make_shared<PgmFrameSource>(logger, "node-controls-upstream", cv::Mat(48, 64, CV_8UC3, cv::Scalar(0, 0, 0)));
+	upstream->Toggle(true);
+	REQUIRE(ntSink->BindSource(upstream));
+	static_cast<ISink&>(*ntSink).Toggle(true);
+	auto root = robot.GetTable("lumenvision");
+	REQUIRE(WaitUntil([&] { return root->GetNumber(".protocol", -1.0) == kNetworkTablesProtocol; }));
+	REQUIRE(WaitUntil([&] { return root->GetString(".graph", "") == "{\"nodes\":[]}"; }));
+
+	static_cast<ISink&>(*ntSink).Toggle(false);
+	upstream->Toggle(false);
+	robot.StopClient();
+	server.StopServer();
+	nt::NetworkTableInstance::Destroy(robot);
+	nt::NetworkTableInstance::Destroy(server);
+}
+
 // A NetworkTablesSink the server rebuilds in place (the NT settings changed) must keep publishing its bound detector's results.
 TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bound detector's results", "[nt4][e2e][rebuild]") {
 	const std::string pgmPath = std::string(LUMEN_VKAPRILTAG_SAMPLE_DIR) + "/grayimage.pgm";

@@ -67,6 +67,22 @@ namespace Server
             return true;
         }
 
+        // Saves the latest frame of any node (a camera, crop or detector): the annotated frame for a detector, the raw frame otherwise.
+        // Returns the relative path, or null when the node has no frame yet.
+        public string? SaveNode(int nodeId)
+        {
+            Sink? sink = SinkManager.Instance.GetSinkById(nodeId);
+            Source? source = sink == null ? SourceManager.Instance.GetSourceById(nodeId) : null;
+            if (sink == null && source == null) throw new ArgumentException($"no node with id {nodeId}");
+
+            bool detector = sink != null && (sink.Type == SinkType.ApriltagSink || sink.Type == SinkType.ObjectDetectionSink);
+            SnapshotKind kind = detector ? SnapshotKind.Output : SnapshotKind.Input;
+            string relative = RelativePath(sink?.Name ?? source!.Name, kind, DateTime.UtcNow);
+            string full = Path.Combine(SnapshotRoot, relative.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            return ManagerWrapper.Instance.SaveFreshSnapshot(nodeId, full) ? relative : null;
+        }
+
         // Returns the relative path of the saved file, or null if no frame was available. An output snapshot of a camera with no
         // detection running falls back to its input frame.
         public string? Save(int sourceId, SnapshotKind kind)

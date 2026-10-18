@@ -14,6 +14,9 @@
 
 class SystemMonitor;
 
+// Version of the robot-facing topic layout, published as "<rootTable>/.protocol" so a vendordep can refuse a coprocessor it cannot talk to.
+inline constexpr int kNetworkTablesProtocol = 3;
+
 struct NetworkTablesConfig {
 	// exactly one of these should be set; teamNumber takes precedence if both are
 	std::optional<unsigned int> teamNumber;
@@ -47,8 +50,9 @@ public:
 	// small JSON status blob (connected, server, identity, latency)
 	std::string GetConnectionStatus() const;
 
-	// Drains "<sourceId>/config/pipelineIndex", ".../driverMode", ".../fpsLimit", ".../inputSnapshot" and ".../outputSnapshot" writes
-	// since the last call as a JSON array of {"sourceId", "pipelineIndex"?, "driverMode"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?,
+	// Drains "<sourceId>/config/pipelineIndex", ".../driverMode", ".../fpsLimit", ".../enabled", ".../snapshot", ".../inputSnapshot" and
+	// ".../outputSnapshot" writes since the last call as a JSON array of {"sourceId", "pipelineIndex"?, "driverMode"?, "fpsLimit"?, "enabled"?,
+	// "snapshots"?, "inputSnapshots"?, "outputSnapshots"?,
 	// "constrainedSeed"? ([x, y, yaw]), "robotToCamera"? ([x, y, z, qw, qx, qy, qz])};
 	// the snapshot fields count the writes seen (each write is one request, whatever its value); each request is returned once.
 	std::string PollConfigRequests();
@@ -61,6 +65,11 @@ public:
 	// Publishes "<rootTable>/<node>/status/{pipelineIndex,driverMode,fpsLimit}": the settings actually in effect, so robot code can read
 	// them back without a separate request.
 	void PublishNodeStatus(const std::string& nodeId, int pipelineIndex, bool driverMode, int fpsLimit);
+	// Publishes "<rootTable>/<node>/status/enabled": whether the node is running.
+	void PublishNodeEnabled(const std::string& nodeId, bool enabled);
+
+	// The graph description republished as "<rootTable>/.graph" on every tick, so robot code can find nodes by name.
+	void SetGraphJson(const std::string& json);
 
 	// Drains the coprocessor-wide "<rootTable>/config/recording" boolean: -1 if unwritten since the last
 	// call, else 0/1. Desired state, not a toggle.
@@ -104,6 +113,8 @@ private:
 		std::optional<int> pipelineIndex;
 		std::optional<bool> driverMode;
 		std::optional<int> fpsLimit;
+		std::optional<bool> enabled;
+		int snapshots = 0;
 		std::optional<std::vector<double>> constrainedSeed;   // [x, y, yaw]
 		std::optional<std::vector<double>> robotToCamera;     // [x, y, z, qw, qx, qy, qz]
 		int inputSnapshots = 0;
@@ -113,6 +124,7 @@ private:
 	std::unordered_map<std::string, PendingConfigRequest> m_PendingConfig;
 	std::optional<bool> m_PendingRecording; // guarded by m_ConfigMutex too
 	std::optional<int> m_PendingLed;        // guarded by m_ConfigMutex too
+	std::string m_GraphJson;                // guarded by m_ConfigMutex too
 
 	// one per camera topic; "send all" so a robot reading its queue sees every frame rather than only the latest per send period
 	std::unordered_map<std::string, nt::RawPublisher> m_ResultPublishers;
