@@ -36,14 +36,12 @@ export interface PipelineNodeData extends Record<string, unknown> {
   mjpegSink?: WsSinkState;
   recordSink?: WsSinkState;
   // source nodes only
-  activeProfileIndex?: number;
-  profileCount?: number;
 }
 
 export type PipelineNode = Node<PipelineNodeData, 'pipelineNode'>;
 
 const COLUMN_WIDTH = 260;
-// a source card with a preview badge and a profile line is about 230 px tall
+// a source card with a preview badge is about 230 px tall
 const ROW_HEIGHT = 260;
 
 // Positions are held by the caller (PositionStore) so the per-tick rebuild does not fight drags;
@@ -104,8 +102,6 @@ export function buildGraph(
         nt4Sink,
         mjpegSink,
         recordSink,
-        activeProfileIndex: source.ActiveProfileIndex,
-        profileCount: source.Profiles.length,
       },
     });
     sourceRow++;

@@ -4,34 +4,37 @@ import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.numbers.N8;
-import edu.wpi.first.networktables.IntegerPublisher;
-import edu.wpi.first.networktables.IntegerSubscriber;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import org.lumenvision.lib.LumenCoprocessor;
 import org.lumenvision.lib.LumenDetector;
 import org.lumenvision.lib.LumenGraph;
 import org.lumenvision.lib.LumenNode;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
  * photonlib's PhotonCamera on top of LumenVision's nodes. {@code cameraName} is the camera's name in the LumenVision UI.
  *
- * <p>Driver mode stops the camera's detector (its video keeps streaming from the camera), an input snapshot saves the camera's own
- * frame and an output snapshot the detector's annotated one.
+ * <p>A pipeline is a detector node fed by the camera: {@link #setPipelineIndex} runs that node and stops the camera's other detectors.
+ * Pipelines are the camera's detectors in id order, or the ones named in {@link #withPipelines}. Driver mode stops every detector of the
+ * camera (its video keeps streaming), an input snapshot saves the camera's own frame and an output snapshot the running detector's.
  */
 public class PhotonCamera implements AutoCloseable {
     private final NetworkTableInstance instance;
     private final String rootTable;
     private final String cameraName;
-    private final LumenDetector detector;
     private final LumenCoprocessor coprocessor;
+    private final Map<String, LumenDetector> detectors = new HashMap<>();
+    private final Map<String, LumenNode> nodes = new HashMap<>();
 
-    private final IntegerPublisher pipelineIndexPub;
-    private final IntegerSubscriber pipelineIndexSub;
-    private LumenNode cameraNode;
+    private String[] pipelineNames;
+    private int selected = -1;
+    private boolean driverMode;
 
     /** The default NT4 instance and root table "lumenvision". */
     public PhotonCamera(String cameraName) {
@@ -42,58 +45,102 @@ public class PhotonCamera implements AutoCloseable {
         this.instance = instance;
         this.rootTable = rootTable;
         this.cameraName = cameraName;
-        this.detector = new LumenDetector(instance, rootTable, cameraName);
         this.coprocessor = new LumenCoprocessor(instance, rootTable);
-        String base = "/" + rootTable + "/" + LumenNode.tableName(cameraName) + "/";
-        pipelineIndexPub = instance.getIntegerTopic(base + "config/pipelineIndex").publish();
-        pipelineIndexSub = instance.getIntegerTopic(base + "status/pipelineIndex").subscribe(-1);
     }
 
-    /** The most recent result. */
+    /** Names the detector nodes that are this camera's pipelines, in pipeline-index order (as shown in the LumenVision UI). */
+    public PhotonCamera withPipelines(String... detectorNames) {
+        this.pipelineNames = detectorNames.clone();
+        return this;
+    }
+
+    // the pipelines' tables: the named or camera-fed detectors, else the one detector published under the camera's own name
+    private List<LumenGraph.Node> pipelines() {
+        LumenGraph graph = coprocessor.getGraph();
+        List<LumenGraph.Node> found = new ArrayList<>();
+        if (pipelineNames != null) {
+            for (String name : pipelineNames) {
+                graph.getNodes().stream().filter(n -> n.isDetector() && (n.getName().equals(name) || n.getTable().equals(name)))
+                        .findFirst().ifPresent(found::add);
+            }
+        } else {
+            graph.findCamera(cameraName).ifPresent(camera -> found.addAll(graph.detectorsOf(camera.getId())));
+        }
+        return found;
+    }
+
+    private LumenDetector detector(String table) {
+        return detectors.computeIfAbsent(table, t -> new LumenDetector(instance, rootTable, t));
+    }
+
+    private LumenNode node(String table) {
+        return nodes.computeIfAbsent(table, t -> new LumenNode(instance, rootTable, t));
+    }
+
+    // the table results are read from: the selected pipeline's, else the first enabled one's, else the camera's own name
+    private String currentTable() {
+        List<LumenGraph.Node> pipelines = pipelines();
+        if (pipelines.isEmpty()) return LumenNode.tableName(cameraName);
+        return pipelines.get(getPipelineIndex(pipelines)).getTable();
+    }
+
+    private int getPipelineIndex(List<LumenGraph.Node> pipelines) {
+        if (selected >= 0 && selected < pipelines.size()) return selected;
+        for (int i = 0; i < pipelines.size(); i++) if (pipelines.get(i).isEnabled()) return i;
+        return 0;
+    }
+
+    /** The most recent result of the current pipeline. */
     public PhotonPipelineResult getLatestResult() {
-        return new PhotonPipelineResult(detector.getLatestResult());
+        return new PhotonPipelineResult(detector(currentTable()).getLatestResult());
     }
 
-    /** Every result published since the last call, oldest first. */
+    /** Every result the current pipeline published since the last call, oldest first. */
     public List<PhotonPipelineResult> getAllUnreadResults() {
-        return detector.getAllUnreadResults().stream().map(PhotonPipelineResult::new).collect(Collectors.toList());
+        return detector(currentTable()).getAllUnreadResults().stream().map(PhotonPipelineResult::new).collect(Collectors.toList());
     }
 
-    /** Driver mode stops the camera's detector, so no results are published; the camera itself keeps running. */
+    /** Driver mode stops the camera's detectors, so no results are published; the camera itself keeps running. */
     public void setDriverMode(boolean driverMode) {
-        detector.setEnabled(!driverMode);
+        this.driverMode = driverMode;
+        applyRunningState();
     }
 
     public boolean getDriverMode() {
-        return !detector.isEnabled();
+        List<LumenGraph.Node> pipelines = pipelines();
+        if (pipelines.isEmpty()) return !detector(LumenNode.tableName(cameraName)).isEnabled();
+        return pipelines.stream().noneMatch(LumenGraph.Node::isEnabled);
     }
 
+    /** Runs pipeline {@code index} and stops the camera's other pipelines. */
     public void setPipelineIndex(int index) {
-        pipelineIndexPub.set(index);
+        this.selected = index;
+        applyRunningState();
     }
 
     public int getPipelineIndex() {
-        return (int) pipelineIndexSub.get();
+        List<LumenGraph.Node> pipelines = pipelines();
+        return pipelines.isEmpty() ? 0 : getPipelineIndex(pipelines);
+    }
+
+    private void applyRunningState() {
+        List<LumenGraph.Node> pipelines = pipelines();
+        if (pipelines.isEmpty()) {
+            detector(LumenNode.tableName(cameraName)).setEnabled(!driverMode);
+            return;
+        }
+        int running = getPipelineIndex(pipelines);
+        for (int i = 0; i < pipelines.size(); i++) detector(pipelines.get(i).getTable()).setEnabled(!driverMode && i == running);
     }
 
     /** Saves the camera's own frame on the coprocessor. */
     public void takeInputSnapshot() {
-        LumenNode camera = cameraNode();
-        if (camera != null) camera.takeSnapshot();
+        coprocessor.getGraph().findCamera(cameraName).ifPresent(camera -> node(camera.getTable()).takeSnapshot());
     }
 
-    /** Saves the detector's annotated frame on the coprocessor. */
+    /** Saves the current pipeline's annotated frame on the coprocessor. */
     public void takeOutputSnapshot() {
-        detector.takeSnapshot();
-    }
-
-    // the camera's own node, found in the coprocessor's graph by name and addressed by its id
-    private LumenNode cameraNode() {
-        if (cameraNode == null) {
-            Optional<LumenGraph.Node> camera = coprocessor.getGraph().findCamera(cameraName);
-            camera.ifPresent(node -> cameraNode = new LumenNode(instance, rootTable, String.valueOf(node.getId())));
-        }
-        return cameraNode;
+        detector(currentTable()).takeSnapshot();
     }
 
     public void setLED(VisionLEDMode led) {
@@ -105,23 +152,23 @@ public class PhotonCamera implements AutoCloseable {
     }
 
     public void setFPSLimit(int fps) {
-        detector.setFpsLimit(fps);
+        detector(currentTable()).setFpsLimit(fps);
     }
 
     public int getFPSLimit() {
-        return detector.getFpsLimit();
+        return detector(currentTable()).getFpsLimit();
     }
 
     public boolean isConnected() {
-        return detector.isConnected();
+        return detector(currentTable()).isConnected();
     }
 
     public Optional<Matrix<N3, N3>> getCameraMatrix() {
-        return detector.getCameraMatrix();
+        return detector(currentTable()).getCameraMatrix();
     }
 
     public Optional<Matrix<N8, N1>> getDistCoeffs() {
-        return detector.getDistCoeffs();
+        return detector(currentTable()).getDistCoeffs();
     }
 
     public String getName() {
@@ -133,19 +180,17 @@ public class PhotonCamera implements AutoCloseable {
     }
 
     public void verifyVersion() {
-        detector.verifyVersion();
+        detector(currentTable()).verifyVersion();
     }
 
-    /** The camera's detector node, for features with no PhotonVision equivalent. */
+    /** The current pipeline's detector node, for features with no PhotonVision equivalent. */
     public LumenDetector getLumenDetector() {
-        return detector;
+        return detector(currentTable());
     }
 
     @Override
     public void close() {
-        detector.close();
-        pipelineIndexPub.close();
-        pipelineIndexSub.close();
-        if (cameraNode != null) cameraNode.close();
+        detectors.values().forEach(LumenDetector::close);
+        nodes.values().forEach(LumenNode::close);
     }
 }

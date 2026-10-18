@@ -81,12 +81,6 @@ const PipelineNodeImpl: React.FC<NodeProps<PipelineNodeType>> = ({ data, selecte
         )}
       </div>
 
-      {isSource && (data.profileCount ?? 0) > 0 && (
-        <div className="mt-1 text-xs text-purple-600 dark:text-purple-400">
-          Profile {data.activeProfileIndex! >= 0 ? data.activeProfileIndex : '(none active)'} / {data.profileCount}
-        </div>
-      )}
-
       {isSource && (data.raw as WsSource).CameraHardwareInfo != null && (
         <div className="mt-1">
           <CalibrationWarningBadge sourceId={(data.raw as WsSource).Id} />
@@ -126,8 +120,6 @@ function pipelineNodePropsEqual(prev: NodeProps<PipelineNodeType>, next: NodePro
     a.fps.toFixed(1) === b.fps.toFixed(1) &&
     a.latencyUs.toFixed(0) === b.latencyUs.toFixed(0) &&
     a.isRunning === b.isRunning &&
-    a.activeProfileIndex === b.activeProfileIndex &&
-    a.profileCount === b.profileCount &&
     (a.webrtcSink?.IsRunning ?? null) === (b.webrtcSink?.IsRunning ?? null) &&
     (a.nt4Sink?.IsRunning ?? null) === (b.nt4Sink?.IsRunning ?? null)
   );

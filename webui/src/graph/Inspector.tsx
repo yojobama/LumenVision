@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
-import type { WsSource, WsSink, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings, Model } from '../types';
-import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED, PipelineProfileKind } from '../types';
+import type { WsSource, WsSink, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings } from '../types';
+import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
@@ -35,10 +35,6 @@ export const Inspector: React.FC<{
   const [showPreview, setShowPreview] = useState(false);
   const [segments, setSegments] = useState<RecordSegment[]>([]);
   const [promotingSegment, setPromotingSegment] = useState<string | null>(null);
-  const [newProfileName, setNewProfileName] = useState('');
-  const [newProfileTagSize, setNewProfileTagSize] = useState(0.1651);
-  // 0 = CPU (apriltag), 1 = Vulkan (vkapriltag)
-  const [newProfileBackend, setNewProfileBackend] = useState(0);
   const [cameraModes, setCameraModes] = useState<CameraMode[]>([]);
   const [currentMode, setCurrentMode] = useState<CameraMode | null>(null);
   const [calibrationStatus, setCalibrationStatus] = useState<CalibrationStatus | null>(null);
@@ -58,10 +54,6 @@ export const Inspector: React.FC<{
   const [refineModeValue, setRefineModeValue] = useState(1);
   const [refineModeSupported, setRefineModeSupported] = useState(false);
   const [detectionThresholds, setDetectionThresholds] = useState<{ confThreshold: number; nmsThreshold: number } | null>(null);
-  const [models, setModels] = useState<Model[]>([]);
-  const [newObjectProfileName, setNewObjectProfileName] = useState('');
-  const [newObjectProfileModel, setNewObjectProfileModel] = useState<number | ''>('');
-  const [newObjectProfileThresholds, setNewObjectProfileThresholds] = useState<{ confThreshold: number; nmsThreshold: number } | null>(null);
   const [advanced, setAdvanced] = useState<ApriltagAdvancedSettings>(DEFAULT_APRILTAG_ADVANCED);
   const [gpuDevices, setGpuDevices] = useState<string[]>([]);
   const [gpuDeviceName, setGpuDeviceName] = useState('');
@@ -400,25 +392,6 @@ export const Inspector: React.FC<{
     }
   };
 
-  const createApriltagProfile = async () => {
-    if (!source || !newProfileName.trim()) return;
-    try {
-      await api.createApriltagProfile(source.Id, newProfileName.trim(), newProfileTagSize, { backend: newProfileBackend });
-      setNewProfileName('');
-      onToast('Profile created', 'success');
-    } catch {
-      onToast('Failed to create profile', 'error');
-    }
-  };
-
-  // models for the "add object detection pipeline" form
-  useEffect(() => {
-    if (!isCamera) return;
-    api.getAllModels()
-      .then(list => { setModels(list); setNewObjectProfileModel(current => (current === '' && list.length > 0 ? list[0].id : current)); })
-      .catch(() => setModels([]));
-  }, [node.id, isCamera]);
-
   const applyDetectionThresholds = async () => {
     if (!sink || !detectionThresholds) return;
     try {
@@ -426,37 +399,6 @@ export const Inspector: React.FC<{
       onToast('Cutoffs applied', 'success');
     } catch (error) {
       onToast(error instanceof Error && error.message ? error.message : 'Failed to apply the cutoffs', 'error');
-    }
-  };
-
-  const createObjectDetectionProfile = async () => {
-    if (!source || !newObjectProfileName.trim() || newObjectProfileModel === '') return;
-    try {
-      await api.createObjectDetectionProfile(source.Id, newObjectProfileName.trim(), newObjectProfileModel, newObjectProfileThresholds ?? undefined);
-      setNewObjectProfileName('');
-      onToast('Object detection pipeline created', 'success');
-    } catch {
-      onToast('Failed to create the pipeline', 'error');
-    }
-  };
-
-  const toggleCameraOverrides = async (index: number, enabled: boolean) => {
-    if (!source) return;
-    try {
-      await api.setProfileCameraOverrides(source.Id, index, enabled);
-      onToast(enabled ? 'This pipeline now keeps its own camera settings' : 'This pipeline uses the camera settings again', 'success');
-    } catch {
-      onToast("Failed to change the pipeline's camera settings", 'error');
-    }
-  };
-
-  const activateProfile = async (index: number) => {
-    if (!source) return;
-    try {
-      await api.activateProfile(source.Id, index);
-      onToast(`Activated profile ${index}`, 'success');
-    } catch {
-      onToast('Failed to activate profile', 'error');
     }
   };
 
@@ -834,83 +776,6 @@ export const Inspector: React.FC<{
             {recordSink && segments.length === 0 && (
               <p className="mt-1 text-xs text-gray-400">No segments recorded yet.</p>
             )}
-          </div>
-        )}
-
-        {source && source.Profiles.length >= 0 && (
-          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-            <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Pipeline Profiles</h4>
-            {source.Profiles.length === 0 ? (
-              <p className="text-xs text-gray-400 mb-2">No profiles yet - a plain-created detector sink still works, profiles are only needed to switch between configurations at runtime.</p>
-            ) : (
-              <div className="space-y-1 mb-2">
-                {source.Profiles.map(p => (
-                  <div key={p.Index} className="text-xs bg-gray-50 dark:bg-gray-700 rounded px-2 py-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex-1 truncate">{p.Name} {p.TagSize != null && `(${p.TagSize}m)`}
-                      {p.Kind === PipelineProfileKind.ObjectDetectionSink && p.ModelId != null && ` (${models.find(m => m.id === p.ModelId)?.name ?? `model ${p.ModelId}`})`}</span>
-                    {isCamera && (
-                      <label className="flex items-center gap-1 text-gray-500 dark:text-gray-400 whitespace-nowrap"
-                        title="Give this pipeline its own camera controls, rotation/crop and FPS limit. While it is the active pipeline, camera edits belong to it; the camera's own settings come back for the others.">
-                        <input type="checkbox" checked={p.CameraOverrides != null} onChange={e => toggleCameraOverrides(p.Index, e.target.checked)} />
-                        own camera settings
-                      </label>
-                    )}
-                    {source.ActiveProfileIndex === p.Index ? (
-                      <span className="text-green-600 dark:text-green-400 font-medium">active</span>
-                    ) : (
-                      <button onClick={() => activateProfile(p.Index)} className="text-blue-600 hover:text-blue-700 flex items-center gap-1"><RefreshCw className="w-3 h-3" />Activate</button>
-                    )}
-                  </div>
-                  {p.Kind === PipelineProfileKind.ApriltagSink && (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer select-none text-gray-500 dark:text-gray-400">Field layout</summary>
-                      <div className="mt-1">
-                        <FieldLayoutPicker resetKey={`${source.Id}-${p.Index}`} onToast={onToast}
-                          loadTagCount={() => api.getProfileFieldLayoutTagCount(source.Id, p.Index)}
-                          applyBundled={layout => api.setProfileBundledFieldLayout(source.Id, p.Index, layout)}
-                          applyUpload={json => api.uploadProfileFieldLayout(source.Id, p.Index, json)} />
-                      </div>
-                    </details>
-                  )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {models.length > 0 && (
-              <details className="mb-2">
-                <summary className="text-xs text-gray-500 dark:text-gray-400 cursor-pointer select-none">Add an object detection pipeline</summary>
-                <div className="space-y-2 mt-2">
-                  <input value={newObjectProfileName} onChange={e => setNewObjectProfileName(e.target.value)} placeholder="Pipeline name"
-                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
-                  <select value={newObjectProfileModel} onChange={e => { setNewObjectProfileModel(parseInt(e.target.value)); setNewObjectProfileThresholds(null); }}
-                    className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white">
-                    {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
-                  <ThresholdFields
-                    confThreshold={newObjectProfileThresholds?.confThreshold ?? models.find(m => m.id === newObjectProfileModel)?.confThreshold ?? 0.25}
-                    nmsThreshold={newObjectProfileThresholds?.nmsThreshold ?? models.find(m => m.id === newObjectProfileModel)?.nmsThreshold ?? 0.45}
-                    onChange={setNewObjectProfileThresholds} />
-                  <button onClick={createObjectDetectionProfile} disabled={!newObjectProfileName.trim() || newObjectProfileModel === ''}
-                    className="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50">Add pipeline</button>
-                </div>
-              </details>
-            )}
-            <div className="space-y-1">
-              <input value={newProfileName} onChange={e => setNewProfileName(e.target.value)} placeholder="New AprilTag profile name"
-                className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
-              <div className="flex gap-2">
-                <input type="number" step="any" value={newProfileTagSize} onChange={e => setNewProfileTagSize(parseFloat(e.target.value) || 0.1651)}
-                  title="Tag size (meters)"
-                  className="w-20 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
-                <select value={newProfileBackend} onChange={e => setNewProfileBackend(parseInt(e.target.value))}
-                  className="flex-1 px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white">
-                  <option value={0}>CPU (apriltag)</option>
-                  <option value={1}>Vulkan (vkapriltag)</option>
-                </select>
-                <button onClick={createApriltagProfile} className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Add</button>
-              </div>
-            </div>
           </div>
         )}
 

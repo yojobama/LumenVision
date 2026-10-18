@@ -1,4 +1,4 @@
-import type { NodeProfile, CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
+import type { NodeProfile, CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -889,55 +889,6 @@ export class ApiService {
     return response.json();
   }
 
-  // Pipeline Profile Controller routes (/api/source/profiles*): a profile belongs to a camera source;
-  // activating one rebuilds the bound detection sink (PipelineProfileController.cs).
-  async getProfiles(sourceId: number): Promise<PipelineProfile[]> {
-    const response = await fetch(`${this.baseUrl}/source/profiles?sourceId=${sourceId}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async createApriltagProfile(sourceId: number, name: string, tagSize: number, options?: {
-    backend?: number; frameWidth?: number; frameHeight?: number; driverMode?: boolean; refineMode?: number;
-  }): Promise<number> {
-    const params = new URLSearchParams({ sourceId: String(sourceId), name, tagSize: String(tagSize) });
-    if (options?.backend != null) params.set('backend', String(options.backend));
-    if (options?.frameWidth != null) params.set('frameWidth', String(options.frameWidth));
-    if (options?.frameHeight != null) params.set('frameHeight', String(options.frameHeight));
-    if (options?.driverMode != null) params.set('driverMode', String(options.driverMode));
-    if (options?.refineMode != null) params.set('refineMode', String(options.refineMode));
-    const response = await fetch(`${this.baseUrl}/source/profiles/apriltag?${params}`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async createObjectDetectionProfile(sourceId: number, name: string, modelId: number, thresholds?: { confThreshold: number; nmsThreshold: number }): Promise<number> {
-    const params = new URLSearchParams({ sourceId: String(sourceId), name, modelId: String(modelId) });
-    if (thresholds) {
-      params.set('confThreshold', String(thresholds.confThreshold));
-      params.set('nmsThreshold', String(thresholds.nmsThreshold));
-    }
-    const response = await fetch(`${this.baseUrl}/source/profiles/objectDetection?${params}`, { method: 'POST' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async activateProfile(sourceId: number, index: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/source/profiles/activate?sourceId=${sourceId}&index=${index}`, { method: 'PATCH' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
-  // Gives a pipeline its own camera settings (starting from what the camera does now) or takes them away again
-  async setProfileCameraOverrides(sourceId: number, index: number, enabled: boolean): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/source/profiles/cameraOverrides?sourceId=${sourceId}&index=${index}&enabled=${enabled}`, { method: 'PATCH' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
-  async deleteProfile(sourceId: number, index: number): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/source/profiles?sourceId=${sourceId}&index=${index}`, { method: 'DELETE' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
   async getCameraControlList(id: number): Promise<CameraControl[]> {
     const response = await fetch(`${this.baseUrl}/cameraSource/${id}/controlList`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -997,24 +948,6 @@ export class ApiService {
 
   async uploadSinkFieldLayout(sinkId: number, json: string): Promise<number> {
     const response = await fetch(`${this.baseUrl}/apriltagSink/fieldLayout?sinkId=${sinkId}`, { method: 'POST', body: json });
-    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async getProfileFieldLayoutTagCount(sourceId: number, index: number): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/source/profiles/fieldLayoutTagCount?sourceId=${sourceId}&index=${index}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async setProfileBundledFieldLayout(sourceId: number, index: number, layout: string): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/source/profiles/fieldLayoutBundled?sourceId=${sourceId}&index=${index}&layout=${encodeURIComponent(layout)}`, { method: 'POST' });
-    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async uploadProfileFieldLayout(sourceId: number, index: number, json: string): Promise<number> {
-    const response = await fetch(`${this.baseUrl}/source/profiles/fieldLayout?sourceId=${sourceId}&index=${index}`, { method: 'POST', body: json });
     if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
     return response.json();
   }

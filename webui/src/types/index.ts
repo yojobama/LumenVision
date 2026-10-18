@@ -273,28 +273,9 @@ export interface StereoDepthStats {
   MedianDepthMeters: number;
 }
 
-// --- pipeline profiles, the /ws/state channel and node capabilities ---
+// --- the /ws/state channel and node capabilities ---
 // These mirror the C# response shapes field-for-field in PascalCase (EmbedIO's serialiser does not
 // camelCase).
-
-// mirrors Server/PipelineProfile.cs
-export const PipelineProfileKind = { ApriltagSink: 0, ObjectDetectionSink: 1 } as const;
-export interface PipelineProfile {
-  Index: number;
-  Name: string;
-  Kind: number;
-  TagSize: number | null;
-  Backend: number | null;
-  FrameWidth: number;
-  FrameHeight: number;
-  FieldLayoutPath: string | null;
-  DriverMode: boolean;
-  ModelId: number | null;
-  ConfThreshold?: number | null;
-  NmsThreshold?: number | null;
-  // camera settings this pipeline applies when activated (control values by control id, frame transform, FPS limit); null = the camera's own
-  CameraOverrides: { ControlValues: Record<string, number>; Transform: FrameTransform | null; FpsLimit: number | null } | null;
-}
 
 // mirrors Server/NodeCapabilities.cs
 export interface NodeTypeCapability {
@@ -319,9 +300,6 @@ export interface WsSource {
   CameraHardwareInfo: { name: string; path: string } | null;
   Fps: number | null;
   FilePath: string | null;
-  Profiles: PipelineProfile[];
-  ActiveProfileIndex: number;
-  ActiveDetectionSinkId: number | null;
   Type: number; // 0 Camera, 1 ImageFile, 2 VideoFile, 3 SinkOutput, 4 Crop - see SourceType in Source.cs
   Id: number;
   Name: string;

@@ -50,13 +50,12 @@ export const MatchPage: React.FC = () => {
   // per camera: find the bound detection sink and the NetworkTablesSink bound to its output;
   // the recordSink is bound directly to the raw source
   const rows = snapshot.Sources.map(source => {
-    // the detector is the source's active pipeline's, else any detection sink bound to it; the WebRTC/MJPEG preview sinks bound to it are not detectors
+    // the detector is a running detection sink bound to the camera, else any; the WebRTC/MJPEG preview sinks bound to it are not detectors
     const isDetector = (s: (typeof snapshot.Sinks)[number]) => ['ApriltagSink', 'ObjectDetectionSink'].includes(sinkTypeName(s.Sink.Type));
-    const detector = (source.ActiveDetectionSinkId != null ? snapshot.Sinks.find(s => s.Sink.Id === source.ActiveDetectionSinkId) : undefined)
-      ?? snapshot.Sinks.find(s => isDetector(s) && s.Sink.Source?.Id === source.Id);
-    const nt4Sink = detector
-      ? snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'NetworkTablesSink' && s.Sink.Source?.Id === detector.Sink.Id)
-      : undefined;
+    const detectors = snapshot.Sinks.filter(s => isDetector(s) && s.Sink.Source?.Id === source.Id);
+    const detector = detectors.find(s => s.IsRunning) ?? detectors[0];
+    // a NetworkTablesSink publishes every detector, so any one of them carries this camera's results
+    const nt4Sink = detector ? snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'NetworkTablesSink') : undefined;
     const recordSink = snapshot.Sinks.find(s => sinkTypeName(s.Sink.Type) === 'RecordSink' && s.Sink.Source?.Id === source.Id);
     const stats = snapshot.NodeStats[String(source.Id)];
     const status = nt4Sink ? nt4Status[nt4Sink.Sink.Id] : undefined;
