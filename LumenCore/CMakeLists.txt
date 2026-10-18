@@ -16,6 +16,7 @@ set(LUMEN_CORE_SOURCES
     CpuAffinity.cpp
     Frame.cpp
     FramePool.cpp
+    StageProfile.cpp
     ISource.cpp
     ImageFileSource.cpp
     StereoCalibrationResult.cpp

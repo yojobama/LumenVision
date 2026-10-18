@@ -16,6 +16,7 @@ public:
 
 	bool Load(const DetectionBackendConfig& config) override;
 	std::vector<ObjectDetection> Infer(const cv::Mat& bgrFrame) override;
+	void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const override { out = m_LastStageUs; }
 	std::string Name() const override { return "ONNX Runtime (CPU)"; }
 
 private:
@@ -29,6 +30,8 @@ private:
 	// the model's own input size (config.inputWidth/Height when the model leaves it dynamic)
 	int m_InputWidth = 640;
 	int m_InputHeight = 640;
+
+	std::vector<std::pair<std::string, double>> m_LastStageUs; // written by Infer(), read by the same thread right after
 
 	std::string m_InputName;
 	std::string m_OutputName;

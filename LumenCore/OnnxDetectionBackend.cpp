@@ -1,6 +1,7 @@
 #ifdef LUMEN_WITH_ONNX
 #include "OnnxDetectionBackend.h"
 #include "YoloPostProcess.h"
+#include <chrono>
 #include <fstream>
 #include <sstream>
 #ifdef _WIN32
@@ -80,8 +81,18 @@ std::vector<ObjectDetection> OnnxDetectionBackend::Infer(const cv::Mat& bgrFrame
 {
 	if (!m_Session) return {};
 
+	m_LastStageUs.clear();
+	auto lapStart = std::chrono::steady_clock::now();
+	auto lap = [&](const char* stage) {
+		auto now = std::chrono::steady_clock::now();
+		m_LastStageUs.emplace_back(stage, std::chrono::duration<double, std::micro>(now - lapStart).count());
+		lapStart = now;
+	};
+
 	YoloPostProcess::LetterboxInfo letterboxInfo;
 	cv::Mat letterboxed = YoloPostProcess::Letterbox(bgrFrame, m_InputWidth, m_InputHeight, letterboxInfo);
+
+	lap("onnx-letterbox");
 
 	// HWC BGR uint8 -> CHW RGB float32, normalised to [0,1] - the standard ultralytics export
 	// preprocessing
@@ -98,6 +109,8 @@ std::vector<ObjectDetection> OnnxDetectionBackend::Infer(const cv::Mat& bgrFrame
 		cv::Mat(m_InputHeight, m_InputWidth, CV_32F, inputTensorData.data() + 2 * planeSize) };
 	cv::split(rgb, channels);
 
+	lap("onnx-convert");
+
 	std::array<int64_t, 4> inputShape{ 1, 3, m_InputHeight, m_InputWidth };
 	Ort::Value inputTensor = Ort::Value::CreateTensor<float>(
 		m_MemoryInfo, inputTensorData.data(), inputTensorData.size(), inputShape.data(), inputShape.size());
@@ -111,6 +124,8 @@ std::vector<ObjectDetection> OnnxDetectionBackend::Infer(const cv::Mat& bgrFrame
 	} catch (const Ort::Exception&) {
 		return {}; // a failed frame must not take the sink's thread down
 	}
+
+	lap("onnx-run");
 
 	const Ort::Value& output = outputs[0];
 	std::vector<int64_t> outputShape = output.GetTensorTypeAndShapeInfo().GetShape();
@@ -133,9 +148,11 @@ std::vector<ObjectDetection> OnnxDetectionBackend::Infer(const cv::Mat& bgrFrame
 	int numClasses = channelCount - 4;
 	if (numClasses <= 0) return {};
 
-	return YoloPostProcess::DecodeAndNms(
+	std::vector<ObjectDetection> detections = YoloPostProcess::DecodeAndNms(
 		outputData, numClasses, numAnchors, m_Labels, letterboxInfo,
 		m_ConfThreshold.load(), m_NmsThreshold.load());
+	lap("onnx-decode+nms");
+	return detections;
 }
 
 #endif // LUMEN_WITH_ONNX

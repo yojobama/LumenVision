@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include "Logger.h"
 #include "SourceResult.h"
+#include "StageProfile.h"
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -53,6 +54,8 @@ public:
 	// detector draws its annotated output (and a camera decodes colour) for one snapshot even with nothing streaming it.
 	void RequestFrameOnce() { m_FrameRequests++; }
 protected:
+	// this node's stage timings (shared with its ISink half when it has one); see StageProfile.h
+	StageProfile* SourceProfile() const { return m_Profile.get(); }
 	void SetLatestResult(SourceResult result);
 	// Written under m_ResultLock (SetLatestResult) but read without it by GetCurrentFrameCount() from another thread.
 	std::atomic<uint64_t> m_FrameCount{ 0 };
@@ -88,5 +91,6 @@ private:
 	uint64_t m_LastPublishedUs = 0; // guarded by m_ResultLock
 
 	std::string m_ID;
+	std::shared_ptr<StageProfile> m_Profile;
 };
 

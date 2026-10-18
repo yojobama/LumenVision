@@ -8,6 +8,7 @@ import { ToggleSwitch } from '../components/ToggleSwitch';
 import { CameraControlsPanel } from '../components/CameraControlsPanel';
 import { CameraTransformPanel } from '../components/CameraTransformPanel';
 import { FieldLayoutPicker } from '../components/FieldLayoutPicker';
+import { TimingSection } from '../components/TimingSection';
 import { ThresholdFields } from '../components/ThresholdFields';
 import { StreamSettingsPanel } from '../components/StreamSettingsPanel';
 import { deleteNode } from './nodeActions';
@@ -482,6 +483,8 @@ export const Inspector: React.FC<{
         <div className="text-xs text-gray-500 dark:text-gray-400">
           ID: {source?.Id ?? sink?.Id} &middot; {node.data.fps.toFixed(1)} fps &middot; {(node.data.latencyUs / 1000).toFixed(1)} ms latency
         </div>
+
+        <TimingSection nodeId={(source?.Id ?? sink?.Id) as number} />
 
         {source?.Type === 4 && source.CropRegion && (
           <div className="text-xs text-gray-600 dark:text-gray-300 space-y-1">

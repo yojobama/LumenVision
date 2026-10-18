@@ -1,4 +1,5 @@
 #include "Manager.h"
+#include "StageProfile.h"
 #include "ImageFileSource.h"
 #include "VideoFileSource.h"
 #include "ApriltagDetector.h"
@@ -2090,6 +2091,21 @@ int64_t Manager::GetLatencyUs(int id)
 
     SourceResult result = sourceIt->second->GetLatestResult();
     return static_cast<int64_t>(result.producedTimeUs) - static_cast<int64_t>(result.captureTimeUs);
+}
+
+std::string Manager::GetNodeProfilesJson()
+{
+    return NodeProfiles::AllAsJson();
+}
+
+void Manager::ResetNodeProfiles()
+{
+    NodeProfiles::ResetAll();
+}
+
+std::string Manager::GetNodeProfileJson(int id)
+{
+    return NodeProfiles::AsJson(std::to_string(id));
 }
 
 // Every LUMEN_WITH_* backend this .so/.dll was built with, from a literal list because it must reflect what THIS translation unit

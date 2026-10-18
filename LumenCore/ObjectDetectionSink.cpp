@@ -34,7 +34,9 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 		if (!result.frame.has_value()) continue;
 
 		if (result.frame->empty() || !m_Backend) continue;
+		StageLap lap(SinkProfile());
 		const cv::Mat& sourceFrame = result.frame->AsBgr();
+		lap.Mark("bgr");
 
 		if (m_DriverMode) {
 			// AsBgrFrame() rather than the bare cv::Mat, to keep FramePool ownership tracking.
@@ -43,6 +45,13 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 		}
 
 		std::vector<ObjectDetection> detections = m_Backend->Infer(sourceFrame);
+		lap.Mark("infer");
+		{
+			// the backend's own split of "infer"; detail, not extra time
+			std::vector<std::pair<std::string, double>> stages;
+			m_Backend->LastStageTimingsUs(stages);
+			for (const auto& [stage, us] : stages) SinkProfile()->Record(stage, us);
+		}
 
 		// Annotate only when a bound sink wants the frame; otherwise skips the FramePool acquire/copy and drawing.
 		bool wantsFrame = HasActiveFrameConsumer();
@@ -96,9 +105,12 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 			}
 		}
 
+		lap.Mark("json+annotate");
+
 		std::optional<Frame> outputFrame;
 		if (wantsFrame) outputFrame = Frame(annotatedFrame, FrameFormat::BGR24, annotOwner);
 
 		SetLatestResult(SourceResult(nlohmann::json(jsonVector), outputFrame, result.captureTimeUs));
+		lap.Mark("publish");
 	}
 }

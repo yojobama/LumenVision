@@ -11,6 +11,7 @@
 #include <memory>
 #include <thread>
 #include "SourceResult.h"
+#include "StageProfile.h"
 
 class ISink
 {
@@ -28,6 +29,8 @@ public:
 	bool GetToggleStatus();
 
 protected:
+    // this node's stage timings (shared with its ISource half when it has one); see StageProfile.h
+    StageProfile* SinkProfile() const { return m_Profile.get(); }
 
     virtual void Process(const std::vector<SourceResult>& sources) = 0;
     // called once Toggle(false) has stopped and joined this sink's processing thread (so it never races Process()); default no-op.
@@ -53,6 +56,7 @@ private:
     std::shared_ptr<std::atomic<bool>> m_AliveFlag = std::make_shared<std::atomic<bool>>(true);
 
     std::string m_ID;
+    std::shared_ptr<StageProfile> m_Profile;
 
     bool m_ToggleState = false;
 

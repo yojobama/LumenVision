@@ -16,6 +16,7 @@ public:
 
 	bool Load(const DetectionBackendConfig& config) override;
 	std::vector<ObjectDetection> Infer(const cv::Mat& bgrFrame) override;
+	void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const override { out = m_LastStageUs; }
 	std::string Name() const override { return "RKNN (NPU)"; }
 
 private:
@@ -30,6 +31,7 @@ private:
 	bool Initialise(const DetectionBackendConfig& config);
 
 	bool m_Loaded = false;
+	std::vector<std::pair<std::string, double>> m_LastStageUs; // written by Infer(), read by the same thread right after
 	bool m_IsMultiScaleDfl = false;
 
 	DetectionBackendConfig m_Config;

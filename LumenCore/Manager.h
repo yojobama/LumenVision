@@ -374,6 +374,12 @@ public:
 	// producedTimeUs - captureTimeUs of the most recent frame; 0 if id doesn't exist in
 	// m_Sources or no frame has been produced yet.
 	int64_t GetLatencyUs(int id);
+	// where each live node's time goes, per stage over its last ~240 results: {"<nodeId>": [{stage, count, meanMs, p50Ms, p95Ms, maxMs, lastMs}]}.
+	// "age" is the end-to-end latency the node publishes at, "interval" the time between its results, "wait"/"process" a sink's queueing and work.
+	std::string GetNodeProfilesJson();
+	std::string GetNodeProfileJson(int id);
+	// forgets every node's recorded timings
+	void ResetNodeProfiles();
 private:
 	//bool SetSinkResult(int sinkId, string result);
 

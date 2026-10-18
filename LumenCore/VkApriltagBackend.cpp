@@ -1,5 +1,6 @@
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
+#include <chrono>
 #include <cmath>
 #include <map>
 #include "FramePool.h"
@@ -193,6 +194,14 @@ bool VkApriltagBackend::ImportFrameIfPossible(const cv::Mat& gray)
 
 zarray_t* VkApriltagBackend::Detect(const cv::Mat& frame)
 {
+	m_LastStageUs.clear();
+	auto lapStart = std::chrono::steady_clock::now();
+	auto lap = [&](const char* stage) {
+		auto now = std::chrono::steady_clock::now();
+		m_LastStageUs.emplace_back(stage, std::chrono::duration<double, std::micro>(now - lapStart).count());
+		lapStart = now;
+	};
+
 	// The GPU reads the frame as width*height packed bytes. A crop of a larger frame (a half of a side-by-side camera) is a view with the
 	// parent's row stride, so it is repacked first; anything else would have the GPU read pixels from the wrong rows.
 	cv::Mat packed;
@@ -201,17 +210,29 @@ zarray_t* VkApriltagBackend::Detect(const cv::Mat& frame)
 		packed = FramePool::Instance().Acquire(frame.rows, frame.cols, frame.type(), owner);
 		frame.copyTo(packed);
 		m_PackedFrameOwner = owner;
+		lap("vk-repack");
 	}
 	const cv::Mat& grayFrame = frame.isContinuous() ? frame : packed;
 
 	m_LastFrameImported = ImportFrameIfPossible(grayFrame);
+	lapStart = std::chrono::steady_clock::now(); // the (rare) first-time import is setup, not a per-frame cost
 	m_GpuDetector->Detect(grayFrame.data);
+	lap("vk-gpu");
+
+	// the library's own split of that call: the upload, waiting for the previous frame's fence, recording, GPU execution and readback
+	const GpuDetector::DetectProfile& profile = m_GpuDetector->last_profile();
+	m_LastStageUs.emplace_back("vk-gpu:upload", profile.upload_ms * 1000.0);
+	m_LastStageUs.emplace_back("vk-gpu:submit+wait", profile.cpu_submit_wait_ms * 1000.0);
+	m_LastStageUs.emplace_back("vk-gpu:readback", profile.readback_ms * 1000.0);
 
 	std::vector<DetectedQuad> quads = m_QuadDecode->Decode(m_GpuDetector->last_line_fit_points);
+	lap("vk-quads");
 
-	return m_TagDecoder->Decode(quads, grayFrame.data,
+	zarray_t* detections = m_TagDecoder->Decode(quads, grayFrame.data,
 		static_cast<uint32_t>(grayFrame.cols), static_cast<uint32_t>(grayFrame.rows),
 		m_Family->reversed_border);
+	lap("vk-tags");
+	return detections;
 }
 
 void VkApriltagBackend::ReleaseResult(zarray_t* /*detections*/)

@@ -18,6 +18,10 @@ struct CameraGrabResult
 	// what `frame` holds: BGR24 (CV_8UC3) or GRAY8 (CV_8UC1). Mono frames stay single-channel to the AprilTag detector;
 	// sinks needing colour convert lazily via Frame::AsBgr().
 	FrameFormat format = FrameFormat::BGR24;
+	// where Grab() spent its time, for the node's stage profile (0 = the backend does not measure it): waiting for the driver to hand over
+	// the next frame (about one frame interval, so not a cost), and turning that frame into pixels
+	double waitFrameUs = 0;
+	double decodeUs = 0;
 };
 
 // Implemented per platform: OpenCvCameraBackend (always available) and V4l2CameraBackend (Linux).

@@ -51,6 +51,7 @@ public:
 	std::string GetGpuDeviceName() const override { return m_GpuDeviceName; }
 	// the library's gate, so an APRILTAG_VK_PROBE_MARGIN override shows
 	float GetProbeMargin() const override { return m_TagDecoder->probe_margin(); }
+	void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const override { out = m_LastStageUs; }
 	std::string GetIngestMode() const override { return m_LastFrameImported.load() ? "host-import" : "copy"; }
 
 	// the names of the Vulkan devices a sink can run on, in vkEnumeratePhysicalDevices order (the index ApriltagTuning::gpuDevice takes);
@@ -102,6 +103,7 @@ private:
 	bool m_HostImportAvailable = false;
 	std::unordered_set<const uint8_t*> m_ImportedFrames;
 	std::atomic<bool> m_LastFrameImported{ false };
+	std::vector<std::pair<std::string, double>> m_LastStageUs; // written by Detect(), read by the same thread right after
 	std::shared_ptr<void> m_PackedFrameOwner; // keeps the repacked copy of the last non-contiguous frame alive while the GPU reads it
 
 	// declaration order is destruction order in reverse: the detector, then the lane it submits through, then the shared context

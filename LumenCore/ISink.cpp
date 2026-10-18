@@ -1,5 +1,6 @@
 #include "ISink.h"
 #include "CpuAffinity.h"
+#include <algorithm>
 
 ISink::ISink(std::shared_ptr<Logger> p_Logger, int maxSources, bool requireJson, bool requireFrame, std::string id, bool requireColor) : m_Logger(p_Logger) {
     if (m_Logger) m_Logger->EnterLog("ISink constructed");
@@ -8,6 +9,7 @@ ISink::ISink(std::shared_ptr<Logger> p_Logger, int maxSources, bool requireJson,
     m_RequireFrame = requireFrame;
     m_RequireColor = requireColor;
     m_ID = id;
+    m_Profile = NodeProfiles::For(id);
 }
 
 ISink::~ISink()
@@ -95,6 +97,14 @@ void ISink::ProcessingThreadLoop()
         }
 
         if (!sources.empty()) {
+            // "wait": how long the newest result sat before this sink got to it (a busy sink, or a thread that was not scheduled);
+            // "process": what this sink then spent on it
+            const uint64_t pickedUpUs = SourceResult::NowUs();
+            uint64_t newestProducedUs = 0;
+            for (const SourceResult& source : sources) newestProducedUs = std::max(newestProducedUs, source.producedTimeUs);
+            if (newestProducedUs != 0 && pickedUpUs >= newestProducedUs) m_Profile->Record("wait", static_cast<double>(pickedUpUs - newestProducedUs));
+
+            ScopedStage processing(m_Profile.get(), "process");
             Process(sources);
         }
     }

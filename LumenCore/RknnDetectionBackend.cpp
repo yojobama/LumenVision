@@ -1,6 +1,7 @@
 #ifdef LUMEN_WITH_RKNN
 #include "RknnDetectionBackend.h"
 #include "YoloPostProcess.h"
+#include <chrono>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -118,12 +119,22 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 {
 	if (!m_Loaded) return {};
 
+	m_LastStageUs.clear();
+	auto lapStart = std::chrono::steady_clock::now();
+	auto lap = [&](const char* stage) {
+		auto now = std::chrono::steady_clock::now();
+		m_LastStageUs.emplace_back(stage, std::chrono::duration<double, std::micro>(now - lapStart).count());
+		lapStart = now;
+	};
+
 	YoloPostProcess::LetterboxInfo letterboxInfo;
 	cv::Mat letterboxed = YoloPostProcess::Letterbox(bgrFrame, m_InputWidth, m_InputHeight, letterboxInfo);
 
 	// RGB uint8, NHWC, no normalisation: the quantised graph has mean/std baked in (the ONNX path normalises itself)
+	lap("rknn-letterbox");
 	cv::Mat rgb;
 	cv::cvtColor(letterboxed, rgb, cv::COLOR_BGR2RGB);
+	lap("rknn-convert");
 
 	rknn_input input{};
 	input.index = 0;
@@ -134,7 +145,9 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 	input.fmt = RKNN_TENSOR_NHWC;
 
 	if (rknn_inputs_set(m_Context, 1, &input) != RKNN_SUCC) return {};
+	lap("rknn-set-input");
 	if (rknn_run(m_Context, nullptr) != RKNN_SUCC) return {};
+	lap("rknn-run");
 
 	std::vector<rknn_output> outputs(static_cast<size_t>(m_NumOutputs));
 	for (int i = 0; i < m_NumOutputs; i++) {
@@ -143,6 +156,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 		outputs[i].index = static_cast<uint32_t>(i);
 	}
 	if (rknn_outputs_get(m_Context, static_cast<uint32_t>(m_NumOutputs), outputs.data(), nullptr) != RKNN_SUCC) return {};
+	lap("rknn-get-outputs");
 
 	std::vector<ObjectDetection> detections;
 
@@ -177,6 +191,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 			m_ConfThreshold.load(), m_NmsThreshold.load());
 	}
 
+	lap("rknn-decode+nms");
 	rknn_outputs_release(m_Context, static_cast<uint32_t>(m_NumOutputs), outputs.data());
 	return detections;
 }

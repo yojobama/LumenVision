@@ -1,6 +1,9 @@
 #pragma once
 #include <apriltag/apriltag.h>
 #include <opencv2/opencv.hpp>
+#include <string>
+#include <utility>
+#include <vector>
 
 // Plain (unscoped) enum: SWIG wraps a scoped enum as an opaque handle (as with YoloVariant). Kept here so the CPU
 // backend needn't include the Vulkan one.
@@ -97,6 +100,9 @@ public:
 	virtual float GetQuadSigma() const = 0;
 	virtual bool GetQuadSigmaSupported() const = 0;
 	virtual int GetMaxHamming() const = 0;
+	// where the last Detect() spent its time, as (stage, microseconds), for the node's stage profile. Empty for a backend that does not break
+	// its work down (the whole call is then profiled as "detect").
+	virtual void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const { (void)out; }
 	// the GPU the backend runs on; empty on the CPU backend
 	virtual std::string GetGpuDeviceName() const { return std::string(); }
 	// the margin gate in effect (see ApriltagTuning::probeMargin); 0 on the CPU backend, which has none

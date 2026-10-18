@@ -7,6 +7,7 @@ ISource::ISource(std::shared_ptr<Logger> p_Logger, std::string m_ID)
 {
 	this->m_Logger = p_Logger;
 	this->m_ID = m_ID;
+	this->m_Profile = NodeProfiles::For(m_ID);
 }
 
 ISource::~ISource()
@@ -92,6 +93,7 @@ bool ISource::HasActiveColorFrameConsumer() const
 void ISource::SetLatestResult(SourceResult result)
 {
 	const bool hasFrame = result.frame.has_value();
+	double ageUs = -1, intervalUs = -1; // recorded once the result is published, outside the result lock
 	{
 		std::lock_guard<std::mutex> guard(m_ResultLock);
 		result.producedTimeUs = SourceResult::NowUs();
@@ -103,16 +105,24 @@ void ISource::SetLatestResult(SourceResult result)
 			static_cast<double>(result.producedTimeUs - m_LastPublishedUs) < 0.9 * 1'000'000.0 / fpsLimit) {
 			return;
 		}
+		if (m_LastPublishedUs != 0) intervalUs = static_cast<double>(result.producedTimeUs - m_LastPublishedUs);
 		m_LastPublishedUs = result.producedTimeUs;
 		// a producer without an explicit capture timestamp gets producedTimeUs as captureTimeUs (see SourceResult.h)
 		if (result.captureTimeUs == 0) result.captureTimeUs = result.producedTimeUs;
 		result.frameNumber = m_FrameCount + 1; // matches the m_FrameCount++ below
+		ageUs = static_cast<double>(result.producedTimeUs) - static_cast<double>(result.captureTimeUs);
 		m_LatestResult = result;
 		// m_FrameCount is what ISink::ProcessingThreadLoop checks to see whether a source has anything new, so it is
 		// bumped here on every published result rather than in each subclass.
 		m_FrameCount++;
 	}
 	if (hasFrame) m_FrameRequests = 0;
+
+	// "age": how old the frame is as this node publishes it - the latency the UI shows - and "interval": time since the previous result
+	if (m_Profile && ageUs >= 0) {
+		m_Profile->Record("age", ageUs);
+		if (intervalUs >= 0) m_Profile->Record("interval", intervalUs);
+	}
 
 	// notify bound sinks outside the result lock so a listener can safely call back
 	// into this source (e.g. GetLatestResult) without deadlocking

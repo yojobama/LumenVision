@@ -353,8 +353,11 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				continue;
 			}
 
-			// AsGray() is free for GRAY8/NV12 frames (no conversion).
+			StageLap lap(SinkProfile());
+
+			// AsGray() is free for GRAY8 frames; a colour frame is converted once here
 			const cv::Mat& gray = result.frame->AsGray();
+			lap.Mark("gray");
 
 			// Vulkan is sized to the frame: build on the first frame, rebuild if the size changes.
 			if (m_RequestedBackendKind == APRILTAG_BACKEND_VULKAN && !m_VulkanUnavailable) {
@@ -368,12 +371,20 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				if (needsBuild) {
 					std::lock_guard<std::mutex> lock(m_BackendMutex);
 					BuildBackendLocked(gray.cols, gray.rows);
+					lap.Skip(); // a one-off rebuild is not part of the per-frame cost
 				}
 			}
 
 			// Debug level: this runs every frame and Info would pay a mutex lock plus a file write.
 			m_Logger->EnterLog(LogLevel::Debug, "detecting apriltags using backend=" + m_Backend->Name());
 			zarray_t* detections = m_Backend->Detect(gray);
+			lap.Mark("detect");
+			{
+				// a backend that breaks "detect" down says how; those stages add detail to it, they are not extra time
+				std::vector<std::pair<std::string, double>> stages;
+				m_Backend->LastStageTimingsUs(stages);
+				for (const auto& [stage, us] : stages) SinkProfile()->Record(stage, us);
+			}
 
 			// Only draw the annotated frame when a consumer (e.g. a WebRTC preview) wants it.
 			bool wantsFrame = HasActiveFrameConsumer();
@@ -386,6 +397,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				const cv::Mat& sourceBgr = result.frame->AsBgr();
 				colouredFrame = FramePool::Instance().Acquire(sourceBgr.rows, sourceBgr.cols, sourceBgr.type(), colourOwner);
 				sourceBgr.copyTo(colouredFrame);
+				lap.Mark("annotate-copy");
 			}
 
 			std::vector<nlohmann::json> jsonVector;
@@ -435,6 +447,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				// estimate_tag_pose returns invalid pose pointers for degenerate intrinsics (fx=fy=0), which
 				// corrupts the heap when freed, so skip pose estimation without valid intrinsics.
 				if (m_HasCalibration && m_Tuning.singleTagPose) {
+					ScopedStage poseStage(SinkProfile(), "pose");
 					apriltag_detection_t poseDetection = *detection;
 					if (m_HasDistortion) {
 						std::vector<cv::Point2d> distortedCorners = {
@@ -492,6 +505,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				jsonVector.push_back(detectionJson);
 
 				if (wantsFrame) {
+					ScopedStage drawStage(SinkProfile(), "annotate-draw");
 					cv::line(colouredFrame, cv::Point(detection->p[0][0], detection->p[0][1]),
 						cv::Point(detection->p[1][0], detection->p[1][1]),
 						cv::Scalar(0, 0xff, 0), 2);
@@ -567,11 +581,14 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				}
 			}
 
+			lap.Mark("tags+solve"); // the tag loop (JSON, pose, drawing) and the multi-tag solve; "pose" and "annotate-draw" are inside it
+
 			std::optional<Frame> outputFrame;
 			if (wantsFrame) outputFrame = Frame(colouredFrame, FrameFormat::BGR24, colourOwner);
 
 			SetLatestResult(SourceResult(nlohmann::json{{"tags", jsonVector}, {"multiTag", multiTagJson}, {"constrained", constrainedJson},
 				{"calibration", BuildCalibrationJson()}}, outputFrame, result.captureTimeUs));
+			lap.Mark("publish");
 		}
 	}
 }

@@ -128,6 +128,10 @@ void CameraFrameSource::CaptureFrame()
         // HasActiveColorFrameConsumer(), as a bound detector needs a frame but not colour.
         CameraGrabResult grab = m_Backend->Grab(!HasActiveColorFrameConsumer());
         if (grab.success) {
+            // "wait-frame" is the driver's frame interval, not a cost; "decode" is JPEG/colour work
+            if (grab.waitFrameUs > 0) SourceProfile()->Record("wait-frame", grab.waitFrameUs);
+            if (grab.decodeUs > 0) SourceProfile()->Record("decode", grab.decodeUs);
+            StageLap lap(SourceProfile());
             // Carries grab.poolOwner explicitly: the bare-cv::Mat overload has no pool owner, so the buffer
             // could be recycled while sinks still use it (see CameraGrabResult::poolOwner).
             cv::Mat image = grab.frame;
@@ -139,7 +143,9 @@ void CameraFrameSource::CaptureFrame()
                 // a transformed image is a fresh copy, so it no longer needs the pooled buffer
                 if (!viewOfInput) owner.reset();
             }
+            if (!transform.IsIdentity()) lap.Mark("transform");
             SetLatestResult(SourceResult(std::nullopt, Frame(image, grab.format, owner), grab.captureTimeUs));
+            lap.Mark("publish");
         } else {
             m_Logger->EnterLog(LogLevel::Error, "camera grab failed for " + m_DevicePath);
         }

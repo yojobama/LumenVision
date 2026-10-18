@@ -249,6 +249,7 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 {
 	CameraGrabResult result;
 	if (m_Fd < 0 || !m_Streaming) return result;
+	const auto grabStart = std::chrono::steady_clock::now();
 
 	pollfd pfd{};
 	pfd.fd = m_Fd;
@@ -275,6 +276,9 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		if (XIoctl(m_Fd, VIDIOC_DQBUF, &next) < 0) break;
 		buf = next;
 	}
+
+	const auto dequeued = std::chrono::steady_clock::now();
+	result.waitFrameUs = std::chrono::duration<double, std::micro>(dequeued - grabStart).count();
 
 	// Stamped from buf.timestamp (driver's CLOCK_MONOTONIC capture instant) when populated, converted to the NowUs() epoch via a
 	// one-time offset (steady_clock is CLOCK_MONOTONIC on Linux); a zero timestamp falls back to NowUs() taken after DQBUF.
@@ -389,6 +393,8 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 	}
 	// anything else: no decode path - result.success stays false for this frame rather than
 	// handing back garbage reinterpreted as pixels (EnumerateModes never offers such a format).
+
+	result.decodeUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - dequeued).count();
 
 	// requeue the same buffer regardless of decode outcome - a bad frame still has to go back to
 	// the kernel or the buffer pool starves after BUFFER_COUNT failures.

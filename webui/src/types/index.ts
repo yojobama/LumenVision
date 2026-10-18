@@ -331,6 +331,24 @@ export interface WsSource {
   CropLayout?: string | null;
 }
 
+// GET /api/profile: where one node's time goes (see Server/Controllers/ProfileController.cs)
+export interface StageStat {
+  Stage: string;
+  Count: number;
+  MeanMs: number;
+  P50Ms: number;
+  P95Ms: number;
+  MaxMs: number;
+  LastMs: number;
+}
+export interface NodeProfile {
+  Id: number;
+  Name: string;
+  Kind: string;
+  Type: string;
+  Stages: StageStat[];
+}
+
 // mirrors Server/Sink.cs
 export interface WsSink {
   Type: number; // SinkType ordinal - see mapSinkType in hooks/useAppData.ts for the string labels

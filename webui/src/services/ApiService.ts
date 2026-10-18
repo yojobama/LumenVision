@@ -1,4 +1,4 @@
-import type { CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
+import type { NodeProfile, CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, PipelineProfile, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
 import { apiClient } from '../api/client';
 
 export class ApiService {
@@ -654,6 +654,13 @@ export class ApiService {
   async detachDepthFusionSource(fusionSinkId: number): Promise<void> {
     const response = await fetch(`${this.baseUrl}/depthFusionSink/${fusionSinkId}/detachDepthSource`, { method: 'PATCH' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  }
+
+  // Per-stage timings of every node that has produced any (LumenCore's StageProfile)
+  async getProfile(): Promise<NodeProfile[]> {
+    const response = await fetch(`${this.baseUrl}/profile`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
   }
 
   // Device Controller routes

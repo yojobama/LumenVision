@@ -3,6 +3,7 @@
 #include <opencv2/opencv.hpp>
 #include <atomic>
 #include <string>
+#include <utility>
 #include <vector>
 
 // YOLOv8 and YOLOv11 (ultralytics ONNX export) share the same anchor-free head: [1, 4+numClasses, numAnchors], boxes decoded
@@ -31,6 +32,9 @@ public:
 	virtual bool Load(const DetectionBackendConfig& config) = 0;
 	virtual std::vector<ObjectDetection> Infer(const cv::Mat& bgrFrame) = 0;
 	virtual std::string Name() const = 0;
+
+	// where the last Infer() spent its time, as (stage, microseconds), for the node's stage profile; empty when not measured
+	virtual void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const { (void)out; }
 
 	// The confidence and NMS cutoffs in effect; they can change between frames (the input size cannot: it is part of the model).
 	void SetThresholds(float confThreshold, float nmsThreshold) { m_ConfThreshold = confThreshold; m_NmsThreshold = nmsThreshold; }
