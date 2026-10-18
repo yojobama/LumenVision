@@ -89,6 +89,10 @@ public:
 	// splits one upstream source's frames into a fixed rectangular crop, zero-copy: create two against the same camera (one per eye)
 	// and bind each into StereoCalibrator/StereoDepthNode. Binds itself to upstreamSourceId; throws if it doesn't exist.
 	int CreateRoiSource(int upstreamSourceId, int x, int y, int width, int height);
+	// the same under a given id, so a saved crop keeps its id (and what is bound to it) across a restart
+	int CreateRoiSource(int upstreamSourceId, int x, int y, int width, int height, int id);
+	// moves a crop source's rectangle while it runs; false if sourceId is not a crop
+	bool SetRoiSourceRect(int sourceId, int x, int y, int width, int height);
 
 	// Gives an ObjectDetectionSink the camera calibration it needs to report each detection's yaw/pitch; a no-op for other nodes
 	void SetObjectDetectionCalibration(int sinkId, CameraCalibrationResult calibrationResult);

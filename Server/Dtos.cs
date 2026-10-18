@@ -6,6 +6,9 @@ namespace Server
     // Plain, OpenAPI-friendly shapes for endpoints that would otherwise serialise SWIG types (live P/Invoke getters, raw C++ field names).
     // Mapped once at the controller boundary.
 
+    // a rectangle in a source's frame, in its pixels
+    public record struct CropRegionDto(int X, int Y, int Width, int Height);
+
     public record struct CameraModeDto(int Width, int Height, double Fps, FrameFormat PixelFormat, bool IsNative)
     {
         public static CameraModeDto From(CameraMode mode) =>

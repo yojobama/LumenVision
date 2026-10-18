@@ -275,6 +275,46 @@ TEST_CASE("a running detector given its camera's calibration afterwards starts p
 	std::filesystem::remove(layoutPath);
 }
 
+TEST_CASE("a tag is found in a crop of a larger gray frame, which is a view with the parent's row stride", "[apriltag][crop]") {
+	// the left half is plain white, the tag is in the right half - as one eye of a side-by-side stereo camera sees it
+	const cv::Mat tag = RenderTag(APRILTAG_FAMILY_36H11, 3);
+	cv::Mat wide(tag.rows, tag.cols * 2, CV_8UC1, cv::Scalar(255));
+	tag.copyTo(wide(cv::Rect(tag.cols, 0, tag.cols, tag.rows)));
+
+	const cv::Mat rightEye = wide(cv::Rect(tag.cols, 0, tag.cols, tag.rows));
+	REQUIRE_FALSE(rightEye.isContinuous()); // the situation under test: step is the parent's, not the crop's width
+	const cv::Mat leftEye = wide(cv::Rect(0, 0, tag.cols, tag.rows));
+
+	CpuApriltagBackend cpu;
+	REQUIRE(DetectedIds(cpu, rightEye) == std::vector<int>{ 3 });
+	REQUIRE(DetectedIds(cpu, leftEye).empty());
+
+#ifdef LUMEN_WITH_VULKAN_APRILTAG
+	ApriltagTuning tuning;
+	tuning.quadDecimate = 1.0f;
+	std::unique_ptr<VkApriltagBackend> vulkan;
+	try {
+		vulkan = std::make_unique<VkApriltagBackend>(tag.cols, tag.rows, tuning);
+	} catch (const std::exception&) {
+		return; // no Vulkan device here; the CPU half above still ran
+	}
+	zarray_t* found = vulkan->Detect(rightEye);
+	REQUIRE(zarray_size(found) == 1);
+	apriltag_detection_t* detection;
+	zarray_get(found, 0, &detection);
+	REQUIRE(detection->id == 3);
+	const double x = detection->c[0], y = detection->c[1];
+	// the same answer as for a packed copy of the same pixels
+	zarray_t* packedFound = vulkan->Detect(rightEye.clone());
+	REQUIRE(zarray_size(packedFound) == 1);
+	apriltag_detection_t* packedDetection;
+	zarray_get(packedFound, 0, &packedDetection);
+	REQUIRE(packedDetection->c[0] == Catch::Approx(x).margin(1e-3));
+	REQUIRE(packedDetection->c[1] == Catch::Approx(y).margin(1e-3));
+	REQUIRE(zarray_size(vulkan->Detect(leftEye)) == 0);
+#endif
+}
+
 TEST_CASE("the margin gate is off by default and the CPU backend, which has none, always reports it off", "[apriltag][tuning]") {
 	REQUIRE(ApriltagTuning().probeMargin == 0.0f);
 

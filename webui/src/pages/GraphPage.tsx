@@ -153,6 +153,10 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
   const disconnectEdge = useCallback(async (edgeId: string) => {
     const edge = edges.find(e => e.id === edgeId);
     if (!edge) return;
+    if (edgeId.startsWith('crop-')) {
+      onToast('A crop is always fed by its camera - delete the crop node to remove it', 'info');
+      return;
+    }
     const targetSinkId = Number(edge.target.split('-')[1]);
     try {
       if (edgeId.endsWith('-depth')) {
@@ -193,7 +197,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
 
   // every edge carries the disconnect action its button calls
   const edgesWithActions = useMemo(
-    () => edges.map(e => ({ ...e, selected: e.id === selectedEdgeId, data: { onDisconnect: (id: string) => void disconnectEdge(id) } as BoundEdgeData })),
+    () => edges.map(e => ({ ...e, selected: e.id === selectedEdgeId, data: { onDisconnect: e.id.startsWith('crop-') ? undefined : (id: string) => void disconnectEdge(id) } as BoundEdgeData })),
     [edges, selectedEdgeId, disconnectEdge]);
 
   const isValidConnection: IsValidConnection = useCallback((edgeOrConn) => {
@@ -225,8 +229,14 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
     return { x: (count % 4) * 260, y: Math.floor(count / 4) * 260 + 400 };
   };
 
-  const handleAddSource = async (name: string, type: string, files?: FileList, fps?: number, hardwareInfo?: CameraHardwareInfo) => {
+  const handleAddSource = async (name: string, type: string, files?: FileList, fps?: number, hardwareInfo?: CameraHardwareInfo, split?: { parentId: number; layout: 'sideBySide' | 'topBottom' }) => {
     try {
+      if (type === 'split' && split) {
+        await api.splitCamera(split.parentId, split.layout);
+        onToast(split.layout === 'sideBySide' ? 'Camera split into left and right' : 'Camera split into top and bottom', 'success');
+        setShowAddSource(false);
+        return;
+      }
       if (type === 'camera' && hardwareInfo) {
         await api.createCameraSource(hardwareInfo, name);
       } else if (type === 'video' && files?.length) {
@@ -321,7 +331,8 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
         />
       )}
 
-      <AddSourceModal isOpen={showAddSource} onClose={() => setShowAddSource(false)} onAdd={handleAddSource} />
+      <AddSourceModal isOpen={showAddSource} onClose={() => setShowAddSource(false)} onAdd={handleAddSource}
+        cameraSources={(snapshot?.Sources ?? []).filter(source => source.Type === 0).map(source => ({ Id: source.Id, Name: source.Name }))} />
       <AddSinkModal isOpen={showAddSink} onClose={() => setShowAddSink(false)} onAdd={handleAddSink} />
     </div>
   );

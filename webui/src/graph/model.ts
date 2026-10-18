@@ -8,7 +8,7 @@ const SINK_TYPE_NAMES = [
   'NetworkTablesSink', 'WebRTCSink', 'StereoCalibrationSink', 'StereoDepthSink', 'DepthFusionSink',
   'MjpegSink', 'RecordSink',
 ];
-const SOURCE_TYPE_NAMES = ['Camera', 'ImageFile', 'VideoFile', 'SinkOutput'];
+const SOURCE_TYPE_NAMES = ['Camera', 'ImageFile', 'VideoFile', 'SinkOutput', 'Crop'];
 
 // Terminal/preview sinks (WebRTC, MJPEG, Record) render as badges on the node they are bound to.
 const BADGE_SINK_TYPES = new Set(['WebRTCSink', 'NetworkTablesSink', 'MjpegSink', 'RecordSink']);
@@ -109,6 +109,11 @@ export function buildGraph(
       },
     });
     sourceRow++;
+
+    // a crop hangs off the source it is cut from; the link is fixed (deleting the crop removes it), so it is not a disconnectable binding
+    if (source.CropParentId != null) {
+      edges.push({ id: `crop-${source.Id}`, source: `source-${source.CropParentId}`, target: id, type: 'bound' });
+    }
   }
 
   // Sink nodes (graph-shaped types only) and their binding edges; other sinks become badges.

@@ -40,15 +40,31 @@ namespace Server
         {
             foreach (var source in sources)
             {
-                ManagerWrapper.Instance.StopSourceById(source.Id);
+                StopSource(source);
             }
         }
         public void EnableAllSources()
         {
-            foreach (var source in sources)
+            // cameras and files first: a crop needs its parent running to have frames to cut
+            foreach (var source in sources.OrderBy(s => s.Type == SourceType.Crop ? 1 : 0))
             {
-                ManagerWrapper.Instance.StartSourceById(source.Id);
+                StartSource(source);
             }
+        }
+
+        // A crop is a native sink of its parent that republishes part of each frame, so starting it means starting the parent and then the
+        // crop as a sink; every other source is started as a source.
+        private bool StartSource(Source source)
+        {
+            if (source.Type != SourceType.Crop) return ManagerWrapper.Instance.StartSourceById(source.Id);
+            if (source.CropParentId is int parentId && GetSourceById(parentId) is Source parent) StartSource(parent);
+            return ManagerWrapper.Instance.StartSinkById(source.Id);
+        }
+
+        private void StopSource(Source source)
+        {
+            if (source.Type == SourceType.Crop) ManagerWrapper.Instance.StopSinkById(source.Id);
+            else ManagerWrapper.Instance.StopSourceById(source.Id);
         }
 
         public void DisableSourceById(int id)
@@ -57,7 +73,7 @@ namespace Server
             {
                 if (source.Id == id)
                 {
-                    ManagerWrapper.Instance.StopSourceById(source.Id);
+                    StopSource(source);
                     return;
                 }
             }
@@ -68,7 +84,7 @@ namespace Server
             {
                 if (source.Id == id)
                 {
-                    if (!ManagerWrapper.Instance.StartSourceById(source.Id)) throw new Exception("unable to start source");
+                    if (!StartSource(source)) throw new Exception("unable to start source");
                     return;
                 }
             }
@@ -98,6 +114,83 @@ namespace Server
             sources.Add(new Source(sourceId, name, SourceType.Camera, cameraHardwareInfo: cameraHardwareInfo));
             DB.Instance.Save();
             return sourceId;
+        }
+
+        // The region a standard split keeps of a parent frame of this size.
+        public static CropRegionDto RegionFor(string layout, int parentWidth, int parentHeight) => layout switch
+        {
+            "left" => new CropRegionDto(0, 0, parentWidth / 2, parentHeight),
+            "right" => new CropRegionDto(parentWidth / 2, 0, parentWidth - parentWidth / 2, parentHeight),
+            "top" => new CropRegionDto(0, 0, parentWidth, parentHeight / 2),
+            "bottom" => new CropRegionDto(0, parentHeight / 2, parentWidth, parentHeight - parentHeight / 2),
+            _ => throw Server.Web.ApiException.BadRequest($"unknown split '{layout}' (left, right, top or bottom)"),
+        };
+
+        // Publishes part of a source's frame as a source of its own. `layout` (left/right/top/bottom) cuts the matching half of the camera's
+        // current frame and keeps cutting it when the camera changes resolution; without one `region` is the fixed rectangle to keep.
+        public int InitializeCropSource(int parentId, string name, string? layout = null, CropRegionDto? region = null, int? id = null)
+        {
+            Source parent = GetSourceById(parentId) ?? throw Server.Web.ApiException.NotFound($"no source with id {parentId}");
+            if (parent.Type == SourceType.SinkOutput) throw Server.Web.ApiException.BadRequest("a detector's output cannot be cropped; crop the camera it reads");
+            if (string.IsNullOrWhiteSpace(name)) throw Server.Web.ApiException.BadRequest("a name is required");
+
+            CropRegionDto kept;
+            if (layout != null)
+            {
+                if (parent.Type != SourceType.Camera) throw Server.Web.ApiException.BadRequest("only a camera can be split in halves; give the region to crop instead");
+                CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(parentId);
+                kept = RegionFor(layout, mode.width, mode.height);
+            }
+            else
+            {
+                kept = region ?? throw Server.Web.ApiException.BadRequest("give a layout or a region to crop");
+            }
+            if (kept.Width <= 0 || kept.Height <= 0 || kept.X < 0 || kept.Y < 0)
+                throw Server.Web.ApiException.BadRequest("the crop must have a positive size and start inside the frame");
+
+            int sourceId = id.HasValue
+                ? ManagerWrapper.Instance.CreateRoiSource(parentId, kept.X, kept.Y, kept.Width, kept.Height, id.Value)
+                : ManagerWrapper.Instance.CreateRoiSource(parentId, kept.X, kept.Y, kept.Width, kept.Height);
+            sources.Add(new Source(sourceId, name, SourceType.Crop) { CropParentId = parentId, CropRegion = kept, CropLayout = layout });
+            DB.Instance.Save();
+            return sourceId;
+        }
+
+        // The two halves of a side-by-side (or top-and-bottom) camera as two crop sources, named after the camera: [first, second] = [left, right]
+        // or [top, bottom]. A stereo pair binds them as its left and right eyes.
+        public int[] SplitSource(int parentId, bool topBottom = false)
+        {
+            Source parent = GetSourceById(parentId) ?? throw Server.Web.ApiException.NotFound($"no source with id {parentId}");
+            string first = topBottom ? "top" : "left", second = topBottom ? "bottom" : "right";
+            int firstId = InitializeCropSource(parentId, $"{parent.Name} {first}", first);
+            try
+            {
+                return new[] { firstId, InitializeCropSource(parentId, $"{parent.Name} {second}", second) };
+            }
+            catch
+            {
+                DeleteSource(firstId);
+                throw;
+            }
+        }
+
+        // A camera changed resolution: its split crops are cut again from the new frame size, so left stays the left half. Custom regions stay as given.
+        public void RefitCrops(int parentId)
+        {
+            foreach (Source crop in sources.Where(s => s.Type == SourceType.Crop && s.CropParentId == parentId && s.CropLayout != null).ToList())
+            {
+                try
+                {
+                    CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(parentId);
+                    CropRegionDto region = RegionFor(crop.CropLayout!, mode.width, mode.height);
+                    if (ManagerWrapper.Instance.SetRoiSourceRect(crop.Id, region.X, region.Y, region.Width, region.Height)) crop.CropRegion = region;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Refitting crop {crop.Id} to its camera failed: {ex.Message}");
+                }
+            }
+            DB.Instance.Save();
         }
 
         public int InitializeVideoFileSource(string filePath, int fps = 30, string name = "default", int? id = null)
@@ -311,6 +404,7 @@ namespace Server
             {
                 source.Mode = mode;
                 DB.Instance.Save();
+                RefitCrops(sourceId);
             }
             SinkManager.Instance.RefreshApriltagCalibrations(sourceId); // the saved calibration is per resolution
             return applied;
@@ -361,6 +455,10 @@ namespace Server
         // deletes a source and unbinds it from any sinks referencing it
         public void DeleteSource(int sourceId)
         {
+            // the crops of a source go with it: nothing would feed them
+            foreach (int cropId in sources.Where(s => s.Type == SourceType.Crop && s.CropParentId == sourceId).Select(s => s.Id).ToList())
+                DeleteSource(cropId);
+
             SinkManager.Instance.DeletePreviewsOf(sourceId);
             ManagerWrapper.Instance.DeleteSource(sourceId);
 
@@ -380,6 +478,8 @@ namespace Server
 
         public bool IsSourceActive(int sourceId)
         {
+            // a crop runs as a native sink of its parent
+            if (GetSourceById(sourceId)?.Type == SourceType.Crop) return ManagerWrapper.Instance.IsSinkActive(sourceId);
             return ManagerWrapper.Instance.IsSourceActive(sourceId);
         }
 

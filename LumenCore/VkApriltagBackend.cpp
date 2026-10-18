@@ -191,8 +191,19 @@ bool VkApriltagBackend::ImportFrameIfPossible(const cv::Mat& gray)
 	return true;
 }
 
-zarray_t* VkApriltagBackend::Detect(const cv::Mat& grayFrame)
+zarray_t* VkApriltagBackend::Detect(const cv::Mat& frame)
 {
+	// The GPU reads the frame as width*height packed bytes. A crop of a larger frame (a half of a side-by-side camera) is a view with the
+	// parent's row stride, so it is repacked first; anything else would have the GPU read pixels from the wrong rows.
+	cv::Mat packed;
+	if (!frame.isContinuous()) {
+		std::shared_ptr<void> owner;
+		packed = FramePool::Instance().Acquire(frame.rows, frame.cols, frame.type(), owner);
+		frame.copyTo(packed);
+		m_PackedFrameOwner = owner;
+	}
+	const cv::Mat& grayFrame = frame.isContinuous() ? frame : packed;
+
 	m_LastFrameImported = ImportFrameIfPossible(grayFrame);
 	m_GpuDetector->Detect(grayFrame.data);
 

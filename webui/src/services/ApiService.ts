@@ -103,6 +103,14 @@ export class ApiService {
     return response.json();
   }
 
+  // Splits a side-by-side (or top-and-bottom) camera into its two halves, as two crop sources named after the camera; resolves to
+  // [left, right] (or [top, bottom]) source ids. The halves follow the camera if its resolution changes.
+  async splitCamera(id: number, layout: 'sideBySide' | 'topBottom'): Promise<number[]> {
+    const response = await fetch(`${this.baseUrl}/cameraSource/${id}/split?layout=${layout}`, { method: 'POST' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    return response.json();
+  }
+
   // Splits one camera source's frame into a fixed crop published as an independent source (used
   // for side-by-side/top-bottom stereo).
   async createRoiSource(id: number, x: number, y: number, width: number, height: number): Promise<number> {

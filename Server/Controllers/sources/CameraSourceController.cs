@@ -175,12 +175,23 @@ namespace Server.Controllers.sources
             SourceManager.Instance.SetCameraTransform(id, transform);
         }
 
-        // POST: publish a fixed crop of this camera's frame as an independent source (call twice on a side-by-side
-        // camera for left/right).
+        // POST: publish a fixed crop of this camera's frame as an independent source that sinks bind to like any camera. It is saved and
+        // restored with the rest of the configuration. For the two halves of a side-by-side camera use cameraSource/{id}/split.
         [HttpPost("cameraSource/{id}/roi")]
-        public Task<int> CreateRoi(int id, [FromQuery] int x, [FromQuery] int y, [FromQuery] int width, [FromQuery] int height)
+        public Task<int> CreateRoi(int id, [FromQuery] int x, [FromQuery] int y, [FromQuery] int width, [FromQuery] int height, [FromQuery] string name = "crop")
         {
-            return Task.FromResult(ManagerWrapper.Instance.CreateRoiSource(id, x, y, width, height));
+            return Task.FromResult(SourceManager.Instance.InitializeCropSource(id, name, region: new CropRegionDto(x, y, width, height)));
+        }
+
+        // POST: split a side-by-side camera (or, with layout=topBottom, a top-and-bottom one) into its two halves as two crop sources, named after the
+        // camera. Returns [left, right] (or [top, bottom]). The halves follow the camera when its resolution changes.
+        [HttpPost("cameraSource/{id}/split")]
+        public Task<int[]> Split(int id, [FromQuery] string layout = "sideBySide")
+        {
+            bool topBottom = string.Equals(layout, "topBottom", StringComparison.OrdinalIgnoreCase);
+            if (!topBottom && !string.Equals(layout, "sideBySide", StringComparison.OrdinalIgnoreCase))
+                throw ApiException.BadRequest("layout must be sideBySide or topBottom");
+            return Task.FromResult(SourceManager.Instance.SplitSource(id, topBottom));
         }
     }
 }

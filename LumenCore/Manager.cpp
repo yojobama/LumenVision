@@ -542,6 +542,11 @@ bool Manager::SetCameraControl(int sourceId, int controlId, int value)
 
 int Manager::CreateRoiSource(int upstreamSourceId, int x, int y, int width, int height)
 {
+    return CreateRoiSource(upstreamSourceId, x, y, width, height, GenerateUUID());
+}
+
+int Manager::CreateRoiSource(int upstreamSourceId, int x, int y, int width, int height, int id)
+{
     m_Logger->EnterLog("CreateRoiSource called with upstreamSourceId=" + std::to_string(upstreamSourceId) +
         " roi=(" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(width) + "," + std::to_string(height) + ")");
 
@@ -549,7 +554,13 @@ int Manager::CreateRoiSource(int upstreamSourceId, int x, int y, int width, int 
         throw std::runtime_error("CreateRoiSource: no source with id=" + std::to_string(upstreamSourceId));
     }
 
-    int id = GenerateUUID();
+    if (width <= 0 || height <= 0 || x < 0 || y < 0) {
+        throw std::runtime_error("CreateRoiSource: the crop must have a positive size and a non-negative origin");
+    }
+    if (m_Sources.find(id) != m_Sources.end() || m_Sinks.find(id) != m_Sinks.end()) {
+        throw std::runtime_error("CreateRoiSource: id=" + std::to_string(id) + " is already in use");
+    }
+
     auto p_RoiSource = std::make_shared<RoiSource>(m_Logger, std::to_string(id), cv::Rect(x, y, width, height));
 
     // RoiSource is both an ISink (consumes the upstream frame) and an ISource (produces the
@@ -561,6 +572,18 @@ int Manager::CreateRoiSource(int upstreamSourceId, int x, int y, int width, int 
 
     m_Logger->EnterLog("RoiSource created with id=" + std::to_string(id));
     return id;
+}
+
+bool Manager::SetRoiSourceRect(int sourceId, int x, int y, int width, int height)
+{
+    auto sourceIt = m_Sources.find(sourceId);
+    auto p_Roi = sourceIt == m_Sources.end() ? nullptr : std::dynamic_pointer_cast<RoiSource>(sourceIt->second);
+    if (!p_Roi) return false;
+    if (width <= 0 || height <= 0 || x < 0 || y < 0) {
+        throw std::runtime_error("SetRoiSourceRect: the crop must have a positive size and a non-negative origin");
+    }
+    p_Roi->SetRoi(cv::Rect(x, y, width, height));
+    return true;
 }
 
 void Manager::SetApriltagConstrainedSeed(int sinkId, double x, double y, double yawRadians, vector<double> robotToCamera)

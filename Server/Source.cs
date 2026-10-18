@@ -13,7 +13,10 @@ namespace Server
         VideoFile,
         // A dual-role sink (ApriltagSink, ObjectDetectionSink) acting as its own frame/json-producing source;
         // natively in Manager's m_Sources but not tracked by SourceManager. See SinkManager.BindSourceToSink.
-        SinkOutput
+        SinkOutput,
+        // Part of another source's frame (one half of a side-by-side stereo camera, say), published as a source of its own: CropParentId and
+        // CropRegion/CropLayout say which. Natively a RoiSource, which is both a sink of the parent and a source for what binds to it.
+        Crop
     }
 
     public class Source
@@ -41,6 +44,12 @@ namespace Server
         // the capture mode (resolution, frame rate, pixel format) last requested for this camera and accepted by the device, reapplied when the
         // source is restored; null = never chosen, so the camera opens in its default mode (often 640x480)
         public CameraModeDto? Mode { get; set; }
+
+        // Crop sources only: the source this one republishes part of, the region it keeps in the parent's pixels, and, for the standard splits,
+        // which half it is ("left", "right", "top", "bottom"; null = a custom region). A split follows its camera when the camera's resolution changes.
+        public int? CropParentId { get; set; }
+        public CropRegionDto? CropRegion { get; set; }
+        public string? CropLayout { get; set; }
 
         // crop/rotate/mirror applied to every frame this camera publishes; null = none
         public FrameTransformDto? Transform { get; set; }

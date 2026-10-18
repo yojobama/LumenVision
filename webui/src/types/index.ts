@@ -322,9 +322,13 @@ export interface WsSource {
   Profiles: PipelineProfile[];
   ActiveProfileIndex: number;
   ActiveDetectionSinkId: number | null;
-  Type: number; // 0 Camera, 1 ImageFile, 2 VideoFile, 3 SinkOutput - see SourceType in Source.cs
+  Type: number; // 0 Camera, 1 ImageFile, 2 VideoFile, 3 SinkOutput, 4 Crop - see SourceType in Source.cs
   Id: number;
   Name: string;
+  // Crop sources: the source this is cut from, the kept region in its pixels, and the standard split it is (left/right/top/bottom; null = custom)
+  CropParentId?: number | null;
+  CropRegion?: { X: number; Y: number; Width: number; Height: number } | null;
+  CropLayout?: string | null;
 }
 
 // mirrors Server/Sink.cs

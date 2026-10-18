@@ -483,6 +483,16 @@ export const Inspector: React.FC<{
           ID: {source?.Id ?? sink?.Id} &middot; {node.data.fps.toFixed(1)} fps &middot; {(node.data.latencyUs / 1000).toFixed(1)} ms latency
         </div>
 
+        {source?.Type === 4 && source.CropRegion && (
+          <div className="text-xs text-gray-600 dark:text-gray-300 space-y-1">
+            <div>
+              {source.CropLayout ? `The ${source.CropLayout} half` : 'A fixed region'} of the frame of source {source.CropParentId}:
+              {' '}{source.CropRegion.Width}x{source.CropRegion.Height} at ({source.CropRegion.X}, {source.CropRegion.Y}).
+            </div>
+            {source.CropLayout && <div className="text-gray-500 dark:text-gray-400">It follows the camera if the camera's resolution changes. Bind detectors or a stereo pair to it as to any camera.</div>}
+          </div>
+        )}
+
         {isCamera && (
           <div className="pt-2 border-t border-gray-200 dark:border-gray-700 space-y-3">
             <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400">Camera Controls</h4>

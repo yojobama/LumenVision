@@ -102,6 +102,7 @@ private:
 	bool m_HostImportAvailable = false;
 	std::unordered_set<const uint8_t*> m_ImportedFrames;
 	std::atomic<bool> m_LastFrameImported{ false };
+	std::shared_ptr<void> m_PackedFrameOwner; // keeps the repacked copy of the last non-contiguous frame alive while the GPU reads it
 
 	// declaration order is destruction order in reverse: the detector, then the lane it submits through, then the shared context
 	std::shared_ptr<apriltag_vulkan::vk::Context> m_Context;

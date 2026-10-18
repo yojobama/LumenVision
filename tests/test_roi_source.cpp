@@ -70,3 +70,27 @@ TEST_CASE("RoiSource splits a side-by-side frame into two independent, zero-copy
 	REQUIRE(leftResult.captureTimeUs == 123456789ULL);
 	REQUIRE(rightResult.captureTimeUs == 123456789ULL);
 }
+
+TEST_CASE("a crop can be moved while it runs, and follows the new rectangle on the next frame", "[roi]") {
+	auto logger = std::make_shared<Logger>("LumenCoreTests-roi.log");
+	const int eyeWidth = 320, height = 240;
+
+	auto upstream = std::make_shared<SyntheticSideBySideSource>(logger, "upstream-moving", eyeWidth, height);
+	RoiSource roi(logger, "moving-roi", cv::Rect(0, 0, eyeWidth, height));
+	REQUIRE(roi.BindSource(upstream));
+	upstream->Toggle(true);
+	static_cast<ISink&>(roi).Toggle(true);
+	std::this_thread::sleep_for(std::chrono::milliseconds(150));
+	REQUIRE(roi.GetLatestResult().frame->size() == cv::Size(eyeWidth, height));
+
+	// the camera "changed resolution": the crop is now the right-hand half of the same frame, half as tall
+	roi.SetRoi(cv::Rect(eyeWidth, 0, eyeWidth, height / 2));
+	REQUIRE(roi.GetRoi() == cv::Rect(eyeWidth, 0, eyeWidth, height / 2));
+	std::this_thread::sleep_for(std::chrono::milliseconds(150));
+
+	upstream->Toggle(false);
+	static_cast<ISink&>(roi).Toggle(false);
+	SourceResult moved = roi.GetLatestResult();
+	REQUIRE(moved.frame->size() == cv::Size(eyeWidth, height / 2));
+	REQUIRE(moved.frame->AsBgr().at<cv::Vec3b>(10, 10) == cv::Vec3b(255, 255, 255)); // now cut from the white half
+}

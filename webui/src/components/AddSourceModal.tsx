@@ -6,13 +6,16 @@ import { ApiService } from '../services/ApiService';
 interface AddSourceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (name: string, type: string, files?: FileList, fps?: number, hardwareInfo?: CameraHardwareInfo) => void;
+  onAdd: (name: string, type: string, files?: FileList, fps?: number, hardwareInfo?: CameraHardwareInfo, split?: { parentId: number; layout: 'sideBySide' | 'topBottom' }) => void;
+  // the cameras already in the graph, to split in two
+  cameraSources?: { Id: number; Name: string }[];
 }
 
 export const AddSourceModal: React.FC<AddSourceModalProps> = ({ 
   isOpen, 
   onClose, 
-  onAdd 
+  onAdd,
+  cameraSources = []
 }) => {
   const [name, setName] = useState('');
   const [type, setType] = useState('camera');
@@ -23,6 +26,8 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [previewFiles, setPreviewFiles] = useState<File[]>([]);
+  const [splitParentId, setSplitParentId] = useState<number | null>(null);
+  const [splitLayout, setSplitLayout] = useState<'sideBySide' | 'topBottom'>('sideBySide');
 
   const api = new ApiService();
 
@@ -47,6 +52,8 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
     setSelectedCamera(null);
     setValidationErrors([]);
     setPreviewFiles([]);
+    setSplitParentId(null);
+    setSplitLayout('sideBySide');
   };
 
   const loadCameras = async () => {
@@ -148,6 +155,12 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (type === 'split') {
+      const parentId = splitParentId ?? cameraSources[0]?.Id;
+      if (parentId != null) onAdd('', 'split', undefined, undefined, undefined, { parentId, layout: splitLayout });
+      onClose();
+      return;
+    }
     if (!name.trim()) return;
     
     if (validationErrors.length > 0) {
@@ -173,6 +186,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
   };
 
   const canSubmit = () => {
+    if (type === 'split') return cameraSources.length > 0;
     if (!name.trim()) return false;
     if (validationErrors.length > 0) return false;
     
@@ -207,6 +221,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
         </div>
         
         <form onSubmit={handleSubmit} className="space-y-4">
+          {type !== 'split' && (
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Source Name
@@ -220,6 +235,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
               required
             />
           </div>
+          )}
           
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -233,8 +249,46 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
               <option value="camera">Camera</option>
               <option value="video">Video Files</option>
               <option value="image">Image Files</option>
+              <option value="split">Split a camera (stereo / two views)</option>
             </select>
           </div>
+
+          {/* Splitting a camera */}
+          {type === 'split' && (
+            <div className="space-y-3">
+              {cameraSources.length === 0 ? (
+                <div className="text-sm text-red-500 dark:text-red-400">Add a camera source first; a split is cut from one.</div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Camera</label>
+                    <select
+                      value={splitParentId ?? cameraSources[0].Id}
+                      onChange={(e) => setSplitParentId(parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {cameraSources.map(camera => <option key={camera.Id} value={camera.Id}>{camera.Name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Layout</label>
+                    <select
+                      value={splitLayout}
+                      onChange={(e) => setSplitLayout(e.target.value as 'sideBySide' | 'topBottom')}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="sideBySide">Side by side - left and right halves</option>
+                      <option value="topBottom">Top and bottom halves</option>
+                    </select>
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Adds two sources named after the camera. Bind detectors to them like any camera, or bind them as the left and right eyes of a stereo depth sink.
+                    They follow the camera if its resolution changes.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* Camera Selection */}
           {type === 'camera' && (

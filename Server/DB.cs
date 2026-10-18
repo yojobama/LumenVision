@@ -76,7 +76,8 @@ namespace Server
                         sources = dbData.Sources ?? new List<Source>();
                     }
 
-                    foreach (var source in sources)
+                    // crops last: each is cut from a source that has to exist (and be in its saved mode) by then
+                    foreach (var source in sources.OrderBy(s => s.Type == SourceType.Crop ? 1 : 0).ToList())
                     {
                         switch (source.Type)
                         {
@@ -88,6 +89,17 @@ namespace Server
                                 break;
                             case SourceType.Camera:
                                 SourceManager.Instance.InitializeCameraSource(source.CameraHardwareInfo, source.Name, source.Id);
+                                break;
+                            case SourceType.Crop:
+                                try
+                                {
+                                    if (source.CropParentId.HasValue)
+                                        SourceManager.Instance.InitializeCropSource(source.CropParentId.Value, source.Name, source.CropLayout, source.CropRegion, source.Id);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Restoring crop source {source.Id} failed: {ex.Message}");
+                                }
                                 break;
                         }
 

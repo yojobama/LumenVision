@@ -23,7 +23,7 @@ export const mapSinkType = (type: any): string => {
   }
 };
 
-// Same for Server/Source.cs's SourceType: Camera=0, ImageFile=1, VideoFile=2, SinkOutput=3.
+// Same for Server/Source.cs's SourceType: Camera=0, ImageFile=1, VideoFile=2, SinkOutput=3, Crop=4.
 const mapSourceType = (type: any): string => {
   if (typeof type === 'string') return type;
   switch (type) {
@@ -31,6 +31,7 @@ const mapSourceType = (type: any): string => {
     case 1: return 'image';
     case 2: return 'video';
     case 3: return 'sinkoutput';
+    case 4: return 'crop';
     default: return 'unknown';
   }
 };

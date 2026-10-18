@@ -28,6 +28,7 @@ namespace Server
             new("Camera", "source", "Camera", "camera", 0, null, false, false, true),
             new("ImageFile", "source", "Image File", "image", 0, null, false, false, true),
             new("VideoFile", "source", "Video File", "video", 0, null, false, false, true),
+            new("Crop", "source", "Crop / Split", "crop", 0, null, false, false, true),
             // SinkOutput is synthetic (a dual-role sink acting as its own source) and never created directly, so it is omitted
         };
 

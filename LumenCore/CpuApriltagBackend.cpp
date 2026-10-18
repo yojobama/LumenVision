@@ -24,10 +24,11 @@ CpuApriltagBackend::~CpuApriltagBackend()
 
 zarray_t* CpuApriltagBackend::Detect(const cv::Mat& grayFrame)
 {
+	// the row stride, not the width: a crop of a larger frame (half of a side-by-side camera) is a view with its parent's stride
 	image_u8_t img = {
 		grayFrame.cols,
 		grayFrame.rows,
-		grayFrame.cols,
+		static_cast<int32_t>(grayFrame.step[0]),
 		grayFrame.data
 	};
 	return apriltag_detector_detect(m_Detector, &img);
