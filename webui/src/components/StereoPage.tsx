@@ -16,7 +16,8 @@ type Props = {
   onRefresh: () => void;
 };
 
-const cameraSources = (sources: Source[]) => sources.filter(s => s.type?.toLowerCase().includes('camera'));
+// a camera, or one half of a split side-by-side camera (a crop source): either can be an eye of a stereo pair
+const cameraSources = (sources: Source[]) => sources.filter(s => s.type?.toLowerCase().includes('camera') || s.type === 'crop');
 
 const CameraSelect: React.FC<{
   sources: Source[]; value: number | ''; onChange: (id: number | '') => void; label: string;
@@ -28,7 +29,7 @@ const CameraSelect: React.FC<{
       value={value}
       onChange={e => onChange(e.target.value ? Number(e.target.value) : '')}
     >
-      <option value="">Select a camera…</option>
+      <option value="">Select a camera or a split half…</option>
       {cameraSources(sources).map(s => <option key={s.id} value={s.id}>{s.name} (#{s.id})</option>)}
     </select>
   </label>
