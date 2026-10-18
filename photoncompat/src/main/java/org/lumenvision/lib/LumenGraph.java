@@ -16,13 +16,15 @@ public final class LumenGraph {
     public static final class Node {
         private final int id;
         private final String name;
+        private final String table;
         private final String kind;
         private final boolean enabled;
         private final int input;
 
-        Node(int id, String name, String kind, boolean enabled, int input) {
+        Node(int id, String name, String table, String kind, boolean enabled, int input) {
             this.id = id;
             this.name = name;
+            this.table = table;
             this.kind = kind;
             this.enabled = enabled;
             this.input = input;
@@ -32,9 +34,14 @@ public final class LumenGraph {
             return id;
         }
 
-        /** The name its topics are published under (a detector made for a camera carries the camera's name). */
+        /** The node's name in the coprocessor UI. */
         public String getName() {
             return name;
+        }
+
+        /** The NT table its topics are published under: the camera's name for a camera's detector, the node's id otherwise. */
+        public String getTable() {
+            return table;
         }
 
         /** The coprocessor's type for the node, e.g. {@code Camera}, {@code Crop}, {@code ApriltagSink}, {@code ObjectDetectionSink}. */
@@ -76,7 +83,7 @@ public final class LumenGraph {
         try {
             if (json != null && !json.isEmpty()) {
                 for (JsonNode n : MAPPER.readTree(json).path("nodes")) {
-                    nodes.add(new Node(n.path("id").asInt(), n.path("name").asText(), n.path("kind").asText(),
+                    nodes.add(new Node(n.path("id").asInt(), n.path("name").asText(), n.path("table").asText(String.valueOf(n.path("id").asInt())), n.path("kind").asText(),
                             n.path("enabled").asBoolean(true), n.path("input").isNull() || n.path("input").isMissingNode() ? -1 : n.path("input").asInt()));
                 }
             }

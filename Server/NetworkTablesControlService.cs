@@ -129,17 +129,18 @@ namespace Server
 
         private static readonly Dictionary<int, (string json, DateTime at)> PublishedGraph = new();
 
-        // every node (sources and sinks) with its table name, kind, running state and the node it reads from
+        // every node (sources and sinks) with its display name, the NT table its topics are under (an alias or the id), kind, running state and input
         internal static string BuildGraphJson(IEnumerable<Source> sources, IEnumerable<Sink> sinks, Dictionary<int, string> aliases, Func<int, bool> isRunning)
         {
             var nodes = new List<object>();
             foreach (Source source in sources)
-                nodes.Add(new { id = source.Id, name = source.Name, kind = source.Type.ToString(), enabled = true, input = (int?)source.CropParentId });
+                nodes.Add(new { id = source.Id, name = source.Name, table = source.Id.ToString(), kind = source.Type.ToString(), enabled = true, input = (int?)source.CropParentId });
             foreach (Sink sink in sinks)
                 nodes.Add(new
                 {
                     id = sink.Id,
                     name = aliases.TryGetValue(sink.Id, out string? alias) ? alias : sink.Name,
+                    table = alias ?? sink.Id.ToString(),
                     kind = sink.Type.ToString(),
                     enabled = isRunning(sink.Id),
                     input = (int?)sink.Source?.Id,

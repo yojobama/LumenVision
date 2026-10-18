@@ -51,7 +51,7 @@ class PhotonCameraBehaviourTest {
             pipelineStatus.set(0);
             enabledStatus.set(true);
             graph.set("{\"nodes\":[{\"id\":" + CAMERA_ID + ",\"name\":\"" + camera + "\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
-                    + "{\"id\":" + (CAMERA_ID + 1) + ",\"name\":\"" + camera + "\",\"kind\":\"ApriltagSink\",\"enabled\":true,\"input\":" + CAMERA_ID + "}]}");
+                    + "{\"id\":" + (CAMERA_ID + 1) + ",\"name\":\"" + camera + "\",\"table\":\"" + camera + "\",\"kind\":\"ApriltagSink\",\"enabled\":true,\"input\":" + CAMERA_ID + "}]}");
         }
 
         void apply() {

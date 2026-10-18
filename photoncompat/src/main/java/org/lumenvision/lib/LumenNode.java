@@ -24,7 +24,7 @@ public class LumenNode implements AutoCloseable {
     /**
      * @param instance the NetworkTableInstance to use (injectable for simulation)
      * @param rootTable must match the coprocessor's NetworkTablesConfig.rootTable (default "lumenvision")
-     * @param name the node's name as published by the coprocessor (see {@link LumenGraph.Node#getName()}), or its id as text
+     * @param name the NT table the node's topics are under (see {@link LumenGraph.Node#getTable()})
      */
     public LumenNode(NetworkTableInstance instance, String rootTable, String name) {
         this.instance = instance;

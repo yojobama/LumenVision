@@ -92,6 +92,9 @@ public class NodeEnabledTests
         JsonElement Node(int id) => nodes.EnumerateArray().Single(n => n.GetProperty("id").GetInt32() == id);
         Assert.Equal(4, nodes.GetArrayLength());
         Assert.Equal("front", Node(10).GetProperty("name").GetString());
+        Assert.Equal("front", Node(10).GetProperty("table").GetString());
+        Assert.Equal("11", Node(11).GetProperty("table").GetString());
+        Assert.Equal("1", Node(1).GetProperty("table").GetString());
         Assert.True(Node(10).GetProperty("enabled").GetBoolean());
         Assert.Equal(1, Node(10).GetProperty("input").GetInt32());
         Assert.False(Node(11).GetProperty("enabled").GetBoolean());

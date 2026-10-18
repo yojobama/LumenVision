@@ -191,7 +191,7 @@ public class PhotonCameraSim implements AutoCloseable {
         protocolPub.set(LumenCoprocessor.PROTOCOL_VERSION);
         // a camera node (id 1) feeding this detector (id 2), which carries the camera's name as the coprocessor names it
         graphPub.set("{\"nodes\":[{\"id\":1,\"name\":\"" + camera.getName() + "\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
-                + "{\"id\":2,\"name\":\"" + camera.getName() + "\",\"kind\":\"ApriltagSink\",\"enabled\":" + enabledConfigSub.get() + ",\"input\":1}]}");
+                + "{\"id\":2,\"name\":\"" + camera.getName() + "\",\"table\":\"" + camera.getName() + "\",\"kind\":\"ApriltagSink\",\"enabled\":" + enabledConfigSub.get() + ",\"input\":1}]}");
         fpsStatusPub.set(fpsConfigSub.get());
         ledStatusPub.set(ledConfigSub.get());
     }
