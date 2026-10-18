@@ -1,10 +1,8 @@
 package org.lumenvision.photoncompat;
 
 import edu.wpi.first.math.geometry.Pose3d;
-import org.lumenvision.lib.LumenEstimatedRobotPose;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 /** A robot pose estimate, as photonlib's EstimatedRobotPose (public final fields). */
 public class EstimatedRobotPose {
@@ -18,11 +16,5 @@ public class EstimatedRobotPose {
         this.timestampSeconds = timestampSeconds;
         this.targetsUsed = targetsUsed;
         this.strategy = strategy;
-    }
-
-    static EstimatedRobotPose from(LumenEstimatedRobotPose pose) {
-        return new EstimatedRobotPose(pose.getEstimatedPose(), pose.getTimestampSeconds(),
-                pose.getTargetsUsed().stream().map(PhotonTrackedTarget::new).collect(Collectors.toList()),
-                PoseStrategy.fromLumen(pose.getStrategy()));
     }
 }

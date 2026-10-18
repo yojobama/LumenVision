@@ -31,7 +31,7 @@ public class LumenTrackedTarget {
     private final List<LumenTargetCorner> detectedCorners;
     private final List<LumenTargetCorner> minAreaRectCorners;
 
-    LumenTrackedTarget(int fiducialId, int objectClassId, float objectConfidence, double yaw, double pitch, double area,
+    public LumenTrackedTarget(int fiducialId, int objectClassId, float objectConfidence, double yaw, double pitch, double area,
             double skew, double poseAmbiguity, Transform3d bestCameraToTarget, Transform3d alternateCameraToTarget,
             float bestReprojError, float altReprojError, double[] corners, double[] minAreaRectCorners) {
         this.fiducialId = fiducialId;

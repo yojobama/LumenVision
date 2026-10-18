@@ -16,8 +16,9 @@ class LumenHardwareTest {
 
         NetworkTableInstance server = NetworkTableInstance.create();
         server.startServer("", "0.0.0.0", 1735, 5810);
-        LumenCamera.setVersionCheckEnabled(false);
-        LumenCamera camera = new LumenCamera(server, "lumenvision", "front");
+        LumenDetector.setVersionCheckEnabled(false);
+        LumenDetector camera = new LumenDetector(server, "lumenvision", "front");
+        LumenCoprocessor coprocessor = new LumenCoprocessor(server, "lumenvision");
         try {
             long deadline = System.currentTimeMillis() + 40_000;
             LumenPipelineResult result = null;
@@ -48,20 +49,18 @@ class LumenHardwareTest {
             assertTrue(Math.abs(nowSeconds - result.getTimestampSeconds()) < 2.0, "the capture time should be recent on this machine's clock");
 
             // control round trips: write a setting, then read it back from the coprocessor's status topic
-            camera.setFPSLimit(7);
-            camera.setDriverMode(false);
+            camera.setFpsLimit(7);
             long until = System.currentTimeMillis() + 10_000;
-            while (System.currentTimeMillis() < until && camera.getFPSLimit() != 7) Thread.sleep(100);
-            System.out.println("HIL: fps limit read back " + camera.getFPSLimit() + ", pipeline " + camera.getPipelineIndex() + ", connected " + camera.isConnected());
-            assertTrue(camera.getFPSLimit() == 7, "the FPS limit should be reported back in status/fpsLimit");
+            while (System.currentTimeMillis() < until && camera.getFpsLimit() != 7) Thread.sleep(100);
+            System.out.println("HIL: fps limit read back " + camera.getFpsLimit() + ", connected " + camera.isConnected());
+            assertTrue(camera.getFpsLimit() == 7, "the FPS limit should be reported back in status/fpsLimit");
 
-            camera.takeInputSnapshot();
-            camera.takeOutputSnapshot();
-            camera.setLED(LumenLedMode.BLINK);
+            camera.takeSnapshot();
+            coprocessor.setLed(LumenLedMode.BLINK);
             Thread.sleep(3000);
-            System.out.println("HIL: led reads back " + camera.getLED());
-            camera.setFPSLimit(0);
-            camera.setLED(LumenLedMode.DEFAULT);
+            System.out.println("HIL: led reads back " + coprocessor.getLed());
+            camera.setFpsLimit(0);
+            coprocessor.setLed(LumenLedMode.DEFAULT);
             Thread.sleep(1000);
         } finally {
             camera.close();

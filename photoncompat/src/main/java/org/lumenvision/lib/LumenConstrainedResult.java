@@ -11,7 +11,7 @@ public class LumenConstrainedResult {
     private final double reprojectionErrorPixels;
     private final int tagCount;
 
-    LumenConstrainedResult(Pose2d robotPose, double reprojectionErrorPixels, int tagCount) {
+    public LumenConstrainedResult(Pose2d robotPose, double reprojectionErrorPixels, int tagCount) {
         this.robotPose = robotPose;
         this.reprojectionErrorPixels = reprojectionErrorPixels;
         this.tagCount = tagCount;

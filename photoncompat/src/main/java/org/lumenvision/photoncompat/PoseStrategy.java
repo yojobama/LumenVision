@@ -1,7 +1,5 @@
 package org.lumenvision.photoncompat;
 
-import org.lumenvision.lib.LumenPoseStrategy;
-
 /** How {@link PhotonPoseEstimator} estimates the robot pose; named as photonlib's PoseStrategy. */
 public enum PoseStrategy {
     LOWEST_AMBIGUITY,
@@ -13,18 +11,6 @@ public enum PoseStrategy {
     /** LumenVision has no roboRIO-side PnP; this runs the coprocessor's multi-tag solve instead. */
     MULTI_TAG_PNP_ON_RIO,
     PNP_DISTANCE_TRIG_SOLVE,
-    CONSTRAINED_SOLVEPNP;
-
-    LumenPoseStrategy toLumen() {
-        switch (this) {
-            case MULTI_TAG_PNP_ON_RIO:
-                return LumenPoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR;
-            default:
-                return LumenPoseStrategy.valueOf(name());
-        }
-    }
-
-    static PoseStrategy fromLumen(LumenPoseStrategy strategy) {
-        return valueOf(strategy.name());
-    }
+    /** The coprocessor's solve constrained to a robot flat on the floor, seeded by a reference pose. */
+    CONSTRAINED_SOLVEPNP
 }

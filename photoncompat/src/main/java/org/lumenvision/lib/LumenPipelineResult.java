@@ -13,12 +13,12 @@ public class LumenPipelineResult {
     private final Optional<LumenMultiTagResult> multiTagResult;
     private final Optional<LumenConstrainedResult> constrainedResult;
 
-    LumenPipelineResult(List<LumenTrackedTarget> targets, double timestampSeconds, long sequenceId, long latencyMicros,
+    public LumenPipelineResult(List<LumenTrackedTarget> targets, double timestampSeconds, long sequenceId, long latencyMicros,
             Optional<LumenMultiTagResult> multiTagResult) {
         this(targets, timestampSeconds, sequenceId, latencyMicros, multiTagResult, Optional.empty());
     }
 
-    LumenPipelineResult(List<LumenTrackedTarget> targets, double timestampSeconds, long sequenceId, long latencyMicros,
+    public LumenPipelineResult(List<LumenTrackedTarget> targets, double timestampSeconds, long sequenceId, long latencyMicros,
             Optional<LumenMultiTagResult> multiTagResult, Optional<LumenConstrainedResult> constrainedResult) {
         this.targets = Collections.unmodifiableList(targets);
         this.timestampSeconds = timestampSeconds;

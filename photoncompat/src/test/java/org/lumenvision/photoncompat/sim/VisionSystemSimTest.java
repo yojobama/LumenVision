@@ -20,14 +20,15 @@ import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.lumenvision.lib.LumenCamera;
-import org.lumenvision.lib.LumenEstimatedRobotPose;
+import org.lumenvision.lib.LumenDetector;
 import org.lumenvision.lib.LumenPipelineResult;
-import org.lumenvision.lib.LumenPoseEstimator;
-import org.lumenvision.lib.LumenPoseStrategy;
 import org.lumenvision.lib.LumenTrackedTarget;
+import org.lumenvision.photoncompat.EstimatedRobotPose;
+import org.lumenvision.photoncompat.PhotonCamera;
+import org.lumenvision.photoncompat.PhotonPoseEstimator;
+import org.lumenvision.photoncompat.PoseStrategy;
 
-// The simulated camera and a LumenCamera share one NT instance, as they do in a robot simulation, so what the robot code reads is
+// The simulated camera and a PhotonCamera share one NT instance, as they do in a robot simulation, so what the robot code reads is
 // exactly what the simulation published.
 class VisionSystemSimTest {
     private static final String ROOT = "lumenvision";
@@ -39,7 +40,8 @@ class VisionSystemSimTest {
             List.of(new AprilTag(1, TAG1), new AprilTag(2, TAG2)), 16.0, 8.0);
 
     private NetworkTableInstance nt;
-    private LumenCamera camera;
+    private PhotonCamera camera;
+    private LumenDetector detector;
     private PhotonCameraSim cameraSim;
     private VisionSystemSim system;
 
@@ -47,8 +49,9 @@ class VisionSystemSimTest {
     void start() {
         nt = NetworkTableInstance.create();
         nt.startServer("", "127.0.0.1", 18819, 18820);
-        LumenCamera.setVersionCheckEnabled(false);
-        camera = new LumenCamera(nt, ROOT, "front");
+        LumenDetector.setVersionCheckEnabled(false);
+        camera = new PhotonCamera(nt, ROOT, "front");
+        detector = camera.getLumenDetector();
         cameraSim = new PhotonCameraSim(camera, new SimCameraProperties().setFPS(1000));
         system = new VisionSystemSim("test");
         system.addCamera(cameraSim, ROBOT_TO_CAMERA);
@@ -78,15 +81,15 @@ class VisionSystemSimTest {
 
     // runs one simulation step and returns the result it produced
     private LumenPipelineResult step(Pose2d robot) {
-        long before = camera.getLatestResult().getSequenceId();
+        long before = detector.getLatestResult().getSequenceId();
         try {
             Thread.sleep(3); // longer than the 1 ms frame interval
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
         system.update(robot);
-        assertTrue(waitFor(() -> camera.getLatestResult().getSequenceId() > before));
-        return camera.getLatestResult();
+        assertTrue(waitFor(() -> detector.getLatestResult().getSequenceId() > before));
+        return detector.getLatestResult();
     }
 
     @Test
@@ -135,11 +138,11 @@ class VisionSystemSimTest {
         assertTrue(result.getMultiTagResult().isPresent());
         assertEquals(List.of(1, 2), result.getMultiTagResult().get().getFiducialIds().stream().sorted().toList());
 
-        LumenPoseEstimator estimator = new LumenPoseEstimator(LAYOUT, LumenPoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, camera, ROBOT_TO_CAMERA);
-        LumenEstimatedRobotPose estimate = estimator.update().orElseThrow();
-        assertEquals(LumenPoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, estimate.getStrategy());
-        assertEquals(robot.getX(), estimate.getEstimatedPose().getX(), 1e-6);
-        assertEquals(robot.getY(), estimate.getEstimatedPose().getY(), 1e-6);
+        PhotonPoseEstimator estimator = new PhotonPoseEstimator(LAYOUT, PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, camera, ROBOT_TO_CAMERA);
+        EstimatedRobotPose estimate = estimator.update().orElseThrow();
+        assertEquals(PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, estimate.strategy);
+        assertEquals(robot.getX(), estimate.estimatedPose.getX(), 1e-6);
+        assertEquals(robot.getY(), estimate.estimatedPose.getY(), 1e-6);
     }
 
     @Test
@@ -153,12 +156,12 @@ class VisionSystemSimTest {
             Pose2d placed = new Pose2d(front.getX(), front.getY(), front.toPose2d().getRotation());
             step(placed);
 
-            LumenPoseEstimator estimator = new LumenPoseEstimator(LAYOUT, LumenPoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, camera, ROBOT_TO_CAMERA);
-            Optional<LumenEstimatedRobotPose> estimate = estimator.update();
+            PhotonPoseEstimator estimator = new PhotonPoseEstimator(LAYOUT, PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, camera, ROBOT_TO_CAMERA);
+            Optional<EstimatedRobotPose> estimate = estimator.update();
             assertTrue(estimate.isPresent());
-            assertEquals(placed.getX(), estimate.get().getEstimatedPose().getX(), 1e-6);
-            assertEquals(placed.getY(), estimate.get().getEstimatedPose().getY(), 1e-6);
-            assertEquals(0.0, estimate.get().getEstimatedPose().getZ(), 1e-6);
+            assertEquals(placed.getX(), estimate.get().estimatedPose.getX(), 1e-6);
+            assertEquals(placed.getY(), estimate.get().estimatedPose.getY(), 1e-6);
+            assertEquals(0.0, estimate.get().estimatedPose.getZ(), 1e-6);
         } finally {
             LAYOUT.setOrigin(AprilTagFieldLayout.OriginPosition.kBlueAllianceWallRightSide);
         }
@@ -168,20 +171,20 @@ class VisionSystemSimTest {
     void theConstrainedSolveRunsOnceTheEstimatorPublishesItsSeed() {
         system.addAprilTags(LAYOUT);
         Pose2d robot = new Pose2d(3.0, 1.2, Rotation2d.fromDegrees(10));
-        LumenPoseEstimator estimator = new LumenPoseEstimator(LAYOUT, LumenPoseStrategy.CONSTRAINED_SOLVEPNP, camera, ROBOT_TO_CAMERA);
+        PhotonPoseEstimator estimator = new PhotonPoseEstimator(LAYOUT, PoseStrategy.CONSTRAINED_SOLVEPNP, camera, ROBOT_TO_CAMERA);
         estimator.setReferencePose(new Pose2d(2.5, 1.0, new Rotation2d()));
 
-        LumenEstimatedRobotPose[] constrained = new LumenEstimatedRobotPose[1];
+        EstimatedRobotPose[] constrained = new EstimatedRobotPose[1];
         assertTrue(waitFor(() -> {
             estimator.update(); // publishes the seed and mount each call
             step(robot);
-            Optional<LumenEstimatedRobotPose> estimate = estimator.estimateConstrainedSolvePnpPose(camera.getLatestResult());
+            Optional<EstimatedRobotPose> estimate = estimator.update(camera.getLatestResult()).filter(e -> e.strategy == PoseStrategy.CONSTRAINED_SOLVEPNP);
             estimate.ifPresent(e -> constrained[0] = e);
             return estimate.isPresent();
         }));
-        assertEquals(robot.getX(), constrained[0].getEstimatedPose().getX(), 1e-6);
-        assertEquals(robot.getY(), constrained[0].getEstimatedPose().getY(), 1e-6);
-        assertEquals(robot.getRotation().getRadians(), constrained[0].getEstimatedPose().getRotation().getZ(), 1e-6);
+        assertEquals(robot.getX(), constrained[0].estimatedPose.getX(), 1e-6);
+        assertEquals(robot.getY(), constrained[0].estimatedPose.getY(), 1e-6);
+        assertEquals(robot.getRotation().getRadians(), constrained[0].estimatedPose.getRotation().getZ(), 1e-6);
     }
 
     @Test
@@ -201,12 +204,12 @@ class VisionSystemSimTest {
     void resultsAreStampedWithTheCaptureTimeAndCarryTheLatency() {
         PhotonCameraSim laggy = new PhotonCameraSim(camera, new SimCameraProperties().setAvgLatencyMs(80));
         try {
-            long before = camera.getLatestResult().getSequenceId();
+            long before = detector.getLatestResult().getSequenceId();
             long now = NetworkTablesJNI.now();
             assertTrue(laggy.update(now, new Pose3d(), List.of()));
-            assertTrue(waitFor(() -> camera.getLatestResult().getSequenceId() > before));
+            assertTrue(waitFor(() -> detector.getLatestResult().getSequenceId() > before));
 
-            LumenPipelineResult result = camera.getLatestResult();
+            LumenPipelineResult result = detector.getLatestResult();
             assertEquals(80.0, result.getLatencyMillis(), 1e-6);
             assertEquals((now - 80_000) / 1e6, result.getTimestampSeconds(), 1e-3);
         } finally {
@@ -219,11 +222,11 @@ class VisionSystemSimTest {
         PhotonCameraSim noisy = new PhotonCameraSim(camera, new SimCameraProperties().setCalibError(2.0, 0.0));
         noisy.setRandomSeed(1);
         try {
-            long before = camera.getLatestResult().getSequenceId();
+            long before = detector.getLatestResult().getSequenceId();
             assertTrue(noisy.update(NetworkTablesJNI.now(), new Pose3d(3.0, 1.0, 0.8, new Rotation3d()), List.of(new VisionTargetSim(TAG1, TargetModel.kAprilTag36h11, 1))));
-            assertTrue(waitFor(() -> camera.getLatestResult().getSequenceId() > before));
+            assertTrue(waitFor(() -> detector.getLatestResult().getSequenceId() > before));
 
-            LumenTrackedTarget target = camera.getLatestResult().getBestTarget().orElseThrow();
+            LumenTrackedTarget target = detector.getLatestResult().getBestTarget().orElseThrow();
             assertEquals(3.0, target.getBestCameraToTarget().getX(), 1e-4);
         } finally {
             noisy.close();

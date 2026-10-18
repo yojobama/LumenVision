@@ -9,6 +9,7 @@ import edu.wpi.first.networktables.BooleanSubscriber;
 import edu.wpi.first.networktables.IntegerPublisher;
 import edu.wpi.first.networktables.IntegerSubscriber;
 import edu.wpi.first.networktables.NetworkTableInstance;
+import edu.wpi.first.networktables.StringPublisher;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +21,7 @@ class PhotonCameraBehaviourTest {
     private static final int NT3_PORT = 18829;
     private static final int NT4_PORT = 18830;
     private static final String ROOT = "lumenvision";
+    private static final int CAMERA_ID = 41;
 
     private NetworkTableInstance server;
     private NetworkTableInstance coprocessor;
@@ -27,40 +29,45 @@ class PhotonCameraBehaviourTest {
     private PhotonCamera camera;
     private FakeCoprocessor fake;
 
-    // applies the camera's pipeline, driver-mode and snapshot requests and publishes them back as status
+    // applies the camera's pipeline and enabled requests and reports them back, and publishes the graph a real coprocessor would
     private static final class FakeCoprocessor implements AutoCloseable {
         final IntegerSubscriber pipelineRequest;
-        final BooleanSubscriber driverRequest;
-        final IntegerSubscriber inputSnapshots;
-        final IntegerSubscriber outputSnapshots;
+        final BooleanSubscriber enabledRequest;
+        final IntegerSubscriber detectorSnapshots;
+        final IntegerSubscriber cameraSnapshots;
         final IntegerPublisher pipelineStatus;
-        final BooleanPublisher driverStatus;
+        final BooleanPublisher enabledStatus;
+        final StringPublisher graph;
 
         FakeCoprocessor(NetworkTableInstance nt, String camera) {
             String base = "/" + ROOT + "/" + camera;
             pipelineRequest = nt.getIntegerTopic(base + "/config/pipelineIndex").subscribe(-1);
-            driverRequest = nt.getBooleanTopic(base + "/config/driverMode").subscribe(false);
-            inputSnapshots = nt.getIntegerTopic(base + "/config/inputSnapshot").subscribe(0);
-            outputSnapshots = nt.getIntegerTopic(base + "/config/outputSnapshot").subscribe(0);
+            enabledRequest = nt.getBooleanTopic(base + "/config/enabled").subscribe(true);
+            detectorSnapshots = nt.getIntegerTopic(base + "/config/snapshot").subscribe(0);
+            cameraSnapshots = nt.getIntegerTopic("/" + ROOT + "/" + CAMERA_ID + "/config/snapshot").subscribe(0);
             pipelineStatus = nt.getIntegerTopic(base + "/status/pipelineIndex").publish();
-            driverStatus = nt.getBooleanTopic(base + "/status/driverMode").publish();
+            enabledStatus = nt.getBooleanTopic(base + "/status/enabled").publish();
+            graph = nt.getStringTopic("/" + ROOT + "/.graph").publish();
             pipelineStatus.set(0);
-            driverStatus.set(false);
+            enabledStatus.set(true);
+            graph.set("{\"nodes\":[{\"id\":" + CAMERA_ID + ",\"name\":\"" + camera + "\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
+                    + "{\"id\":" + (CAMERA_ID + 1) + ",\"name\":\"" + camera + "\",\"kind\":\"ApriltagSink\",\"enabled\":true,\"input\":" + CAMERA_ID + "}]}");
         }
 
         void apply() {
             if (pipelineRequest.get() >= 0) pipelineStatus.set(pipelineRequest.get());
-            driverStatus.set(driverRequest.get());
+            enabledStatus.set(enabledRequest.get());
         }
 
         @Override
         public void close() {
             pipelineRequest.close();
-            driverRequest.close();
-            inputSnapshots.close();
-            outputSnapshots.close();
+            enabledRequest.close();
+            detectorSnapshots.close();
+            cameraSnapshots.close();
             pipelineStatus.close();
-            driverStatus.close();
+            enabledStatus.close();
+            graph.close();
         }
     }
 
@@ -106,6 +113,10 @@ class PhotonCameraBehaviourTest {
         return condition.getAsBoolean();
     }
 
+    private boolean coprocessorGraphEmpty() {
+        return new org.lumenvision.lib.LumenCoprocessor(robot, ROOT).getGraph().getNodes().isEmpty();
+    }
+
     @Test
     void switchingThePipelineIsReadBackOnceTheCoprocessorAppliesIt() {
         assertTrue(waitFor(() -> camera.getPipelineIndex() == 0));
@@ -119,22 +130,23 @@ class PhotonCameraBehaviourTest {
     void driverModeTurnsOnAndOff() {
         assertFalse(camera.getDriverMode());
         camera.setDriverMode(true);
-        assertTrue(waitFor(() -> fake.driverRequest.get()));
+        assertTrue(waitFor(() -> !fake.enabledRequest.get()));
         fake.apply();
         assertTrue(waitFor(() -> camera.getDriverMode()));
 
         camera.setDriverMode(false);
-        assertTrue(waitFor(() -> !fake.driverRequest.get()));
+        assertTrue(waitFor(() -> fake.enabledRequest.get()));
         fake.apply();
         assertTrue(waitFor(() -> !camera.getDriverMode()));
     }
 
     @Test
-    void eachSnapshotRequestIsSeenOnce() {
+    void inputSnapshotsGoToTheCameraAndOutputSnapshotsToTheDetector() {
+        assertTrue(waitFor(() -> !coprocessorGraphEmpty()));
         camera.takeInputSnapshot();
         camera.takeOutputSnapshot();
         camera.takeOutputSnapshot();
-        assertTrue(waitFor(() -> fake.inputSnapshots.get() == 1 && fake.outputSnapshots.get() == 2));
-        assertEquals(1, fake.inputSnapshots.get());
+        assertTrue(waitFor(() -> fake.cameraSnapshots.get() == 1 && fake.detectorSnapshots.get() == 2));
+        assertEquals(1, fake.cameraSnapshots.get());
     }
 }

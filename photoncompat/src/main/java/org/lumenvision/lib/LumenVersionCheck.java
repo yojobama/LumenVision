@@ -13,6 +13,9 @@ import java.util.Properties;
 final class LumenVersionCheck {
     private static final String JAR_VERSION = loadJarVersion();
 
+    /** The topic layout this library speaks; the coprocessor publishes its own as {@code .protocol}. */
+    static final int PROTOCOL = LumenCoprocessor.PROTOCOL_VERSION;
+
     private LumenVersionCheck() {}
 
     static String jarVersion() {

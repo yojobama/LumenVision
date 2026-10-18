@@ -22,6 +22,7 @@ import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.RawPublisher;
+import edu.wpi.first.networktables.StringPublisher;
 import edu.wpi.first.networktables.BooleanSubscriber;
 import edu.wpi.first.networktables.DoubleArrayPublisher;
 import edu.wpi.first.networktables.DoubleArraySubscriber;
@@ -36,8 +37,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-// A NetworkTables server, a simulated coprocessor client and the robot-side LumenCamera, all in this JVM.
-class LumenCameraTest {
+// A NetworkTables server, a simulated coprocessor client and the robot-side LumenDetector, all in this JVM.
+class LumenDetectorTest {
     private static final int NT3_PORT = 18809;
     private static final int NT4_PORT = 18810;
     private static final String ROOT = "lumenvision";
@@ -45,7 +46,8 @@ class LumenCameraTest {
     private NetworkTableInstance server;
     private NetworkTableInstance coprocessor;
     private NetworkTableInstance robot;
-    private LumenCamera camera;
+    private LumenDetector camera;
+    private LumenCoprocessor lumenCoprocessor;
 
     @BeforeEach
     void start() {
@@ -57,8 +59,9 @@ class LumenCameraTest {
         robot = NetworkTableInstance.create();
         robot.setServer("127.0.0.1", NT4_PORT);
         robot.startClient4("robot");
-        LumenCamera.setVersionCheckEnabled(false);
-        camera = new LumenCamera(robot, ROOT, "front");
+        LumenDetector.setVersionCheckEnabled(false);
+        camera = new LumenDetector(robot, ROOT, "front");
+        lumenCoprocessor = new LumenCoprocessor(robot, ROOT);
         // timestamps are only meaningful across instances once each has synchronised its clock with the server
         assertTrue(waitFor(() -> robot.isConnected() && coprocessor.isConnected()
                 && robot.getServerTimeOffset().isPresent() && coprocessor.getServerTimeOffset().isPresent()));
@@ -173,8 +176,8 @@ class LumenCameraTest {
 
     @Test
     void cameraNamesMapToSanitisedTables() throws IOException {
-        assertEquals("Front_Cam__1", LumenCamera.tableName("Front Cam #1"));
-        try (LumenCamera named = new LumenCamera(robot, ROOT, "Front Cam"); RawPublisher pub = resultPublisher("Front_Cam")) {
+        assertEquals("Front_Cam__1", LumenNode.tableName("Front Cam #1"));
+        try (LumenDetector named = new LumenDetector(robot, ROOT, "Front Cam"); RawPublisher pub = resultPublisher("Front_Cam")) {
             pub.set(golden(), NetworkTablesJNI.now());
 
             assertTrue(waitFor(() -> named.getLatestResult().getSequenceId() == 42));
@@ -182,28 +185,22 @@ class LumenCameraTest {
     }
 
     @Test
-    void controlsAreWrittenToTheCameraAndSnapshotsAreCounted() {
-        IntegerSubscriber pipeline = coprocessor.getIntegerTopic("/" + ROOT + "/front/config/pipelineIndex").subscribe(-1);
-        BooleanSubscriber driver = coprocessor.getBooleanTopic("/" + ROOT + "/front/config/driverMode").subscribe(false);
+    void enabledSnapshotsAndFpsLimitAreWrittenToTheNode() {
+        BooleanSubscriber enabled = coprocessor.getBooleanTopic("/" + ROOT + "/front/config/enabled").subscribe(true);
+        IntegerSubscriber snapshot = coprocessor.getIntegerTopic("/" + ROOT + "/front/config/snapshot").subscribe(0);
         IntegerSubscriber fps = coprocessor.getIntegerTopic("/" + ROOT + "/front/config/fpsLimit").subscribe(-99);
-        IntegerSubscriber input = coprocessor.getIntegerTopic("/" + ROOT + "/front/config/inputSnapshot").subscribe(0);
-        IntegerSubscriber output = coprocessor.getIntegerTopic("/" + ROOT + "/front/config/outputSnapshot").subscribe(0);
         IntegerSubscriber led = coprocessor.getIntegerTopic("/" + ROOT + "/config/ledMode").subscribe(-9);
 
-        camera.setPipelineIndex(3);
-        camera.setDriverMode(true);
-        camera.setFPSLimit(20);
-        camera.takeInputSnapshot();
-        camera.takeOutputSnapshot();
-        camera.takeOutputSnapshot();
-        camera.setLED(LumenLedMode.BLINK);
+        camera.setEnabled(false);
+        camera.takeSnapshot();
+        camera.takeSnapshot();
+        camera.setFpsLimit(20);
+        lumenCoprocessor.setLed(LumenLedMode.BLINK);
 
-        assertTrue(waitFor(() -> pipeline.get() == 3 && driver.get() && fps.get() == 20 && input.get() == 1 && output.get() == 2 && led.get() == 2));
-        pipeline.close();
-        driver.close();
+        assertTrue(waitFor(() -> !enabled.get() && snapshot.get() == 2 && fps.get() == 20 && led.get() == 2));
+        enabled.close();
+        snapshot.close();
         fps.close();
-        input.close();
-        output.close();
         led.close();
     }
 
@@ -223,21 +220,49 @@ class LumenCameraTest {
     }
 
     @Test
-    void settingsAreReadBackFromTheCoprocessorsStatus() {
-        try (IntegerPublisher pipeline = coprocessor.getIntegerTopic("/" + ROOT + "/front/status/pipelineIndex").publish();
-                BooleanPublisher driver = coprocessor.getBooleanTopic("/" + ROOT + "/front/status/driverMode").publish();
+    void stateIsReadBackFromTheCoprocessorsStatus() {
+        try (BooleanPublisher enabled = coprocessor.getBooleanTopic("/" + ROOT + "/front/status/enabled").publish();
                 IntegerPublisher fps = coprocessor.getIntegerTopic("/" + ROOT + "/front/status/fpsLimit").publish();
                 IntegerPublisher led = coprocessor.getIntegerTopic("/" + ROOT + "/status/ledMode").publish()) {
-            assertEquals(-1, camera.getPipelineIndex());
-            assertFalse(camera.getDriverMode());
+            assertTrue(camera.isEnabled());
+            assertEquals(-1, camera.getFpsLimit());
 
-            pipeline.set(2);
-            driver.set(true);
+            enabled.set(false);
             fps.set(15);
             led.set(1);
 
-            assertTrue(waitFor(() -> camera.getPipelineIndex() == 2 && camera.getDriverMode() && camera.getFPSLimit() == 15
-                    && camera.getLED() == LumenLedMode.ON));
+            assertTrue(waitFor(() -> !camera.isEnabled() && camera.getFpsLimit() == 15 && lumenCoprocessor.getLed() == LumenLedMode.ON));
+        }
+    }
+
+    @Test
+    void theGraphIsReadFromTheCoprocessorAndAnOldProtocolIsRefused() throws IOException {
+        String graph = "{\"nodes\":[{\"id\":1,\"name\":\"front\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
+                + "{\"id\":2,\"name\":\"front\",\"kind\":\"ApriltagSink\",\"enabled\":false,\"input\":1}]}";
+        try (StringPublisher graphPub = coprocessor.getStringTopic("/" + ROOT + "/.graph").publish();
+                StringPublisher versionPub = coprocessor.getStringTopic("/" + ROOT + "/.version").publish();
+                IntegerPublisher protocolPub = coprocessor.getIntegerTopic("/" + ROOT + "/.protocol").publish();
+                RawPublisher pub = resultPublisher("front")) {
+            graphPub.set(graph);
+            assertTrue(waitFor(() -> !lumenCoprocessor.getGraph().getNodes().isEmpty()));
+            LumenGraph parsed = lumenCoprocessor.getGraph();
+            assertEquals(1, parsed.findCamera("front").orElseThrow().getId());
+            assertEquals(List.of(2), parsed.detectorsOf(1).stream().map(LumenGraph.Node::getId).toList());
+            assertFalse(parsed.findById(2).orElseThrow().isEnabled());
+
+            // a coprocessor with another protocol version: its results are ignored
+            LumenDetector.setVersionCheckEnabled(true);
+            try (LumenDetector checked = new LumenDetector(robot, ROOT, "front")) {
+                versionPub.set("9.9.9");
+                protocolPub.set(LumenCoprocessor.PROTOCOL_VERSION + 1);
+                pub.set(golden(), NetworkTablesJNI.now());
+                assertTrue(waitFor(() -> lumenCoprocessor.getProtocol() == LumenCoprocessor.PROTOCOL_VERSION + 1));
+                assertTrue(waitFor(() -> !robot.getEntry("/" + ROOT + "/.version").getString("").isEmpty()));
+                assertEquals(0, checked.getLatestResult().getSequenceId());
+                assertTrue(checked.getAllUnreadResults().isEmpty());
+            } finally {
+                LumenDetector.setVersionCheckEnabled(false);
+            }
         }
     }
 

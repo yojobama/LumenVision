@@ -18,7 +18,8 @@ import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.RawPublisher;
 import edu.wpi.first.networktables.StringPublisher;
-import org.lumenvision.lib.LumenCamera;
+import org.lumenvision.lib.LumenCoprocessor;
+import org.lumenvision.lib.LumenDetector;
 import org.lumenvision.photoncompat.PhotonCamera;
 
 import java.util.ArrayList;
@@ -28,7 +29,7 @@ import java.util.Random;
 
 /**
  * A simulated LumenVision camera: given its pose in the field and the targets around it, it projects them through a pinhole model and
- * publishes the same NetworkTables topics the coprocessor would, so {@link LumenCamera} / {@code PhotonCamera} and the pose estimators
+ * publishes the same NetworkTables topics the coprocessor would, so {@link LumenDetector} / {@code PhotonCamera} and the pose estimators
  * read it unchanged. Usually driven by a {@link VisionSystemSim}; {@link #update(long, Pose3d, Collection)} can be called directly.
  *
  * <p>Targets are detected when they face the camera and all their corners are inside the image with enough pixel area. Poses are
@@ -36,7 +37,7 @@ import java.util.Random;
  * Multi-tag and constrained results are published when their inputs are there, exactly as the coprocessor does.
  */
 public class PhotonCameraSim implements AutoCloseable {
-    private final LumenCamera camera;
+    private final LumenDetector camera;
     private final SimCameraProperties properties;
     private final Random random = new Random();
 
@@ -46,11 +47,13 @@ public class PhotonCameraSim implements AutoCloseable {
     private final DoublePublisher heartbeatPub;
     private final StringPublisher versionPub;
     private final IntegerPublisher pipelineStatusPub;
-    private final BooleanPublisher driverStatusPub;
+    private final BooleanPublisher enabledStatusPub;
+    private final StringPublisher graphPub;
+    private final IntegerPublisher protocolPub;
     private final IntegerPublisher fpsStatusPub;
     private final IntegerPublisher ledStatusPub;
     private final IntegerSubscriber pipelineConfigSub;
-    private final BooleanSubscriber driverConfigSub;
+    private final BooleanSubscriber enabledConfigSub;
     private final IntegerSubscriber fpsConfigSub;
     private final IntegerSubscriber ledConfigSub;
     private final DoubleArraySubscriber seedSub;
@@ -64,24 +67,26 @@ public class PhotonCameraSim implements AutoCloseable {
     private long nextFrameMicros = 0;
     private long lastPublishedMicros = -1;
 
-    public PhotonCameraSim(LumenCamera camera, SimCameraProperties properties) {
+    public PhotonCameraSim(LumenDetector camera, SimCameraProperties properties) {
         this.camera = camera;
         this.properties = properties.copy();
 
         NetworkTableInstance instance = camera.getNetworkTableInstance();
         String root = "/" + camera.getRootTable() + "/";
-        String base = root + LumenCamera.tableName(camera.getName()) + "/";
+        String base = root + LumenDetector.tableName(camera.getName()) + "/";
         resultPub = instance.getRawTopic(base + "result").publish("raw", PubSubOption.sendAll(true), PubSubOption.keepDuplicates(true));
         intrinsicsPub = instance.getDoubleArrayTopic(base + "cameraIntrinsics").publish();
         distortionPub = instance.getDoubleArrayTopic(base + "cameraDistortion").publish();
         heartbeatPub = instance.getDoubleTopic(root + "heartbeat").publish();
         versionPub = instance.getStringTopic(root + ".version").publish();
         pipelineStatusPub = instance.getIntegerTopic(base + "status/pipelineIndex").publish();
-        driverStatusPub = instance.getBooleanTopic(base + "status/driverMode").publish();
+        enabledStatusPub = instance.getBooleanTopic(base + "status/enabled").publish();
+        graphPub = instance.getStringTopic(root + ".graph").publish();
+        protocolPub = instance.getIntegerTopic(root + ".protocol").publish();
         fpsStatusPub = instance.getIntegerTopic(base + "status/fpsLimit").publish();
         ledStatusPub = instance.getIntegerTopic(root + "status/ledMode").publish();
         pipelineConfigSub = instance.getIntegerTopic(base + "config/pipelineIndex").subscribe(-1);
-        driverConfigSub = instance.getBooleanTopic(base + "config/driverMode").subscribe(false);
+        enabledConfigSub = instance.getBooleanTopic(base + "config/enabled").subscribe(true);
         fpsConfigSub = instance.getIntegerTopic(base + "config/fpsLimit").subscribe(-1);
         ledConfigSub = instance.getIntegerTopic(root + "config/ledMode").subscribe(-1);
         seedSub = instance.getDoubleArrayTopic(base + "config/constrainedSeed").subscribe(new double[0]);
@@ -89,10 +94,10 @@ public class PhotonCameraSim implements AutoCloseable {
     }
 
     public PhotonCameraSim(PhotonCamera camera, SimCameraProperties properties) {
-        this(camera.getLumenCamera(), properties);
+        this(camera.getLumenDetector(), properties);
     }
 
-    public LumenCamera getCamera() {
+    public LumenDetector getCamera() {
         return camera;
     }
 
@@ -143,8 +148,9 @@ public class PhotonCameraSim implements AutoCloseable {
         if (fpsLimit > 0) interval = Math.max(interval, 1000.0 / fpsLimit);
         nextFrameMicros = nowMicros + Math.round(interval * 1000.0);
 
-        boolean driverMode = driverConfigSub.get();
-        List<SimResultEncoder.Target> detected = driverMode ? new ArrayList<>() : detect(cameraPoseInField, targets);
+        // a stopped detector publishes nothing
+        if (!enabledConfigSub.get()) return false;
+        List<SimResultEncoder.Target> detected = detect(cameraPoseInField, targets);
 
         long latencyMicros = Math.round(Math.max(0.0, properties.getAvgLatencyMs() + random.nextGaussian() * properties.getLatencyStdDevMs()) * 1000.0);
         long captureMicros = Math.max(1, nowMicros - latencyMicros);
@@ -177,11 +183,15 @@ public class PhotonCameraSim implements AutoCloseable {
 
     private void publishStatus() {
         heartbeatPub.set(heartbeat++);
-        versionPub.set(LumenCamera.getLibraryVersion());
+        versionPub.set(LumenDetector.getLibraryVersion());
         intrinsicsPub.set(properties.getIntrinsics());
         distortionPub.set(properties.getDistCoeffs());
         pipelineStatusPub.set(Math.max(0, pipelineConfigSub.get()));
-        driverStatusPub.set(driverConfigSub.get());
+        enabledStatusPub.set(enabledConfigSub.get());
+        protocolPub.set(LumenCoprocessor.PROTOCOL_VERSION);
+        // a camera node (id 1) feeding this detector (id 2), which carries the camera's name as the coprocessor names it
+        graphPub.set("{\"nodes\":[{\"id\":1,\"name\":\"" + camera.getName() + "\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
+                + "{\"id\":2,\"name\":\"" + camera.getName() + "\",\"kind\":\"ApriltagSink\",\"enabled\":" + enabledConfigSub.get() + ",\"input\":1}]}");
         fpsStatusPub.set(fpsConfigSub.get());
         ledStatusPub.set(ledConfigSub.get());
     }
@@ -325,8 +335,8 @@ public class PhotonCameraSim implements AutoCloseable {
     @Override
     public void close() {
         for (AutoCloseable closeable : new AutoCloseable[] {
-                resultPub, intrinsicsPub, distortionPub, heartbeatPub, versionPub, pipelineStatusPub, driverStatusPub, fpsStatusPub,
-                ledStatusPub, pipelineConfigSub, driverConfigSub, fpsConfigSub, ledConfigSub, seedSub, mountSub }) {
+                resultPub, intrinsicsPub, distortionPub, heartbeatPub, versionPub, pipelineStatusPub, enabledStatusPub, graphPub, protocolPub, fpsStatusPub,
+                ledStatusPub, pipelineConfigSub, enabledConfigSub, fpsConfigSub, ledConfigSub, seedSub, mountSub }) {
             try {
                 closeable.close();
             } catch (Exception ignored) {

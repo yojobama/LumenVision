@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 public class PhotonTrackedTarget {
     private final LumenTrackedTarget lumenTarget;
 
-    PhotonTrackedTarget(LumenTrackedTarget lumenTarget) {
+    public PhotonTrackedTarget(LumenTrackedTarget lumenTarget) {
         this.lumenTarget = lumenTarget;
     }
 

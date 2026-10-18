@@ -14,7 +14,7 @@ public class LumenMultiTagResult {
     private final List<Integer> fiducialIds;
     private final double reprojectionErrorPixels;
 
-    LumenMultiTagResult(Pose3d fieldToCamera, List<Integer> fiducialIds, double reprojectionErrorPixels) {
+    public LumenMultiTagResult(Pose3d fieldToCamera, List<Integer> fiducialIds, double reprojectionErrorPixels) {
         this.fieldToCamera = fieldToCamera;
         this.fiducialIds = Collections.unmodifiableList(fiducialIds);
         this.reprojectionErrorPixels = reprojectionErrorPixels;

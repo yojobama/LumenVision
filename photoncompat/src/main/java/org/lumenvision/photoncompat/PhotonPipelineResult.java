@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 public class PhotonPipelineResult {
     private final LumenPipelineResult lumenResult;
 
-    PhotonPipelineResult(LumenPipelineResult lumenResult) {
+    public PhotonPipelineResult(LumenPipelineResult lumenResult) {
         this.lumenResult = lumenResult;
     }
 
