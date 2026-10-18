@@ -1,4 +1,4 @@
-package org.lumenvision.lib;
+package org.lumenvision.photoncompat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -13,7 +13,7 @@ import edu.wpi.first.math.geometry.Translation3d;
 import org.junit.jupiter.api.Test;
 
 // Hand-verified geometry cases; each formula is checked against an independently derived answer
-class LumenUtilsTest {
+class PhotonUtilsTest {
 
     private static final double EPS = 1e-9;
 
@@ -24,7 +24,7 @@ class LumenUtilsTest {
         Transform3d cameraToTarget = new Transform3d(new Translation3d(3, 0, 0), new Rotation3d());
         Transform3d cameraToRobot = new Transform3d();
 
-        Pose3d fieldToRobot = LumenUtils.estimateFieldToRobotAprilTag(cameraToTarget, fieldToTarget, cameraToRobot);
+        Pose3d fieldToRobot = PhotonUtils.estimateFieldToRobotAprilTag(cameraToTarget, fieldToTarget, cameraToRobot);
 
         assertEquals(2.0, fieldToRobot.getX(), EPS);
         assertEquals(0.0, fieldToRobot.getY(), EPS);
@@ -38,7 +38,7 @@ class LumenUtilsTest {
         Transform3d cameraToTarget = new Transform3d(new Translation3d(3, 0, 0), new Rotation3d());
         Transform3d cameraToRobot = new Transform3d(new Translation3d(-0.5, 0, 0), new Rotation3d());
 
-        Pose3d fieldToRobot = LumenUtils.estimateFieldToRobotAprilTag(cameraToTarget, fieldToTarget, cameraToRobot);
+        Pose3d fieldToRobot = PhotonUtils.estimateFieldToRobotAprilTag(cameraToTarget, fieldToTarget, cameraToRobot);
 
         assertEquals(1.5, fieldToRobot.getX(), EPS);
     }
@@ -51,7 +51,7 @@ class LumenUtilsTest {
         Pose2d targetPose = new Pose2d(10, 0, Rotation2d.k180deg);
         Rotation2d gyroAngle = Rotation2d.kZero;
 
-        Transform2d cameraToTarget = LumenUtils.estimateCameraToTarget(cameraToTargetTranslation, targetPose, gyroAngle);
+        Transform2d cameraToTarget = PhotonUtils.estimateCameraToTarget(cameraToTargetTranslation, targetPose, gyroAngle);
 
         assertEquals(5.0, cameraToTarget.getX(), EPS);
         assertEquals(0.0, cameraToTarget.getY(), EPS);
@@ -64,9 +64,9 @@ class LumenUtilsTest {
         Translation2d cameraToTargetTranslation = new Translation2d(5, 0);
         Pose2d targetPose = new Pose2d(10, 0, Rotation2d.k180deg);
         Rotation2d gyroAngle = Rotation2d.kZero;
-        Transform2d cameraToTarget = LumenUtils.estimateCameraToTarget(cameraToTargetTranslation, targetPose, gyroAngle);
+        Transform2d cameraToTarget = PhotonUtils.estimateCameraToTarget(cameraToTargetTranslation, targetPose, gyroAngle);
 
-        Pose2d fieldToRobot = LumenUtils.estimateFieldToRobot(cameraToTarget, targetPose, new Transform2d());
+        Pose2d fieldToRobot = PhotonUtils.estimateFieldToRobot(cameraToTarget, targetPose, new Transform2d());
 
         assertEquals(5.0, fieldToRobot.getX(), EPS);
         assertEquals(0.0, fieldToRobot.getY(), EPS);
@@ -79,9 +79,9 @@ class LumenUtilsTest {
         Pose2d targetPose = new Pose2d(5, 5, Rotation2d.kZero);
 
         Rotation2d bearingFacingZero =
-                LumenUtils.getYawToPose(new Pose2d(0, 0, Rotation2d.kZero), targetPose);
+                PhotonUtils.getYawToPose(new Pose2d(0, 0, Rotation2d.kZero), targetPose);
         Rotation2d bearingFacingNinety =
-                LumenUtils.getYawToPose(new Pose2d(0, 0, Rotation2d.kCCW_Pi_2), targetPose);
+                PhotonUtils.getYawToPose(new Pose2d(0, 0, Rotation2d.kCCW_Pi_2), targetPose);
 
         assertEquals(Math.PI / 4, bearingFacingZero.getRadians(), EPS);
         assertEquals(Math.PI / 4, bearingFacingNinety.getRadians(), EPS);
@@ -90,7 +90,7 @@ class LumenUtilsTest {
     @Test
     void calculateDistanceToTargetMeters_matchesKnownTriangle() {
         // 0.5m camera, 2.5m target, 0deg camera pitch, 45deg measured pitch: horizontal distance equals the height difference
-        double distance = LumenUtils.calculateDistanceToTargetMeters(0.5, 2.5, 0.0, Math.PI / 4);
+        double distance = PhotonUtils.calculateDistanceToTargetMeters(0.5, 2.5, 0.0, Math.PI / 4);
         assertEquals(2.0, distance, EPS);
     }
 }
