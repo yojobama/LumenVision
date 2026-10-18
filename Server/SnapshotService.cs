@@ -90,9 +90,13 @@ namespace Server
             Source source = SourceManager.Instance.GetSourceById(sourceId)
                 ?? throw new ArgumentException($"no source with id {sourceId}");
 
+            // the annotated frame of the first running detector fed by this camera
             int nodeId = sourceId;
-            if (kind == SnapshotKind.Output && source.ActiveDetectionSinkId.HasValue)
-                nodeId = source.ActiveDetectionSinkId.Value;
+            if (kind == SnapshotKind.Output)
+            {
+                int? detector = SinkManager.Instance.GetDetectorsOfSource(sourceId).FirstOrDefault(SinkManager.Instance.IsSinkRunning);
+                if (detector.HasValue) nodeId = detector.Value;
+            }
 
             string relative = RelativePath(source.Name, kind, DateTime.UtcNow);
             string full = Path.Combine(SnapshotRoot, relative.Replace('/', Path.DirectorySeparatorChar));

@@ -62,12 +62,39 @@ namespace Server
             }
         }
 
+        // A configuration saved with per-camera pipeline profiles is rewritten once, keeping a copy of the original beside it.
+        private string MigrateProfiles(string jsonData)
+        {
+            if (!NodeMigration.Needed(jsonData)) return jsonData;
+
+            File.Copy(jsonPath, jsonPath + ".before-nodes", overwrite: true);
+            NodeMigration.Result migrated = NodeMigration.Migrate(jsonData, () => Random.Shared.Next(1, int.MaxValue));
+            foreach (NodeMigration.LayoutCopy copy in migrated.LayoutCopies)
+            {
+                try
+                {
+                    string target = Path.Combine(AppContext.BaseDirectory, "fieldLayouts", $"sink-{copy.NodeId}.json");
+                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                    File.Copy(copy.FromPath, target, overwrite: true);
+                }
+                catch (Exception ex)
+                {
+                    logger.EnterLog($"Field layout {copy.FromPath} not carried over to node {copy.NodeId}: {ex.Message}");
+                }
+            }
+            foreach (string note in migrated.Notes) logger.EnterLog("Pipeline migration: " + note);
+            File.WriteAllText(jsonPath, migrated.Json);
+            logger.EnterLog("Pipeline profiles migrated to detector nodes; the original is kept as " + jsonPath + ".before-nodes");
+            return migrated.Json;
+        }
+
         private void LoadInternal()
         {
             if (File.Exists(jsonPath))
             {
                 string jsonData = File.ReadAllText(jsonPath);
                 try {
+                    jsonData = MigrateProfiles(jsonData);
                     var dbData = JsonSerializer.Deserialize<DBData>(jsonData);
 
                     if (dbData != null)
@@ -108,13 +135,10 @@ namespace Server
                                 break;
                         }
 
-                        // InitializeXxxSource builds its own Source object, so the pipeline-profile fields on this loop's `source` must be copied across explicitly
+                        // InitializeXxxSource builds its own Source object, so the saved fields on this loop's `source` must be copied across explicitly
                         Source restored = SourceManager.Instance.GetSourceById(source.Id);
                         if (restored != null)
                         {
-                            restored.Profiles = source.Profiles ?? new List<PipelineProfile>();
-                            restored.ActiveProfileIndex = source.ActiveProfileIndex;
-                            restored.ActiveDetectionSinkId = source.ActiveDetectionSinkId;
                             if (source.FpsLimit.HasValue) SourceManager.Instance.SetFpsLimit(restored.Id, source.FpsLimit.Value);
                             restored.ControlValues = source.ControlValues;
                             restored.Transform = source.Transform;
@@ -181,23 +205,6 @@ namespace Server
                         if (sink.Type != SinkType.WebRTCSink && !SinkManager.Instance.IsNodeDisabled(sink.Id))
                         {
                             SinkManager.Instance.EnableSinkById(sink.Id);
-                        }
-                    }
-
-                    // Recreate each source's profile detection sink via ActivateProfile so tag size, calibration, field layout and driver mode
-                    // are applied (AddSink only restores defaults), using the same rebinding logic as a live profile switch.
-                    foreach (var source in sources)
-                    {
-                        if (source.ActiveProfileIndex >= 0 && source.Profiles.Any(p => p.Index == source.ActiveProfileIndex))
-                        {
-                            try
-                            {
-                                SourceManager.Instance.ActivateProfile(source.Id, source.ActiveProfileIndex);
-                            }
-                            catch (Exception ex)
-                            {
-                                logger.EnterLog($"Failed to reactivate pipeline profile {source.ActiveProfileIndex} for source {source.Id}: {ex.Message}");
-                            }
                         }
                     }
 

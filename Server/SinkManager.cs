@@ -246,21 +246,6 @@ namespace Server
             ReloadFieldLayout(sinkId);
             if (driverMode) ManagerWrapper.Instance.SetDriverMode(sinkId, true);
 
-            // a camera's active pipeline keeps what was tuned here, so activating another pipeline and coming back (or a restart) does not lose it
-            foreach (int sourceId in SourceManager.Instance.GetAllSourceIds())
-            {
-                Source? owner = SourceManager.Instance.GetSourceById(sourceId);
-                if (owner?.ActiveDetectionSinkId != sinkId) continue;
-                PipelineProfile? active = owner.Profiles.FirstOrDefault(p => p.Index == owner.ActiveProfileIndex);
-                if (active == null || active.Kind != DetectionSinkKind.ApriltagSink) continue;
-                active.Backend = backend;
-                active.Threads = effectiveThreads;
-                active.QuadDecimate = effectiveQuadDecimate;
-                active.RefineEdges = effectiveRefineEdges;
-                active.RefineMode = effectiveRefineMode;
-                active.Advanced = effectiveAdvanced == null || effectiveAdvanced.IsDefault ? null : effectiveAdvanced.Clone();
-            }
-
             if (upstreamSourceId.HasValue) BindSourceToSink(sinkId, upstreamSourceId.Value);
             foreach (int downstreamId in downstreamSinkIds) BindSourceToSink(downstreamId, sinkId);
             if (wasRunning) EnableSinkById(sinkId);
@@ -583,19 +568,11 @@ namespace Server
             if (path != null) ManagerWrapper.Instance.LoadFieldLayout(sinkId, path);
         }
 
-        // The field-layout file a detector was given: its own upload, or the active profile's layout of the camera it is the detector for.
+        // The field-layout file a detector was given (uploaded or copied for it), if any.
         private string? FindFieldLayoutPath(int sinkId)
         {
             string own = System.IO.Path.Combine(AppContext.BaseDirectory, "fieldLayouts", $"sink-{sinkId}.json");
-            if (System.IO.File.Exists(own)) return own;
-            foreach (int sourceId in SourceManager.Instance.GetAllSourceIds())
-            {
-                Source? source = SourceManager.Instance.GetSourceById(sourceId);
-                if (source?.ActiveDetectionSinkId != sinkId) continue;
-                string? path = source.Profiles.FirstOrDefault(p => p.Index == source.ActiveProfileIndex)?.FieldLayoutPath;
-                if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path)) return path;
-            }
-            return null;
+            return System.IO.File.Exists(own) ? own : null;
         }
 
         // Copies a detector node: a new, stopped sink named "<name> copy" with the same configuration (tag size, backend, tuning, calibration,
@@ -653,66 +630,14 @@ namespace Server
         // which backend an existing ObjectDetectionSink runs (read-only)
         public string GetObjectDetectionSinkBackendName(int sinkId) => ManagerWrapper.Instance.GetObjectDetectionSinkBackendName(sinkId);
 
-        // (re)creates the detection sink a PipelineProfile describes: construction-time settings at creation, the rest via setters.
-        // explicitId creates it at that exact id (used by SourceManager.ActivateProfile).
-        // An AprilTag profile gets the saved calibration of the source's camera at its current resolution, if there is one.
-        public int CreateOrReplaceDetectionSinkForProfile(string name, PipelineProfile profile, int? explicitId, int sourceId)
+        // the detector nodes (AprilTag and object detection) fed directly by a source, in id order
+        public List<int> GetDetectorsOfSource(int sourceId)
         {
-            int id;
-            switch (profile.Kind)
-            {
-                case DetectionSinkKind.ApriltagSink:
-                    CameraCalibrationResult calibration = CalibrationManager.Instance.GetForSource(sourceId)
-                        ?? new CameraCalibrationResult();
-                    double tagSize = profile.TagSize ?? 0.1651;
-                    ApriltagBackendKind backend = profile.Backend ?? ApriltagBackendKind.APRILTAG_BACKEND_CPU;
-                    int nthreads = profile.Threads ?? 0;
-                    float quadDecimate = profile.QuadDecimate ?? 0.0f;
-                    bool refineEdges = profile.RefineEdges ?? true;
-                    RefineEdgesMode refineMode = profile.RefineMode ?? RefineEdgesMode.REFINE_EXACT;
-                    ApriltagTuning tuning = MakeTuning(nthreads, quadDecimate, refineEdges, refineMode, profile.Advanced);
-                    id = explicitId.HasValue
-                        ? ManagerWrapper.Instance.CreateApriltagDetector(explicitId.Value, calibration, tagSize,
-                            backend, profile.FrameWidth, profile.FrameHeight, tuning)
-                        : ManagerWrapper.Instance.CreateApriltagDetector(calibration, tagSize,
-                            backend, profile.FrameWidth, profile.FrameHeight, tuning);
-                    sinks.Add(NewApriltagSinkRecord(id, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode, profile.Advanced));
-
-                    if (!string.IsNullOrEmpty(profile.FieldLayoutPath))
-                        ManagerWrapper.Instance.LoadFieldLayout(id, profile.FieldLayoutPath);
-                    ManagerWrapper.Instance.SetDriverMode(id, profile.DriverMode);
-                    break;
-
-                case DetectionSinkKind.ObjectDetectionSink:
-                    if (!profile.ModelId.HasValue)
-                        throw new ArgumentException("ObjectDetectionSink profile has no ModelId set");
-                    var model = ModelManager.Instance.GetModel(profile.ModelId.Value);
-                    if (model == null) throw new ArgumentException($"no model with id {profile.ModelId.Value}");
-
-                    float conf = profile.ConfThreshold ?? model.ConfThreshold;
-                    float nms = profile.NmsThreshold ?? model.NmsThreshold;
-                    id = explicitId.HasValue
-                        ? ManagerWrapper.Instance.CreateObjectDetectionSink(explicitId.Value, model.Provider,
-                            model.ModelPath, model.LabelsPath, model.Variant, conf, nms, model.InputSize)
-                        : ManagerWrapper.Instance.CreateObjectDetectionSink(model.Provider,
-                            model.ModelPath, model.LabelsPath, model.Variant, conf, nms, model.InputSize);
-                    sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink)
-                    {
-                        ObjectDetectionModelId = model.Id,
-                        ObjectDetectionConfThreshold = profile.ConfThreshold,
-                        ObjectDetectionNmsThreshold = profile.NmsThreshold,
-                    });
-                    break;
-
-                default:
-                    throw new ArgumentException($"unknown pipeline profile kind {profile.Kind}");
-            }
-
-            DB.Instance.Save();
-            return id;
+            return sinks.Where(s => (s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink) && s.Source != null && s.Source.Id == sourceId)
+                .Select(s => s.Id).OrderBy(id => id).ToList();
         }
 
-        // every sink bound (as its source) to sourceId; used by SourceManager.ActivateProfile to rebind downstream sinks
+        // every sink bound (as its source) to sourceId; used to rebind downstream sinks after a detector is rebuilt
         public List<int> GetSinksBoundToSource(int sourceId)
         {
             return sinks.Where(s => s.Source != null && s.Source.Id == sourceId).Select(s => s.Id).ToList();

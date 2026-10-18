@@ -29,12 +29,6 @@ namespace Server
         public int? Fps { get; set; } // Optional frames per second for camera sources
         public string? FilePath { get; set; } // Optional file path for image or video sources
 
-        // Pipeline profiles (see PipelineProfile.cs). ActiveDetectionSinkId is the stable detection sink id reused across profile activations;
-        // ActiveProfileIndex is -1 until a profile is activated.
-        public List<PipelineProfile> Profiles { get; set; } = new List<PipelineProfile>();
-        public int ActiveProfileIndex { get; set; } = -1;
-        public int? ActiveDetectionSinkId { get; set; }
-
         // results per second this source publishes at most; null = unlimited (see ISource::SetFpsLimit)
         public int? FpsLimit { get; set; }
 

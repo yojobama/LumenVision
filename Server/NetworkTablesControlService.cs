@@ -12,7 +12,6 @@ namespace Server
     //  <root>/config/recording                 (bool)  -> SinkManager.SetAllRecording
     //  <root>/config/ledMode                   (int)   -> LedController (-1 default, 0 off, 1 on, 2 blink)
     //  <root>/<camera>/config/driverMode       (bool)  -> SetDriverMode on that camera's detector
-    //  <root>/<camera>/config/pipelineIndex    (int)   -> activate that camera's pipeline profile
     //  <root>/<camera>/config/fpsLimit         (int)   -> cap that camera's published frames per second (<= 0: unlimited)
     //  <root>/<camera>/config/constrainedSeed  (double[3]: x, y, yaw) and config/robotToCamera (double[7]: x, y, z, qw, qx, qy, qz)
     //                                          -> the detector's floor-constrained solve (published in the result packet)
@@ -20,7 +19,7 @@ namespace Server
     //  <root>/<node>/config/snapshot           (any write) -> save that node's latest frame
     //  <root>/<camera>/config/inputSnapshot    (any write) -> save a raw-frame snapshot
     //  <root>/<camera>/config/outputSnapshot   (any write) -> save the detector's annotated frame
-    // and publishes the settings actually in effect back under status/ (recording, ledMode, per node enabled, and per camera pipelineIndex,
+    // and publishes the settings actually in effect back under status/ (recording, ledMode, per node enabled, and per camera
     // driverMode, fpsLimit), plus the graph description under .graph. <camera> is the camera's name (a detector's id also works). Requests are idempotent desired state,
     // so several NT sinks seeing the same write is harmless.
     public sealed class NetworkTablesControlService : BackgroundService
@@ -94,6 +93,13 @@ namespace Server
                 SinkManager.Instance.GetAllSinks());
             RefreshAliases(ntSinkIds, aliases);
 
+            // every NetworkTablesSink publishes every detector node, however it was bound
+            List<int> detectorIds = SinkManager.Instance.GetAllSinks()
+                .Where(s => s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink).Select(s => s.Id).ToList();
+            foreach (int ntSinkId in ntSinkIds)
+                foreach (int detectorId in detectorIds)
+                    ManagerWrapper.Instance.EnsureSourceBoundToSink(detectorId, ntSinkId);
+
             // the latest recording/LED request across all NT sinks wins (they all see the same topics)
             int recordingRequest = -1;
             int ledRequest = -2;
@@ -123,7 +129,7 @@ namespace Server
                 ManagerWrapper.Instance.SetNetworkTablesSinkRecordingStatus(ntSinkId, recording);
                 ManagerWrapper.Instance.SetNetworkTablesSinkLedStatus(ntSinkId, (int)LedController.Instance.Mode);
             }
-            PublishCameraStatus(ntSinkIds, aliases);
+            PublishCameraStatus(ntSinkIds, detectorIds);
             PublishGraph(ntSinkIds, aliases);
         }
 
@@ -162,23 +168,16 @@ namespace Server
             }
         }
 
-        // detector node id -> the name of the camera it runs on. A camera's active-profile detector is preferred; a standalone
-        // detector bound straight to a camera is named after it too, unless another detector already holds that name.
+        // detector node id -> the name of the camera it runs on: the camera's detector with the lowest id carries its name, so the name
+        // stays with one node however the others are switched.
         internal static Dictionary<int, string> ComputeCameraAliases(IEnumerable<Source> sources, IEnumerable<Sink> sinks)
         {
             var aliases = new Dictionary<int, string>();
             var usedNames = new HashSet<string>();
             List<Sink> sinkList = sinks.ToList();
 
-            foreach (Source camera in sources.Where(s => s.Type == SourceType.Camera))
+            foreach (Sink sink in sinkList.Where(s => s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink).OrderBy(s => s.Id))
             {
-                if (camera.ActiveDetectionSinkId is int nodeId && sinkList.Any(s => s.Id == nodeId) && usedNames.Add(camera.Name))
-                    aliases[nodeId] = camera.Name;
-            }
-
-            foreach (Sink sink in sinkList.Where(s => s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink))
-            {
-                if (aliases.ContainsKey(sink.Id)) continue;
                 Source? bound = sink.Source;
                 if (bound != null && bound.Type == SourceType.Camera && usedNames.Add(bound.Name))
                     aliases[sink.Id] = bound.Name;
@@ -206,9 +205,9 @@ namespace Server
             }
         }
 
-        private static void PublishCameraStatus(List<int> ntSinkIds, Dictionary<int, string> aliases)
+        private static void PublishCameraStatus(List<int> ntSinkIds, List<int> detectorIds)
         {
-            foreach (var (nodeId, _) in aliases)
+            foreach (int nodeId in detectorIds)
             {
                 Source? camera = ResolveCamera(nodeId);
                 if (camera == null) continue;
@@ -217,26 +216,24 @@ namespace Server
                 try { driverMode = ManagerWrapper.Instance.GetDriverMode(nodeId); } catch (Exception) { /* not a driver-mode capable node */ }
                 int fpsLimit = camera.FpsLimit ?? -1;
                 bool enabled = SinkManager.Instance.IsSinkRunning(nodeId);
-                string status = $"{camera.ActiveProfileIndex}|{driverMode}|{fpsLimit}|{enabled}";
+                string status = $"{driverMode}|{fpsLimit}|{enabled}";
 
                 foreach (int ntSinkId in ntSinkIds)
                 {
                     var key = (ntSinkId, nodeId);
                     if (PublishedStatus.TryGetValue(key, out var last) && last.status == status && DateTime.UtcNow - last.at < StatusRefresh)
                         continue;
-                    ManagerWrapper.Instance.SetNetworkTablesSinkNodeStatus(ntSinkId, nodeId.ToString(), camera.ActiveProfileIndex, driverMode, fpsLimit);
+                    ManagerWrapper.Instance.SetNetworkTablesSinkNodeStatus(ntSinkId, nodeId.ToString(), -1, driverMode, fpsLimit);
                     ManagerWrapper.Instance.SetNetworkTablesSinkNodeEnabled(ntSinkId, nodeId.ToString(), enabled);
                     PublishedStatus[key] = (status, DateTime.UtcNow);
                 }
             }
         }
 
-        // the camera a detector node runs on: the source whose active profile owns it, the source itself, or the camera a standalone detector is bound to
+        // the camera a node belongs to: the source itself, or the camera a detector is bound to
         private static Source? ResolveCamera(int nodeId)
         {
-            Source? owner = SourceManager.Instance.GetAllSourceIds()
-                .Select(id => SourceManager.Instance.GetSourceById(id))
-                .FirstOrDefault(s => s != null && (s.ActiveDetectionSinkId == nodeId || s.Id == nodeId));
+            Source? owner = SourceManager.Instance.GetSourceById(nodeId);
             if (owner != null) return owner;
 
             Source? bound = SinkManager.Instance.GetSinkById(nodeId)?.Source;
@@ -253,7 +250,7 @@ namespace Server
             LedController.Instance.SetMode((LedMode)value);
         }
 
-        // entries are {"sourceId": "<nodeId>", "pipelineIndex"?, "driverMode"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?}
+        // entries are {"sourceId": "<nodeId>", "driverMode"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?}
         // (see NetworkTablesSink::PollConfigRequests); driverMode applies to that detector node, everything else to the camera it runs on.
         private static void ApplyConfigRequests(string json)
         {
@@ -308,8 +305,7 @@ namespace Server
 
                 if (entry.TryGetProperty("snapshots", out _)) TakeNodeSnapshot(nodeId);
 
-                bool needsCamera = entry.TryGetProperty("pipelineIndex", out JsonElement pipelineIndex)
-                    | entry.TryGetProperty("fpsLimit", out JsonElement fpsLimit)
+                bool needsCamera = entry.TryGetProperty("fpsLimit", out JsonElement fpsLimit)
                     | entry.TryGetProperty("inputSnapshots", out JsonElement inputSnapshots)
                     | entry.TryGetProperty("outputSnapshots", out JsonElement outputSnapshots);
                 if (!needsCamera) continue;
@@ -319,20 +315,6 @@ namespace Server
                 {
                     Console.WriteLine($"NT request for {nodeId} ignored: no camera runs that node");
                     continue;
-                }
-
-                if (entry.TryGetProperty("pipelineIndex", out pipelineIndex))
-                {
-                    try
-                    {
-                        int index = pipelineIndex.GetInt32();
-                        if (camera.ActiveProfileIndex != index)
-                            SourceManager.Instance.ActivateProfile(camera.Id, index);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"NT pipelineIndex request for source {camera.Id} ignored: {ex.Message}");
-                    }
                 }
 
                 if (entry.TryGetProperty("fpsLimit", out fpsLimit))

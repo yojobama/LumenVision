@@ -2,7 +2,7 @@ namespace Server
 {
     // The AprilTag detector knobs beyond threads/decimation/refine (see LumenCore's ApriltagTuning): tag family, blur, hamming limit, decision-margin
     // cutoff, pose iterations and the single-/multi-tag toggles. A null member means the detector's default, so records saved before a knob existed
-    // load unchanged. Persisted as one nested object on a Sink or a PipelineProfile.
+    // load unchanged. Persisted as one nested object on a Sink.
     public class ApriltagAdvancedTuning
     {
         public ApriltagFamilyKind? Family { get; set; }

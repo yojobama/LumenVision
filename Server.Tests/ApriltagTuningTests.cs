@@ -28,17 +28,6 @@ public class ApriltagRefineModeTests
     }
 
     [Fact]
-    public void ProfilesWithoutARefineModeAndWithTheRetiredCalibratorFieldStillLoad()
-    {
-        const string oldProfile = """{"Index":0,"Name":"default","Kind":0,"TagSize":0.1651,"CalibratorSinkId":12,"RefineEdges":true}""";
-
-        var profile = JsonSerializer.Deserialize<PipelineProfile>(oldProfile);
-
-        Assert.Null(profile!.RefineMode);
-        Assert.Equal(0.1651, profile.TagSize);
-    }
-
-    [Fact]
     public void CpuSinkReportsTheRefineModeAsUnsupportedAndUpstream()
     {
         int id = SinkManager.Instance.AddApriltagSinkWithBackend("cpu tags", 0.1651, ApriltagBackendKind.APRILTAG_BACKEND_CPU,

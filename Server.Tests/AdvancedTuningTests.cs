@@ -62,10 +62,8 @@ public class AdvancedTuningTests
     public void RecordsSavedBeforeTheSettingsExistedStillLoad()
     {
         var sink = JsonSerializer.Deserialize<Sink>("""{"Type":0,"Id":7,"Name":"tags","ApriltagTagSize":0.1651}""");
-        var profile = JsonSerializer.Deserialize<PipelineProfile>("""{"Index":0,"Name":"default","Kind":0}""");
 
         Assert.Null(sink!.ApriltagAdvanced);
-        Assert.Null(profile!.Advanced);
 
         var withSettings = JsonSerializer.Deserialize<Sink>(JsonSerializer.Serialize(
             new Sink(8, "x", SinkType.ApriltagSink) { ApriltagAdvanced = new ApriltagAdvancedTuning { Family = ApriltagFamilyKind.APRILTAG_FAMILY_STANDARD41H12 } }));

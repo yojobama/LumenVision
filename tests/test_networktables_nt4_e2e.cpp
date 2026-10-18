@@ -385,6 +385,8 @@ TEST_CASE("NetworkTablesSink surfaces per-node enabled and snapshot writes and p
 	auto upstream = std::make_shared<PgmFrameSource>(logger, "node-controls-upstream", cv::Mat(48, 64, CV_8UC3, cv::Scalar(0, 0, 0)));
 	upstream->Toggle(true);
 	REQUIRE(ntSink->BindSource(upstream));
+	REQUIRE(ntSink->IsBoundTo(upstream->GetID()));
+	REQUIRE_FALSE(ntSink->IsBoundTo("some-other-source"));
 	static_cast<ISink&>(*ntSink).Toggle(true);
 	auto root = robot.GetTable("lumenvision");
 	REQUIRE(WaitUntil([&] { return root->GetNumber(".protocol", -1.0) == kNetworkTablesProtocol; }));

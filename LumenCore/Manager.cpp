@@ -274,6 +274,14 @@ bool Manager::BindSourceToSink(int sourceId, int sinkId) {
     return result;
 }
 
+bool Manager::EnsureSourceBoundToSink(int sourceId, int sinkId) {
+    auto source = m_Sources.find(sourceId);
+    auto sink = m_Sinks.find(sinkId);
+    if (source == m_Sources.end() || sink == m_Sinks.end()) return false;
+    if (sink->second->IsBoundTo(source->second->GetID())) return true;
+    return sink->second->BindSource(source->second);
+}
+
 bool Manager::UnbindSourceFromSink(int sinkId) {
     m_Logger->EnterLog("UnbindSourceFromSink called with sinkId=" + std::to_string(sinkId));
     auto sink = m_Sinks.find(sinkId);

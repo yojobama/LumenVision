@@ -26,7 +26,6 @@ namespace Server
             typeof(ImageFileSourceController),
             typeof(VideoFileSourceController),
             typeof(CameraSourceController),
-            typeof(PipelineProfileController),
             // models
             typeof(ModelController),
             // others

@@ -25,6 +25,7 @@ public:
 
     bool BindSource(std::shared_ptr<ISource> p_Source);
 	bool UnbindSource(std::string sourceID);
+	bool IsBoundTo(const std::string& sourceID) const;
     void Toggle(bool threadWantedAlive);
 	bool GetToggleStatus();
 

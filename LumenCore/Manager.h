@@ -57,6 +57,8 @@ public:
 
 	vector<CameraHardwareInfo> EnumerateAvailableCameras();
 	bool BindSourceToSink(int sourceId, int sinkId);
+	// binds the source to the sink unless it already is; true when it is bound afterwards
+	bool EnsureSourceBoundToSink(int sourceId, int sinkId);
 	bool UnbindSourceFromSink(int sinkId);
 
 	// functions to create frame sources

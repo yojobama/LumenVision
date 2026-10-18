@@ -63,16 +63,16 @@ public class ModelUpdateTests
     }
 
     [Fact]
-    public void SinkAndProfileRecordsKeepTheirCutoffsAndOldOnesLoadWithNone()
+    public void SinkRecordsKeepTheirCutoffsAndOldOnesLoadWithNone()
     {
         var sink = new Sink(3, "yolo", SinkType.ObjectDetectionSink) { ObjectDetectionModelId = 1, ObjectDetectionConfThreshold = 0.7f, ObjectDetectionNmsThreshold = 0.3f };
         var restored = JsonSerializer.Deserialize<Sink>(JsonSerializer.Serialize(sink))!;
         Assert.Equal(0.7f, restored.ObjectDetectionConfThreshold);
         Assert.Equal(0.3f, restored.ObjectDetectionNmsThreshold);
 
-        var profile = JsonSerializer.Deserialize<PipelineProfile>("""{"Index":0,"Name":"objects","Kind":1,"ModelId":2}""")!;
-        Assert.Null(profile.ConfThreshold);
-        Assert.Null(profile.NmsThreshold);
+        var old = JsonSerializer.Deserialize<Sink>("""{"Type":1,"Id":4,"Name":"old","ObjectDetectionModelId":2}""")!;
+        Assert.Null(old.ObjectDetectionConfThreshold);
+        Assert.Null(old.ObjectDetectionNmsThreshold);
     }
 
     [Fact]

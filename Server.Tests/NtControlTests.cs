@@ -6,22 +6,10 @@ namespace Server.Tests;
 
 public class CameraAliasTests
 {
-    private static Source Camera(int id, string name, int? activeDetector = null) =>
-        new(id, name, SourceType.Camera) { ActiveDetectionSinkId = activeDetector };
+    private static Source Camera(int id, string name) => new(id, name, SourceType.Camera);
 
     [Fact]
-    public void ProfileDetectorIsNamedAfterItsCamera()
-    {
-        var camera = Camera(1, "front", activeDetector: 10);
-        var detector = new Sink(10, "front - default", SinkType.ApriltagSink);
-
-        var aliases = NetworkTablesControlService.ComputeCameraAliases(new[] { camera }, new[] { detector });
-
-        Assert.Equal("front", aliases[10]);
-    }
-
-    [Fact]
-    public void StandaloneDetectorBoundToACameraIsNamedAfterIt()
+    public void ADetectorBoundToACameraIsNamedAfterIt()
     {
         var camera = Camera(1, "rear");
         var detector = new Sink(20, "tags", SinkType.ApriltagSink) { Source = camera };
@@ -32,13 +20,13 @@ public class CameraAliasTests
     }
 
     [Fact]
-    public void OnlyOneDetectorPerCameraGetsTheName()
+    public void OnlyTheLowestIdDetectorOfACameraGetsTheName()
     {
-        var camera = Camera(1, "front", activeDetector: 10);
-        var profileDetector = new Sink(10, "front - default", SinkType.ApriltagSink) { Source = camera };
-        var standalone = new Sink(11, "extra", SinkType.ApriltagSink) { Source = camera };
+        var camera = Camera(1, "front");
+        var first = new Sink(10, "front - tags", SinkType.ApriltagSink) { Source = camera };
+        var second = new Sink(11, "front - notes", SinkType.ObjectDetectionSink) { Source = camera };
 
-        var aliases = NetworkTablesControlService.ComputeCameraAliases(new[] { camera }, new[] { standalone, profileDetector });
+        var aliases = NetworkTablesControlService.ComputeCameraAliases(new[] { camera }, new[] { second, first });
 
         Assert.Equal("front", aliases[10]);
         Assert.False(aliases.ContainsKey(11));

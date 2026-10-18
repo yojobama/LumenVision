@@ -1,7 +1,6 @@
 namespace Server
 {
     // Saves/restores the whole node graph (every source, sink and binding) under a name by reusing DB.Save()/DB.Load().
-    // Distinct from the per-source PipelineProfile.
     public class GraphProfile
     {
         public static GraphProfile Instance { get; } = new GraphProfile();
