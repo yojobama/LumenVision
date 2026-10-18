@@ -20,12 +20,12 @@ import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.lumenvision.photoncompat.LumenCamera;
-import org.lumenvision.photoncompat.LumenEstimatedRobotPose;
-import org.lumenvision.photoncompat.LumenPipelineResult;
-import org.lumenvision.photoncompat.LumenPoseEstimator;
-import org.lumenvision.photoncompat.LumenPoseStrategy;
-import org.lumenvision.photoncompat.LumenTrackedTarget;
+import org.lumenvision.lib.LumenCamera;
+import org.lumenvision.lib.LumenEstimatedRobotPose;
+import org.lumenvision.lib.LumenPipelineResult;
+import org.lumenvision.lib.LumenPoseEstimator;
+import org.lumenvision.lib.LumenPoseStrategy;
+import org.lumenvision.lib.LumenTrackedTarget;
 
 // The simulated camera and a LumenCamera share one NT instance, as they do in a robot simulation, so what the robot code reads is
 // exactly what the simulation published.

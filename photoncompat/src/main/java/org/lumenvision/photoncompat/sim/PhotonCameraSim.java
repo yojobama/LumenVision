@@ -18,8 +18,8 @@ import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.RawPublisher;
 import edu.wpi.first.networktables.StringPublisher;
-import org.lumenvision.photoncompat.LumenCamera;
-import org.lumenvision.photoncompat.compat.PhotonCamera;
+import org.lumenvision.lib.LumenCamera;
+import org.lumenvision.photoncompat.PhotonCamera;
 
 import java.util.ArrayList;
 import java.util.Collection;
