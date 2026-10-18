@@ -42,6 +42,7 @@ namespace Server
             typeof(LogController),
             typeof(SnapshotController),
             typeof(GraphProfileController),
+            typeof(ProfileController),
         };
     }
 }
