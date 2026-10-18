@@ -81,8 +81,6 @@ TEST_CASE("NetworkTablesSink publishes the real NT4 schema end to end over a loo
 	REQUIRE(WaitUntil([&] { return clientTable->GetString(".version", "") == LUMEN_VERSION_STRING; }));
 	REQUIRE(WaitUntil([&] { return detectorTable->GetBoolean("hasTargets", false); }));
 	REQUIRE(WaitUntil([&] { return !clientTable->GetString(".status", "").empty(); }));
-	// NT4 has no cross-topic ordering: tags/ids may lag hasTargets, so wait for them.
-	REQUIRE(WaitUntil([&] { return !detectorTable->GetNumberArray("tags/ids", std::vector<double>{}).empty(); }));
 	// "result" is the last topic written per source, so wait for it too.
 	REQUIRE(WaitUntil([&] { return detectorTable->GetRaw("result", std::vector<uint8_t>{}).size() >= 3; }));
 	// First read of "latencyMs" needs a wait for the new subscription to sync.
@@ -92,16 +90,17 @@ TEST_CASE("NetworkTablesSink publishes the real NT4 schema end to end over a loo
 	static_cast<ISink&>(*detector).Toggle(false);
 	static_cast<ISink&>(*ntSink).Toggle(false);
 
-	std::vector<double> ids = detectorTable->GetNumberArray("tags/ids", std::vector<double>{});
-	REQUIRE_FALSE(ids.empty());
 	REQUIRE(detectorTable->GetNumber("latencyMs", -1.0) >= 0.0);
+	// the result packet is the one encoding of the tags: no parallel arrays or multi-tag scalars next to it
+	REQUIRE_FALSE(detectorTable->GetEntry("tags/ids").Exists());
+	REQUIRE_FALSE(detectorTable->GetEntry("multitag/tagCount").Exists());
 
 	std::vector<uint8_t> packet = detectorTable->GetRaw("result", std::vector<uint8_t>{});
 	PacketHeader packetHeader;
 	std::vector<PacketTarget> packetTargets;
 	REQUIRE(ParseResultPacket(packet, packetHeader, packetTargets)); // schema version 2
-	REQUIRE(packetTargets.size() == ids.size());
-	REQUIRE(packetTargets[0].fiducialId == static_cast<int16_t>(ids[0]));
+	REQUIRE_FALSE(packetTargets.empty());
+	REQUIRE(packetTargets[0].fiducialId >= 0);
 	REQUIRE(packetHeader.sequenceId > 0);
 
 	std::string status = clientTable->GetString(".status", "");
@@ -432,7 +431,7 @@ TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bo
 	imageSource->Toggle(true);
 	static_cast<ISink&>(*detector).Toggle(true);
 	static_cast<ISink&>(*ntSink).Toggle(true);
-	REQUIRE(WaitUntil([&] { return detectorTable->GetNumberArray("tags/ids", {}).size() > 0; }, 200, 50));
+	REQUIRE(WaitUntil([&] { return detectorTable->GetBoolean("hasTargets", false); }, 200, 50));
 
 	REQUIRE(WaitUntil([&] { return clientTable->GetString(".status", "").find("uptimeSeconds") != std::string::npos; }, 200, 50));
 	const double uptimeBeforeRebuild = nlohmann::json::parse(clientTable->GetString(".status", "{}"), nullptr, false).value("uptimeSeconds", 1e9) + 0.5;
@@ -452,7 +451,7 @@ TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bo
 		nlohmann::json s = status();
 		return s.is_object() && s.value("uptimeSeconds", 1e9) < uptimeBeforeRebuild && s.value("nodeCount", 0) >= 1;
 	}, 200, 50));
-	REQUIRE(detectorTable->GetNumberArray("tags/ids", {}).size() > 0);
+	REQUIRE(detectorTable->GetBoolean("hasTargets", false));
 
 	static_cast<ISink&>(*ntSink).Toggle(false);
 	static_cast<ISink&>(*detector).Toggle(false);

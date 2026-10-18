@@ -394,52 +394,13 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 	header.sequenceId = result.frameNumber;
 
 	if (looksLikeTags) {
-		std::vector<double> ids, x, y, z;
-		// row-major 3x3 rotation matrix flattened into 9 parallel arrays (r0..r8, ApriltagDetector.cpp's R layout): NT4 has no nested
-		// arrays, and the raw matrix lets WPILib's Rotation3d(Matrix<N3, N3>) build a Transform3d robot-side.
-		std::array<std::vector<double>, 9> r;
-		ids.reserve(tagsArray.size());
-		x.reserve(tagsArray.size());
-		y.reserve(tagsArray.size());
-		z.reserve(tagsArray.size());
-		for (auto& ri : r) ri.reserve(tagsArray.size());
+		targets = ComputeTagTargets(tagsArray, calibration, nullptr);
 
-		std::vector<frames::Pose3> tagPoses;
-		targets = ComputeTagTargets(tagsArray, calibration, &tagPoses);
-		for (size_t i = 0; i < targets.size(); i++) {
-			// tags/x,y,z and r0..r8 hold the camera-to-tag pose in WPILib frames ("pose" is only present once the detector has a
-			// calibration; otherwise they keep their zero/identity defaults)
-			ids.push_back(tagsArray[i].value("id", -1));
-			x.push_back(tagPoses[i].t[0]);
-			y.push_back(tagPoses[i].t[1]);
-			z.push_back(tagPoses[i].t[2]);
-			for (int k = 0; k < 9; k++) r[k].push_back(tagPoses[i].R[k]);
-		}
-
-		putNumberArray("tags/ids", ids);
-		putNumberArray("tags/x", x);
-		putNumberArray("tags/y", y);
-		putNumberArray("tags/z", z);
-		for (int i = 0; i < 9; i++) {
-			putNumberArray("tags/r" + std::to_string(i), r[i]);
-		}
-
-		// multi-tag PnP result, only present in the object-envelope shape. Published as scalars (one per frame); x/y/z/r0..r8 are the
-		// CAMERA's pose in FIELD frame, not camera-to-tag as in tags/x,y,z.
+		// the multi-tag PnP result (the camera's pose in the field), only present in the object-envelope shape
 		nlohmann::json multiTag = hasEnvelope ? json.value("multiTag", nlohmann::json(nullptr)) : nlohmann::json(nullptr);
 		if (!multiTag.is_null()) {
-			putNumber("multitag/x", multiTag.value("x", 0.0));
-			putNumber("multitag/y", multiTag.value("y", 0.0));
-			putNumber("multitag/z", multiTag.value("z", 0.0));
 			static const std::array<double, 3> identityRow{ 0.0, 0.0, 0.0 };
 			auto rotation = multiTag.value("R", nlohmann::json::array({identityRow, identityRow, identityRow}));
-			for (int row = 0; row < 3; row++) {
-				for (int col = 0; col < 3; col++) {
-					putNumber("multitag/r" + std::to_string(row * 3 + col), rotation[row][col].get<double>());
-				}
-			}
-			putNumber("multitag/tagCount", multiTag.value("tagCount", 0));
-			putNumber("multitag/reprojErrPixels", multiTag.value("reprojErrPixels", 0.0));
 			for (int id : multiTag.value("fiducialIds", std::vector<int>{})) header.multiTagIds.push_back(static_cast<uint16_t>(id));
 
 			// the same pose rides inside the packet so a reader gets it from the frame it belongs to
@@ -450,10 +411,6 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 				for (int col = 0; col < 3; col++) multiTagR[row * 3 + col] = rotation[row][col].get<double>();
 			header.multiTagQ = frames::RotationToQuaternion(multiTagR);
 			header.multiTagReprojErr = static_cast<float>(multiTag.value("reprojErrPixels", 0.0));
-		} else {
-			// no multi-tag result this frame (fewer than 2 known-field-pose tags, no field layout, or no envelope): clear tagCount to 0
-			// rather than leaving a stale pose published.
-			putNumber("multitag/tagCount", 0);
 		}
 
 		nlohmann::json constrained = hasEnvelope ? json.value("constrained", nlohmann::json(nullptr)) : nlohmann::json(nullptr);
