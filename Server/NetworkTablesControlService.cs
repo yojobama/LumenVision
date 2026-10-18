@@ -11,7 +11,6 @@ namespace Server
     // Applies robot-written NetworkTables config each tick, for every NetworkTablesSink:
     //  <root>/config/recording                 (bool)  -> SinkManager.SetAllRecording
     //  <root>/config/ledMode                   (int)   -> LedController (-1 default, 0 off, 1 on, 2 blink)
-    //  <root>/<camera>/config/driverMode       (bool)  -> SetDriverMode on that camera's detector
     //  <root>/<camera>/config/fpsLimit         (int)   -> cap that camera's published frames per second (<= 0: unlimited)
     //  <root>/<camera>/config/constrainedSeed  (double[3]: x, y, yaw) and config/robotToCamera (double[7]: x, y, z, qw, qx, qy, qz)
     //                                          -> the detector's floor-constrained solve (published in the result packet)
@@ -19,8 +18,8 @@ namespace Server
     //  <root>/<node>/config/snapshot           (any write) -> save that node's latest frame
     //  <root>/<camera>/config/inputSnapshot    (any write) -> save a raw-frame snapshot
     //  <root>/<camera>/config/outputSnapshot   (any write) -> save the detector's annotated frame
-    // and publishes the settings actually in effect back under status/ (recording, ledMode, per node enabled, and per camera
-    // driverMode, fpsLimit), plus the graph description under .graph. <camera> is the camera's name (a detector's id also works). Requests are idempotent desired state,
+    // and publishes the settings actually in effect back under status/ (recording, ledMode, per node enabled and
+    // fpsLimit), plus the graph description under .graph. <camera> is the camera's name (a detector's id also works). Requests are idempotent desired state,
     // so several NT sinks seeing the same write is harmless.
     public sealed class NetworkTablesControlService : BackgroundService
     {
@@ -212,18 +211,16 @@ namespace Server
                 Source? camera = ResolveCamera(nodeId);
                 if (camera == null) continue;
 
-                bool driverMode = false;
-                try { driverMode = ManagerWrapper.Instance.GetDriverMode(nodeId); } catch (Exception) { /* not a driver-mode capable node */ }
                 int fpsLimit = camera.FpsLimit ?? -1;
                 bool enabled = SinkManager.Instance.IsSinkRunning(nodeId);
-                string status = $"{driverMode}|{fpsLimit}|{enabled}";
+                string status = $"{fpsLimit}|{enabled}";
 
                 foreach (int ntSinkId in ntSinkIds)
                 {
                     var key = (ntSinkId, nodeId);
                     if (PublishedStatus.TryGetValue(key, out var last) && last.status == status && DateTime.UtcNow - last.at < StatusRefresh)
                         continue;
-                    ManagerWrapper.Instance.SetNetworkTablesSinkNodeStatus(ntSinkId, nodeId.ToString(), -1, driverMode, fpsLimit);
+                    ManagerWrapper.Instance.SetNetworkTablesSinkNodeStatus(ntSinkId, nodeId.ToString(), fpsLimit);
                     ManagerWrapper.Instance.SetNetworkTablesSinkNodeEnabled(ntSinkId, nodeId.ToString(), enabled);
                     PublishedStatus[key] = (status, DateTime.UtcNow);
                 }
@@ -250,8 +247,8 @@ namespace Server
             LedController.Instance.SetMode((LedMode)value);
         }
 
-        // entries are {"sourceId": "<nodeId>", "driverMode"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?}
-        // (see NetworkTablesSink::PollConfigRequests); driverMode applies to that detector node, everything else to the camera it runs on.
+        // entries are {"sourceId": "<nodeId>", "enabled"?, "snapshots"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?}
+        // (see NetworkTablesSink::PollConfigRequests); enabled and snapshots apply to that node, fpsLimit to the camera it runs on.
         private static void ApplyConfigRequests(string json)
         {
             if (string.IsNullOrEmpty(json) || json == "[]") return;
@@ -259,18 +256,6 @@ namespace Server
             foreach (JsonElement entry in doc.RootElement.EnumerateArray())
             {
                 if (!int.TryParse(entry.GetProperty("sourceId").GetString(), out int nodeId)) continue;
-
-                if (entry.TryGetProperty("driverMode", out JsonElement driverMode))
-                {
-                    try
-                    {
-                        ManagerWrapper.Instance.SetDriverMode(nodeId, driverMode.GetBoolean());
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"NT driverMode request for {nodeId} ignored: {ex.Message}");
-                    }
-                }
 
                 if (entry.TryGetProperty("constrainedSeed", out JsonElement seedElement))
                     ConstrainedSeeds[nodeId] = seedElement.EnumerateArray().Select(v => v.GetDouble()).ToArray();

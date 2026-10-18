@@ -17,8 +17,6 @@ public class DuplicateTests
         int copyId = -1;
         try
         {
-            ManagerWrapper.Instance.SetDriverMode(id, true);
-
             copyId = SinkManager.Instance.DuplicateSink(id, copyBindings: false);
 
             Assert.NotEqual(id, copyId);
@@ -28,7 +26,6 @@ public class DuplicateTests
             Assert.Equal(3, copy.ApriltagThreads);
             Assert.Equal(2.0f, copy.ApriltagQuadDecimate);
             Assert.False(copy.ApriltagRefineEdges);
-            Assert.True(ManagerWrapper.Instance.GetDriverMode(copyId));
             Assert.False(SinkManager.Instance.IsSinkRunning(copyId));
         }
         finally

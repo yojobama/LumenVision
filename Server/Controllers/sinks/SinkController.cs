@@ -110,20 +110,5 @@ namespace Server.Controllers.sinks
             return Task.FromResult(SinkManager.Instance.DuplicateSink(SinkID, copyBindings));
         }
 
-        // PATCH: toggle driver mode on a detection sink (video still streams, detection/NT4 publishing is skipped).
-        // Throws if the sink doesn't support it.
-        [HttpPatch("sink/driverMode")]
-        public Task SetDriverMode([FromQuery] int SinkID, [FromQuery] bool Enabled)
-        {
-            ManagerWrapper.Instance.SetDriverMode(SinkID, Enabled);
-            return Task.CompletedTask;
-        }
-
-        // GET: whether a detection sink currently has driver mode enabled
-        [HttpGet("sink/driverMode")]
-        public Task<bool> GetDriverMode([FromQuery] int SinkID)
-        {
-            return Task.FromResult(ManagerWrapper.Instance.GetDriverMode(SinkID));
-        }
     }
 }

@@ -224,7 +224,6 @@ namespace Server
 
             double tagSize = ManagerWrapper.Instance.GetApriltagDetectorTagSize(sinkId);
             CameraCalibrationResult calibration = ManagerWrapper.Instance.GetApriltagDetectorCalibration(sinkId);
-            bool driverMode = ManagerWrapper.Instance.GetDriverMode(sinkId);
             bool wasRunning = IsSinkRunning(sinkId);
             int? upstreamSourceId = sink.Source?.Id;
             List<int> downstreamSinkIds = GetSinksBoundToSource(sinkId);
@@ -244,7 +243,6 @@ namespace Server
                 MakeTuning(effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode, effectiveAdvanced));
             sinks.Add(NewApriltagSinkRecord(sinkId, name, tagSize, backend, effectiveThreads, effectiveQuadDecimate, effectiveRefineEdges, effectiveRefineMode, effectiveAdvanced));
             ReloadFieldLayout(sinkId);
-            if (driverMode) ManagerWrapper.Instance.SetDriverMode(sinkId, true);
 
             if (upstreamSourceId.HasValue) BindSourceToSink(sinkId, upstreamSourceId.Value);
             foreach (int downstreamId in downstreamSinkIds) BindSourceToSink(downstreamId, sinkId);
@@ -576,7 +574,7 @@ namespace Server
         }
 
         // Copies a detector node: a new, stopped sink named "<name> copy" with the same configuration (tag size, backend, tuning, calibration,
-        // field layout, driver mode, or the same model). With copyBindings it is bound to the same source as the original. Only the two
+        // field layout, or the same model). With copyBindings it is bound to the same source as the original. Only the two
         // detector types are copyable; the stream/record/NT outputs hang off nodes as badges and the stereo nodes need their own calibration.
         public int DuplicateSink(int sinkId, bool copyBindings)
         {
@@ -609,7 +607,6 @@ namespace Server
                         System.IO.File.Copy(layout, copy, true);
                         ManagerWrapper.Instance.LoadFieldLayout(newId, copy);
                     }
-                    if (ManagerWrapper.Instance.GetDriverMode(sinkId)) ManagerWrapper.Instance.SetDriverMode(newId, true);
                     break;
                 }
                 case SinkType.ObjectDetectionSink:

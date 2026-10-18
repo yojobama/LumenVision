@@ -50,8 +50,8 @@ public:
 	// small JSON status blob (connected, server, identity, latency)
 	std::string GetConnectionStatus() const;
 
-	// Drains "<sourceId>/config/pipelineIndex", ".../driverMode", ".../fpsLimit", ".../enabled", ".../snapshot", ".../inputSnapshot" and
-	// ".../outputSnapshot" writes since the last call as a JSON array of {"sourceId", "pipelineIndex"?, "driverMode"?, "fpsLimit"?, "enabled"?,
+	// Drains "<sourceId>/config/fpsLimit", ".../enabled", ".../snapshot", ".../inputSnapshot" and
+	// ".../outputSnapshot" writes since the last call as a JSON array of {"sourceId", "fpsLimit"?, "enabled"?,
 	// "snapshots"?, "inputSnapshots"?, "outputSnapshots"?,
 	// "constrainedSeed"? ([x, y, yaw]), "robotToCamera"? ([x, y, z, qw, qx, qy, qz])};
 	// the snapshot fields count the writes seen (each write is one request, whatever its value); each request is returned once.
@@ -62,9 +62,9 @@ public:
 	int PollLedRequest();
 	// Publishes "<rootTable>/status/ledMode": the LED mode actually applied.
 	void SetLedStatus(int mode);
-	// Publishes "<rootTable>/<node>/status/{pipelineIndex,driverMode,fpsLimit}": the settings actually in effect, so robot code can read
+	// Publishes "<rootTable>/<node>/status/fpsLimit": the setting actually in effect, so robot code can read
 	// them back without a separate request.
-	void PublishNodeStatus(const std::string& nodeId, int pipelineIndex, bool driverMode, int fpsLimit);
+	void PublishNodeStatus(const std::string& nodeId, int fpsLimit);
 	// Publishes "<rootTable>/<node>/status/enabled": whether the node is running.
 	void PublishNodeEnabled(const std::string& nodeId, bool enabled);
 
@@ -84,7 +84,7 @@ public:
 
 private:
 	// nt::Event callback for every topic under this sink's root table; parses the source id and
-	// config/pipelineIndex|driverMode writes out of the topic name.
+	// per-node config writes out of the topic name.
 	void OnConfigValueChanged(const nt::Event& event);
 	void Process(const std::vector<SourceResult>& results) override;
 
@@ -110,8 +110,6 @@ private:
 	NT_Listener m_ConfigListener = 0;
 	std::mutex m_ConfigMutex;
 	struct PendingConfigRequest {
-		std::optional<int> pipelineIndex;
-		std::optional<bool> driverMode;
 		std::optional<int> fpsLimit;
 		std::optional<bool> enabled;
 		int snapshots = 0;

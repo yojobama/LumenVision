@@ -346,13 +346,6 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 	{
 		if (result.frame.has_value())
 		{
-			if (m_DriverMode) {
-				// Driver mode: republish the raw frame in an empty tags/multiTag envelope, skipping detection.
-				// AsBgrFrame() keeps pool ownership; a bare cv::Mat would risk use-after-recycle.
-				SetLatestResult(SourceResult(nlohmann::json{{"tags", nlohmann::json::array()}, {"multiTag", nullptr}, {"calibration", BuildCalibrationJson()}}, result.frame->AsBgrFrame(), result.captureTimeUs));
-				continue;
-			}
-
 			StageLap lap(SinkProfile());
 
 			// AsGray() is free for GRAY8 frames; a colour frame is converted once here

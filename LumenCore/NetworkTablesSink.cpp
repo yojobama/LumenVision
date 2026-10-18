@@ -154,7 +154,7 @@ NetworkTablesSink::NetworkTablesSink(std::shared_ptr<Logger> logger, std::string
 	m_Instance.StartClient4(config.clientIdentity);
 
 	// prefix-subscribed to this sink's whole subtree (not per bound source) so a robot can write
-	// "<rootTable>/<sourceId>/config/pipelineIndex" or ".../driverMode" for any source, bound or not.
+	// "<rootTable>/<sourceId>/config/..." for any node, bound or not.
 	// The leading slash is required: topic names are absolute, and a prefix without it matches nothing.
 	std::string configPrefix = "/" + m_Config.rootTable + "/";
 	std::array<std::string_view, 1> prefixes{ std::string_view(configPrefix) };
@@ -180,7 +180,7 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 	const nt::ValueEventData* valueData = event.GetValueEventData();
 	if (valueData == nullptr) return;
 
-	// "/<rootTable>/<sourceId>/config/pipelineIndex" or ".../driverMode"; GetTopicName returns a leading-slash absolute name, so the prefix includes it
+	// "/<rootTable>/<sourceId>/config/<setting>"; GetTopicName returns a leading-slash absolute name, so the prefix includes it
 	std::string name = nt::GetTopicName(valueData->topic);
 	std::string prefix = "/" + m_Config.rootTable + "/";
 	if (name.rfind(prefix, 0) != 0) return;
@@ -215,13 +215,7 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 	std::string leaf = rest.substr(secondSlash + 1);
 
 	std::lock_guard<std::mutex> lock(m_ConfigMutex);
-	if (leaf == "pipelineIndex" && (valueData->value.IsInteger() || valueData->value.IsDouble())) {
-		m_PendingConfig[sourceId].pipelineIndex = valueData->value.IsInteger()
-			? static_cast<int>(valueData->value.GetInteger())
-			: static_cast<int>(valueData->value.GetDouble());
-	} else if (leaf == "driverMode" && valueData->value.IsBoolean()) {
-		m_PendingConfig[sourceId].driverMode = valueData->value.GetBoolean();
-	} else if (leaf == "fpsLimit" && (valueData->value.IsInteger() || valueData->value.IsDouble())) {
+	if (leaf == "fpsLimit" && (valueData->value.IsInteger() || valueData->value.IsDouble())) {
 		m_PendingConfig[sourceId].fpsLimit = valueData->value.IsInteger()
 			? static_cast<int>(valueData->value.GetInteger())
 			: static_cast<int>(valueData->value.GetDouble());
@@ -253,8 +247,6 @@ std::string NetworkTablesSink::PollConfigRequests()
 	nlohmann::json out = nlohmann::json::array();
 	for (const auto& [sourceId, request] : drained) {
 		nlohmann::json entry{ {"sourceId", sourceId} };
-		if (request.pipelineIndex.has_value()) entry["pipelineIndex"] = request.pipelineIndex.value();
-		if (request.driverMode.has_value()) entry["driverMode"] = request.driverMode.value();
 		if (request.fpsLimit.has_value()) entry["fpsLimit"] = request.fpsLimit.value();
 		if (request.enabled.has_value()) entry["enabled"] = request.enabled.value();
 		if (request.snapshots > 0) entry["snapshots"] = request.snapshots;
@@ -295,11 +287,9 @@ void NetworkTablesSink::SetLedStatus(int mode)
 	m_LedStatusPublisher.Set(mode);
 }
 
-void NetworkTablesSink::PublishNodeStatus(const std::string& nodeId, int pipelineIndex, bool driverMode, int fpsLimit)
+void NetworkTablesSink::PublishNodeStatus(const std::string& nodeId, int fpsLimit)
 {
 	auto table = m_Instance.GetTable(m_Config.rootTable + "/" + TableNameForNode(nodeId));
-	table->PutNumber("status/pipelineIndex", pipelineIndex);
-	table->PutBoolean("status/driverMode", driverMode);
 	table->PutNumber("status/fpsLimit", fpsLimit);
 }
 

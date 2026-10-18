@@ -115,7 +115,7 @@ TEST_CASE("NetworkTablesSink publishes the real NT4 schema end to end over a loo
 	nt::NetworkTableInstance::Destroy(server);
 }
 
-TEST_CASE("NetworkTablesSink surfaces robot-writable config/pipelineIndex and config/driverMode writes", "[nt4]") {
+TEST_CASE("NetworkTablesSink surfaces robot-writable per-node config writes keyed by node id", "[nt4]") {
 	constexpr unsigned int TEST_NT3_PORT = 17811;
 	constexpr unsigned int TEST_NT4_PORT = 17812;
 
@@ -137,8 +137,8 @@ TEST_CASE("NetworkTablesSink surfaces robot-writable config/pipelineIndex and co
 	robot.SetServer("127.0.0.1", TEST_NT4_PORT);
 	robot.StartClient4("LumenCoreTests-nt4-config-robot");
 	auto robotSourceTable = robot.GetTable("lumenvision/some-detector-id");
-	robotSourceTable->PutBoolean("config/driverMode", true);
-	robotSourceTable->PutNumber("config/pipelineIndex", 3);
+	robotSourceTable->PutBoolean("config/enabled", false);
+	robotSourceTable->PutNumber("config/fpsLimit", 12);
 
 	nlohmann::json requests;
 	REQUIRE(WaitUntil([&] {
@@ -147,8 +147,8 @@ TEST_CASE("NetworkTablesSink surfaces robot-writable config/pipelineIndex and co
 	}));
 	REQUIRE(requests.size() == 1);
 	REQUIRE(requests[0]["sourceId"] == "some-detector-id");
-	REQUIRE(requests[0]["driverMode"] == true);
-	REQUIRE(requests[0]["pipelineIndex"] == 3);
+	REQUIRE(requests[0]["enabled"] == false);
+	REQUIRE(requests[0]["fpsLimit"] == 12);
 
 	// Requests are consumed on poll.
 	REQUIRE(ntSink->PollConfigRequests() == "[]");
@@ -325,11 +325,9 @@ TEST_CASE("NetworkTablesSink surfaces the robot's fps, snapshot and LED requests
 	REQUIRE(led == 2);
 	REQUIRE(ntSink->PollLedRequest() == -2);
 
-	ntSink->PublishNodeStatus("node-7", 3, true, 15);
+	ntSink->PublishNodeStatus("node-7", 15);
 	ntSink->SetLedStatus(2);
-	REQUIRE(WaitUntil([&] { return front->GetNumber("status/pipelineIndex", -1.0) == 3.0; }));
 	// NT4 has no cross-topic ordering, so each read-back is awaited on its own
-	REQUIRE(WaitUntil([&] { return front->GetBoolean("status/driverMode", false); }));
 	REQUIRE(WaitUntil([&] { return front->GetNumber("status/fpsLimit", -1.0) == 15.0; }));
 	REQUIRE(WaitUntil([&] { return robot.GetTable("lumenvision")->GetNumber("status/ledMode", -5.0) == 2.0; }));
 

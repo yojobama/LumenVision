@@ -61,11 +61,6 @@ public:
 	// the tuning in effect: what the backend reports for the knobs it owns, the requested values for the ones the detector applies itself
 	ApriltagTuning GetEffectiveTuning() const;
 
-	// Driver mode: when true, Process() skips detection and the NT4 publish and republishes the raw
-	// camera frame.
-	void SetDriverMode(bool enabled) { m_DriverMode = enabled; }
-	bool GetDriverMode() const { return m_DriverMode; }
-
 	// Loads a WPILib-format AprilTagFieldLayout JSON file, enabling multi-tag PnP: every visible tag with
 	// a known field pose feeds one solvePnP, publishing a field-relative camera pose. False on load failure.
 	bool LoadFieldLayout(const std::string& jsonPath) { return m_FieldLayout.LoadFromFile(jsonPath); }
@@ -120,7 +115,6 @@ private:
 	// invalid pointers for fx=fy=0, so pose estimation is skipped entirely without valid intrinsics.
 	bool m_HasCalibration = false;
 
-	bool m_DriverMode = false;
 
 	AprilTagFieldLayout m_FieldLayout;
 

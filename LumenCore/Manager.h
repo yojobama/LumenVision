@@ -102,9 +102,6 @@ public:
 	// robot frame, WPILib axes) for its floor-constrained solve; see ApriltagDetector::SetConstrainedSeed. Throws if sinkId is not a detector.
 	void SetApriltagConstrainedSeed(int sinkId, double x, double y, double yawRadians, vector<double> robotToCamera);
 
-	// Driver mode: throws if sinkId isn't a detection sink that supports it (ApriltagDetector/ObjectDetectionSink).
-	void SetDriverMode(int sinkId, bool enabled);
-	bool GetDriverMode(int sinkId);
 
 	// loads a WPILib-format AprilTagFieldLayout JSON file onto an ApriltagDetector sink (throws if sinkId isn't one), enabling
 	// a jointly-solved field-relative camera pose from frames with 2+ visible field-pose tags.
@@ -281,8 +278,8 @@ public:
 	int CreateNetworkTablesSinkForServer(int id, string serverAddress, int port, string rootTable, string clientIdentity);
 	bool IsNetworkTablesSinkConnected(int sinkId);
 	string GetNetworkTablesSinkStatus(int sinkId);
-	// drains every pending robot-writable config/pipelineIndex and config/driverMode write seen since the last call, as a JSON array (see
-	// NetworkTablesSink::PollConfigRequests). The caller applies each request, e.g. driverMode via SetDriverMode().
+	// drains every pending robot-writable per-node config write seen since the last call, as a JSON array (see
+	// NetworkTablesSink::PollConfigRequests). The caller applies each request.
 	string PollNetworkTablesSinkConfigRequests(int sinkId);
 	// the coprocessor-wide robot-writable "<root>/config/recording" request: -1 = no new write
 	// since the last call, 0 = stop, 1 = start (see NetworkTablesSink::PollRecordingRequest)
@@ -292,8 +289,8 @@ public:
 	// the coprocessor-wide robot-writable "<root>/config/ledMode": -2 = no new write since the last call, else -1 default / 0 off / 1 on / 2 blink
 	int PollNetworkTablesSinkLedRequest(int sinkId);
 	void SetNetworkTablesSinkLedStatus(int sinkId, int mode);
-	// publishes "<root>/<node>/status/{pipelineIndex,driverMode,fpsLimit}" (see NetworkTablesSink::PublishNodeStatus)
-	void SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int pipelineIndex, bool driverMode, int fpsLimit);
+	// publishes "<root>/<node>/status/fpsLimit" (see NetworkTablesSink::PublishNodeStatus)
+	void SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int fpsLimit);
 	// publishes "<root>/<node>/status/enabled" (see NetworkTablesSink::PublishNodeEnabled)
 	void SetNetworkTablesSinkNodeEnabled(int sinkId, string nodeId, bool enabled);
 	// the JSON the sink republishes as "<root>/.graph" (see NetworkTablesSink::SetGraphJson)

@@ -616,38 +616,6 @@ void Manager::SetObjectDetectionCalibration(int sinkId, CameraCalibrationResult 
         objectDetectionSink->SetCalibration(calibrationResult);
 }
 
-void Manager::SetDriverMode(int sinkId, bool enabled)
-{
-    auto sinkIt = m_Sinks.find(sinkId);
-    if (sinkIt == m_Sinks.end()) {
-        throw std::runtime_error("SetDriverMode: no sink with id=" + std::to_string(sinkId));
-    }
-    if (auto apriltagDetector = std::dynamic_pointer_cast<ApriltagDetector>(sinkIt->second)) {
-        apriltagDetector->SetDriverMode(enabled);
-        return;
-    }
-    if (auto objectDetectionSink = std::dynamic_pointer_cast<ObjectDetectionSink>(sinkIt->second)) {
-        objectDetectionSink->SetDriverMode(enabled);
-        return;
-    }
-    throw std::runtime_error("SetDriverMode: sink id=" + std::to_string(sinkId) + " does not support driver mode");
-}
-
-bool Manager::GetDriverMode(int sinkId)
-{
-    auto sinkIt = m_Sinks.find(sinkId);
-    if (sinkIt == m_Sinks.end()) {
-        throw std::runtime_error("GetDriverMode: no sink with id=" + std::to_string(sinkId));
-    }
-    if (auto apriltagDetector = std::dynamic_pointer_cast<ApriltagDetector>(sinkIt->second)) {
-        return apriltagDetector->GetDriverMode();
-    }
-    if (auto objectDetectionSink = std::dynamic_pointer_cast<ObjectDetectionSink>(sinkIt->second)) {
-        return objectDetectionSink->GetDriverMode();
-    }
-    throw std::runtime_error("GetDriverMode: sink id=" + std::to_string(sinkId) + " does not support driver mode");
-}
-
 bool Manager::LoadFieldLayout(int sinkId, string jsonPath)
 {
     auto sinkIt = m_Sinks.find(sinkId);
@@ -1606,12 +1574,12 @@ void Manager::SetNetworkTablesSinkLedStatus(int sinkId, int mode)
         p_NtSink->SetLedStatus(mode);
 }
 
-void Manager::SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int pipelineIndex, bool driverMode, int fpsLimit)
+void Manager::SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int fpsLimit)
 {
     auto sink = m_Sinks.find(sinkId);
     if (sink == m_Sinks.end()) return;
     if (NetworkTablesSink* p_NtSink = dynamic_cast<NetworkTablesSink*>(sink->second.get()))
-        p_NtSink->PublishNodeStatus(nodeId, pipelineIndex, driverMode, fpsLimit);
+        p_NtSink->PublishNodeStatus(nodeId, fpsLimit);
 }
 
 void Manager::SetNetworkTablesSinkNodeEnabled(int sinkId, string nodeId, bool enabled)
@@ -1664,7 +1632,7 @@ void Manager::SetNetworkTablesSinkNodeEnabled(int, string, bool) {}
 void Manager::SetNetworkTablesSinkGraph(int, string) {}
 int Manager::PollNetworkTablesSinkLedRequest(int) { return -2; }
 void Manager::SetNetworkTablesSinkLedStatus(int, int) {}
-void Manager::SetNetworkTablesSinkNodeStatus(int, string, int, bool, int) {}
+void Manager::SetNetworkTablesSinkNodeStatus(int, string, int) {}
 #endif
 
 // Declared unconditionally with an #ifdef'd body, as in the NT4 block above.

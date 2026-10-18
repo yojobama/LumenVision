@@ -15,14 +15,10 @@ public:
 	// which backend (RKNN or ONNX Runtime) this sink runs, chosen at construction from the model's file format
 	std::string GetBackendName() const { return m_Backend ? m_Backend->Name() : "none"; }
 
-	// Driver mode: skips inference and keeps streaming raw video.
 	// Changes the confidence and NMS cutoffs of the running model (see IDetectionBackend::SetThresholds).
 	void SetThresholds(float confThreshold, float nmsThreshold) { if (m_Backend) m_Backend->SetThresholds(confThreshold, nmsThreshold); }
 	float GetConfThreshold() const { return m_Backend ? m_Backend->GetConfThreshold() : 0.0f; }
 	float GetNmsThreshold() const { return m_Backend ? m_Backend->GetNmsThreshold() : 0.0f; }
-
-	void SetDriverMode(bool enabled) { m_DriverMode = enabled; }
-	bool GetDriverMode() const { return m_DriverMode; }
 
 	// With a calibration each detection also reports the yaw/pitch of its box centre (degrees, positive left / up, as the
 	// AprilTag targets); without one they are omitted.
@@ -33,7 +29,6 @@ private:
 
 	std::shared_ptr<IDetectionBackend> m_Backend;
 	std::shared_ptr<Logger> m_Logger;
-	bool m_DriverMode = false;
 
 	std::mutex m_CalibrationMutex;
 	bool m_HasCalibration = false;

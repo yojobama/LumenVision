@@ -38,12 +38,6 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 		const cv::Mat& sourceFrame = result.frame->AsBgr();
 		lap.Mark("bgr");
 
-		if (m_DriverMode) {
-			// AsBgrFrame() rather than the bare cv::Mat, to keep FramePool ownership tracking.
-			SetLatestResult(SourceResult(nlohmann::json(std::vector<nlohmann::json>{}), result.frame->AsBgrFrame(), result.captureTimeUs));
-			continue;
-		}
-
 		std::vector<ObjectDetection> detections = m_Backend->Infer(sourceFrame);
 		lap.Mark("infer");
 		{

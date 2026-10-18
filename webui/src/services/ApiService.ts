@@ -1119,15 +1119,4 @@ export class ApiService {
     return response.json();
   }
 
-  async getDriverMode(sinkId: number): Promise<boolean> {
-    const response = await fetch(`${this.baseUrl}/sink/driverMode?SinkID=${sinkId}`);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  async setDriverMode(sinkId: number, enabled: boolean): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/sink/driverMode?SinkID=${sinkId}&Enabled=${enabled}`, { method: 'PATCH' });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  }
-
 }
