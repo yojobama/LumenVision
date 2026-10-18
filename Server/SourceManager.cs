@@ -135,7 +135,13 @@ namespace Server
             if (string.IsNullOrWhiteSpace(name)) throw Server.Web.ApiException.BadRequest("a name is required");
 
             CropRegionDto kept;
-            if (layout != null)
+            if (region.HasValue)
+            {
+                // a given region wins (a saved crop being restored, whose camera has not been opened yet and so has no mode to cut from);
+                // a layout given with it is kept, so the crop is re-cut when the camera's mode is known
+                kept = region.Value;
+            }
+            else if (layout != null)
             {
                 if (parent.Type != SourceType.Camera) throw Server.Web.ApiException.BadRequest("only a camera can be split in halves; give the region to crop instead");
                 CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(parentId);
@@ -143,7 +149,7 @@ namespace Server
             }
             else
             {
-                kept = region ?? throw Server.Web.ApiException.BadRequest("give a layout or a region to crop");
+                throw Server.Web.ApiException.BadRequest("give a layout or a region to crop");
             }
             if (kept.Width <= 0 || kept.Height <= 0 || kept.X < 0 || kept.Y < 0)
                 throw Server.Web.ApiException.BadRequest("the crop must have a positive size and start inside the frame");
@@ -153,7 +159,28 @@ namespace Server
                 : ManagerWrapper.Instance.CreateRoiSource(parentId, kept.X, kept.Y, kept.Width, kept.Height);
             sources.Add(new Source(sourceId, name, SourceType.Crop) { CropParentId = parentId, CropRegion = kept, CropLayout = layout });
             DB.Instance.Save();
+            if (layout != null) StartCropReconciler();
             return sourceId;
+        }
+
+        // A camera's mode is only known once it is open, which after a restart is a moment after its splits are restored, so a slow check
+        // re-cuts every split from its camera's real mode (and heals one cut before the camera changed under it).
+        private System.Threading.Timer? cropReconciler;
+        private void StartCropReconciler()
+        {
+            cropReconciler ??= new System.Threading.Timer(_ =>
+            {
+                try
+                {
+                    foreach (int parentId in sources.Where(s => s.Type == SourceType.Crop && s.CropLayout != null && s.CropParentId.HasValue)
+                        .Select(s => s.CropParentId!.Value).Distinct().ToList())
+                        RefitCrops(parentId, saveIfChanged: true);
+                }
+                catch (Exception)
+                {
+                    // the source list changed under the enumeration: the next tick tries again
+                }
+            }, null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
         }
 
         // The two halves of a side-by-side (or top-and-bottom) camera as two crop sources, named after the camera: [first, second] = [left, right]
@@ -175,22 +202,29 @@ namespace Server
         }
 
         // A camera changed resolution: its split crops are cut again from the new frame size, so left stays the left half. Custom regions stay as given.
-        public void RefitCrops(int parentId)
+        public void RefitCrops(int parentId, bool saveIfChanged = false)
         {
+            bool changed = false;
             foreach (Source crop in sources.Where(s => s.Type == SourceType.Crop && s.CropParentId == parentId && s.CropLayout != null).ToList())
             {
                 try
                 {
                     CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(parentId);
+                    if (mode.width <= 0 || mode.height <= 0) continue; // the camera is not open yet: nothing to cut from
                     CropRegionDto region = RegionFor(crop.CropLayout!, mode.width, mode.height);
-                    if (ManagerWrapper.Instance.SetRoiSourceRect(crop.Id, region.X, region.Y, region.Width, region.Height)) crop.CropRegion = region;
+                    if (crop.CropRegion == region) continue;
+                    if (ManagerWrapper.Instance.SetRoiSourceRect(crop.Id, region.X, region.Y, region.Width, region.Height))
+                    {
+                        crop.CropRegion = region;
+                        changed = true;
+                    }
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"Refitting crop {crop.Id} to its camera failed: {ex.Message}");
                 }
             }
-            DB.Instance.Save();
+            if (changed || !saveIfChanged) DB.Instance.Save();
         }
 
         public int InitializeVideoFileSource(string filePath, int fps = 30, string name = "default", int? id = null)

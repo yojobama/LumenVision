@@ -99,6 +99,7 @@ namespace Server
                                 catch (Exception ex)
                                 {
                                     Console.WriteLine($"Restoring crop source {source.Id} failed: {ex.Message}");
+                                    logger.EnterLog($"Crop source {source.Id} ({source.Name}) not restored: {ex.Message}");
                                 }
                                 break;
                         }
@@ -279,6 +280,8 @@ namespace Server
 
             foreach (var source in sources)
             {
+                // a crop that could not be rebuilt (its camera is gone) must not come back as a camera
+                if (source.Type == SourceType.Crop) continue;
                 if (SourceManager.Instance.GetSourceById(source.Id) == null)
                 {
                     SourceManager.Instance.InitializeCameraSource(new CameraHardwareInfo { name = source.Name, path = "" });

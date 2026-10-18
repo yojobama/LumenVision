@@ -313,6 +313,7 @@ const GraphPageInner: React.FC<{ onToast: (m: string, t: 'success'|'error'|'info
             onPaneClick={() => { setSelectedId(null); setSelectedEdgeId(null); }}
             colorMode={darkMode ? 'dark' : 'light'}
             fitView
+            minZoom={0.1}
           >
             <Background />
             <Controls />

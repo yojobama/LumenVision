@@ -80,6 +80,28 @@ public class CropSourceTests
     }
 
     [Fact]
+    public void ASavedSplitIsRestoredFromItsSavedRegionNotFromACameraThatIsNotOpenYet()
+    {
+        string path = WriteImage();
+        int parent = SourceManager.Instance.initializeImageFileSource(path, "still");
+        try
+        {
+            // restoring after a restart: the camera has no mode to cut from yet, so the saved rectangle is used and the layout is kept for later re-cuts
+            int crop = SourceManager.Instance.InitializeCropSource(parent, "left", layout: "left", region: new CropRegionDto(0, 0, 640, 480), id: 4242424);
+
+            Source record = SourceManager.Instance.GetSourceById(crop)!;
+            Assert.Equal(4242424, crop);                                      // a saved crop keeps its id, so what is bound to it still finds it
+            Assert.Equal(new CropRegionDto(0, 0, 640, 480), record.CropRegion);
+            Assert.Equal("left", record.CropLayout);
+        }
+        finally
+        {
+            SourceManager.Instance.DeleteSource(parent);
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ACropIsASourceASinkCanBindToAndItGoesWithItsParent()
     {
         string path = WriteImage();

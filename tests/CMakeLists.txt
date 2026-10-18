@@ -17,6 +17,7 @@ add_executable(LumenCoreTests
     test_camera_v4l2_hitl.cpp
     test_pixel_unpack.cpp
     test_roi_source.cpp
+    test_depth_fusion.cpp
     test_driver_mode.cpp
     test_snapshot.cpp
     test_multitag_pnp.cpp

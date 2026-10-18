@@ -15,6 +15,17 @@ public:
 
 	void SetStereoDepthNode(std::shared_ptr<StereoDepthNode> depthNode);
 
+	// What a detector publishes, with range added, given a depth grid (rows x cols blocks of blockW x blockH pixels, metres; <= 0 = no depth).
+	// Two shapes are understood, and the result keeps the shape it was given:
+	//   - ObjectDetectionSink: an array of {"box":[x,y,w,h], ...}
+	//   - ApriltagDetector: {"tags":[{"corners":[[x,y] x4], ...}], ...}; each tag's box is the bounding box of its corners
+	// Each detection gains distanceMeters (median of the valid blocks under its box; 0 when none), xMeters/yMeters (its centre projected at that
+	// range with the rectified focal length fx and principal point cx, cy) and depthValidFraction. Anything else is returned unchanged.
+	// `boxes`, when given, receives each fused detection's box (x, y, w, h) and distance, for annotating a frame.
+	struct FusedBox { double x, y, w, h, distanceMeters; };
+	static nlohmann::json FuseDetections(const nlohmann::json& detections, const std::vector<float>& depth, int cols, int rows,
+		int blockW, int blockH, double fx, double cx, double cy, std::vector<FusedBox>* boxes = nullptr);
+
 private:
 	void Process(const std::vector<SourceResult>& results) override;
 
