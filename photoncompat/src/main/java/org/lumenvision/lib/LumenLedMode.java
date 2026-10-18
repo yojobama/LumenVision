@@ -1,9 +1,8 @@
 package org.lumenvision.lib;
 
-/** The coprocessor's vision-LED mode, numbered as photonlib's VisionLEDMode. */
+/** The coprocessor's vision-LED mode: {@link #AUTO} lights it while any detector runs, the others are fixed. */
 public enum LumenLedMode {
-    /** The coprocessor's default: off. */
-    DEFAULT(-1),
+    AUTO(-1),
     OFF(0),
     ON(1),
     BLINK(2);
@@ -14,11 +13,11 @@ public enum LumenLedMode {
         this.value = value;
     }
 
-    /** @return the mode for a value written to/read from NetworkTables, {@link #DEFAULT} if unknown */
+    /** @return the mode for a value written to/read from NetworkTables, {@link #AUTO} if unknown */
     public static LumenLedMode fromValue(int value) {
         for (LumenLedMode mode : values()) {
             if (mode.value == value) return mode;
         }
-        return DEFAULT;
+        return AUTO;
     }
 }

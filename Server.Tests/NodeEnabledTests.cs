@@ -86,15 +86,15 @@ public class NodeEnabledTests
         var preview = new Sink(11, "preview", SinkType.MjpegSink) { Source = camera };
 
         string json = NetworkTablesControlService.BuildGraphJson(
-            new[] { camera, crop }, new[] { detector, preview }, new Dictionary<int, string> { [10] = "front" }, id => id == 10);
+            new[] { camera, crop }, new[] { detector, preview }, new Dictionary<int, string> { [10] = "front-tags", [1] = "front" }, id => id == 10);
 
         JsonElement nodes = JsonDocument.Parse(json).RootElement.GetProperty("nodes");
         JsonElement Node(int id) => nodes.EnumerateArray().Single(n => n.GetProperty("id").GetInt32() == id);
         Assert.Equal(4, nodes.GetArrayLength());
-        Assert.Equal("front", Node(10).GetProperty("name").GetString());
-        Assert.Equal("front", Node(10).GetProperty("table").GetString());
+        Assert.Equal("front - tags", Node(10).GetProperty("name").GetString());
+        Assert.Equal("front-tags", Node(10).GetProperty("table").GetString());
         Assert.Equal("11", Node(11).GetProperty("table").GetString());
-        Assert.Equal("1", Node(1).GetProperty("table").GetString());
+        Assert.Equal("front", Node(1).GetProperty("table").GetString());
         Assert.True(Node(10).GetProperty("enabled").GetBoolean());
         Assert.Equal(1, Node(10).GetProperty("input").GetInt32());
         Assert.False(Node(11).GetProperty("enabled").GetBoolean());

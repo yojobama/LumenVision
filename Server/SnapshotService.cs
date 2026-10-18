@@ -9,8 +9,8 @@ namespace Server
     // One saved snapshot as the API lists it; Path is relative to the snapshot root with forward slashes.
     public sealed record SnapshotEntry(string Camera, string Path, string Kind, long SizeBytes, DateTime CreatedUtc);
 
-    // Saves still images of a camera: the raw frame (input) or the active detector's annotated frame (output) under
-    // snapshots/<camera name>/<UTC timestamp>-<kind>.jpg.
+    // Saves still images of a node: the raw frame of a camera (input) or the annotated frame of a detector (output) under
+    // snapshots/<node name>/<UTC timestamp>-<kind>.jpg.
     public sealed class SnapshotService
     {
         public static SnapshotService Instance { get; } = new SnapshotService();
@@ -78,27 +78,6 @@ namespace Server
             bool detector = sink != null && (sink.Type == SinkType.ApriltagSink || sink.Type == SinkType.ObjectDetectionSink);
             SnapshotKind kind = detector ? SnapshotKind.Output : SnapshotKind.Input;
             string relative = RelativePath(sink?.Name ?? source!.Name, kind, DateTime.UtcNow);
-            string full = Path.Combine(SnapshotRoot, relative.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-            return ManagerWrapper.Instance.SaveFreshSnapshot(nodeId, full) ? relative : null;
-        }
-
-        // Returns the relative path of the saved file, or null if no frame was available. An output snapshot of a camera with no
-        // detection running falls back to its input frame.
-        public string? Save(int sourceId, SnapshotKind kind)
-        {
-            Source source = SourceManager.Instance.GetSourceById(sourceId)
-                ?? throw new ArgumentException($"no source with id {sourceId}");
-
-            // the annotated frame of the first running detector fed by this camera
-            int nodeId = sourceId;
-            if (kind == SnapshotKind.Output)
-            {
-                int? detector = SinkManager.Instance.GetDetectorsOfSource(sourceId).FirstOrDefault(SinkManager.Instance.IsSinkRunning);
-                if (detector.HasValue) nodeId = detector.Value;
-            }
-
-            string relative = RelativePath(source.Name, kind, DateTime.UtcNow);
             string full = Path.Combine(SnapshotRoot, relative.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(full)!);
             return ManagerWrapper.Instance.SaveFreshSnapshot(nodeId, full) ? relative : null;

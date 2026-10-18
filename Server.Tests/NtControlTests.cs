@@ -4,44 +4,52 @@ using Xunit;
 
 namespace Server.Tests;
 
-public class CameraAliasTests
+public class NodeTableTests
 {
     private static Source Camera(int id, string name) => new(id, name, SourceType.Camera);
 
     [Fact]
-    public void ADetectorBoundToACameraIsNamedAfterIt()
-    {
-        var camera = Camera(1, "rear");
-        var detector = new Sink(20, "tags", SinkType.ApriltagSink) { Source = camera };
-
-        var aliases = NetworkTablesControlService.ComputeCameraAliases(new[] { camera }, new[] { detector });
-
-        Assert.Equal("rear", aliases[20]);
-    }
-
-    [Fact]
-    public void OnlyTheLowestIdDetectorOfACameraGetsTheName()
+    public void CamerasAndDetectorsAreNamedAfterThemselves()
     {
         var camera = Camera(1, "front");
-        var first = new Sink(10, "front - tags", SinkType.ApriltagSink) { Source = camera };
-        var second = new Sink(11, "front - notes", SinkType.ObjectDetectionSink) { Source = camera };
+        var tags = new Sink(10, "tags", SinkType.ApriltagSink) { Source = camera };
 
-        var aliases = NetworkTablesControlService.ComputeCameraAliases(new[] { camera }, new[] { second, first });
+        var tables = NetworkTablesControlService.ComputeNodeTables(new[] { camera }, new[] { tags });
 
-        Assert.Equal("front", aliases[10]);
-        Assert.False(aliases.ContainsKey(11));
+        Assert.Equal("front", tables[1]);
+        Assert.Equal("tags", tables[10]);
     }
 
     [Fact]
-    public void NonDetectorSinksAndNonCameraSourcesGetNoAlias()
+    public void NamesAreSanitisedAndMadeUniqueWithTheId()
     {
-        var file = new Source(2, "clip", SourceType.VideoFile);
-        var fileDetector = new Sink(30, "on clip", SinkType.ApriltagSink) { Source = file };
+        var camera = Camera(1, "front cam");
+        var first = new Sink(10, "front cam", SinkType.ApriltagSink) { Source = camera };
+        var second = new Sink(11, "front cam", SinkType.ObjectDetectionSink) { Source = camera };
+
+        var tables = NetworkTablesControlService.ComputeNodeTables(new[] { camera }, new[] { second, first });
+
+        Assert.Equal("front_cam", tables[1]);
+        Assert.Equal("front_cam-10", tables[10]);
+        Assert.Equal("front_cam-11", tables[11]);
+    }
+
+    [Fact]
+    public void ANodeWithoutANameGetsItsId()
+    {
+        var tables = NetworkTablesControlService.ComputeNodeTables(new[] { Camera(7, "") }, new Sink[] { });
+
+        Assert.Equal("7", tables[7]);
+    }
+
+    [Fact]
+    public void OtherSinksHaveNoTable()
+    {
         var preview = new Sink(31, "preview", SinkType.MjpegSink) { Source = Camera(1, "front") };
 
-        var aliases = NetworkTablesControlService.ComputeCameraAliases(new[] { file }, new Sink[] { fileDetector, preview });
+        var tables = NetworkTablesControlService.ComputeNodeTables(new[] { Camera(1, "front") }, new[] { preview });
 
-        Assert.Empty(aliases);
+        Assert.False(tables.ContainsKey(31));
     }
 }
 
@@ -56,17 +64,37 @@ public class FakeLedOutput : ILedOutput
 public class LedControllerTests
 {
     [Fact]
-    public void StartsOffAndDefaultModeIsOff()
+    public void StartsOffAndAutoIsOffWithoutADetector()
     {
         var output = new FakeLedOutput();
         using var led = new LedController(output);
 
-        Assert.Equal(LedMode.Default, led.Mode);
+        Assert.Equal(LedMode.Auto, led.Mode);
         Assert.Equal(new[] { false }, output.Writes);
 
         led.SetMode(LedMode.On);
-        led.SetMode(LedMode.Default);
+        led.SetMode(LedMode.Auto);
         Assert.Equal(new[] { false, true, false }, output.Writes);
+    }
+
+    [Fact]
+    public void AutoFollowsWhetherAnyDetectorIsRunning()
+    {
+        var output = new FakeLedOutput();
+        using var led = new LedController(output);
+
+        led.SetAutoActive(true);
+        Assert.True(output.Writes[^1]);
+
+        led.SetMode(LedMode.Off);
+        led.SetAutoActive(false);
+        led.SetAutoActive(true);
+        Assert.False(output.Writes[^1]); // a fixed mode ignores the detectors
+
+        led.SetMode(LedMode.Auto);
+        Assert.True(output.Writes[^1]);
+        led.SetAutoActive(false);
+        Assert.False(output.Writes[^1]);
     }
 
     [Fact]
@@ -171,14 +199,14 @@ public class SourceFpsLimitAndSnapshotTests
     }
 
     [Fact]
-    public void InputSnapshotWritesAFreshFrame()
+    public void ACameraSnapshotWritesAFreshFrame()
     {
         int id = SourceManager.Instance.initializeImageFileSource(WriteTinyPng(), "snapshot-test");
         try
         {
             SourceManager.Instance.EnableSourceById(id);
 
-            string? saved = SnapshotService.Instance.Save(id, SnapshotKind.Input);
+            string? saved = SnapshotService.Instance.SaveNode(id);
 
             Assert.NotNull(saved);
             Assert.StartsWith("snapshot-test/", saved);

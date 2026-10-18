@@ -627,13 +627,6 @@ namespace Server
         // which backend an existing ObjectDetectionSink runs (read-only)
         public string GetObjectDetectionSinkBackendName(int sinkId) => ManagerWrapper.Instance.GetObjectDetectionSinkBackendName(sinkId);
 
-        // the detector nodes (AprilTag and object detection) fed directly by a source, in id order
-        public List<int> GetDetectorsOfSource(int sourceId)
-        {
-            return sinks.Where(s => (s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink) && s.Source != null && s.Source.Id == sourceId)
-                .Select(s => s.Id).OrderBy(id => id).ToList();
-        }
-
         // every sink bound (as its source) to sourceId; used to rebind downstream sinks after a detector is rebuilt
         public List<int> GetSinksBoundToSource(int sourceId)
         {

@@ -229,10 +229,6 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 		m_PendingConfig[sourceId].enabled = valueData->value.GetBoolean();
 	} else if (leaf == "snapshot") {
 		m_PendingConfig[sourceId].snapshots++;
-	} else if (leaf == "inputSnapshot") {
-		m_PendingConfig[sourceId].inputSnapshots++;
-	} else if (leaf == "outputSnapshot") {
-		m_PendingConfig[sourceId].outputSnapshots++;
 	}
 }
 
@@ -252,8 +248,6 @@ std::string NetworkTablesSink::PollConfigRequests()
 		if (request.snapshots > 0) entry["snapshots"] = request.snapshots;
 		if (request.constrainedSeed.has_value()) entry["constrainedSeed"] = request.constrainedSeed.value();
 		if (request.robotToCamera.has_value()) entry["robotToCamera"] = request.robotToCamera.value();
-		if (request.inputSnapshots > 0) entry["inputSnapshots"] = request.inputSnapshots;
-		if (request.outputSnapshots > 0) entry["outputSnapshots"] = request.outputSnapshots;
 		out.push_back(entry);
 	}
 	return out.dump();

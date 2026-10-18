@@ -10,16 +10,14 @@ namespace Server
 {
     // Applies robot-written NetworkTables config each tick, for every NetworkTablesSink:
     //  <root>/config/recording                 (bool)  -> SinkManager.SetAllRecording
-    //  <root>/config/ledMode                   (int)   -> LedController (-1 default, 0 off, 1 on, 2 blink)
-    //  <root>/<camera>/config/fpsLimit         (int)   -> cap that camera's published frames per second (<= 0: unlimited)
-    //  <root>/<camera>/config/constrainedSeed  (double[3]: x, y, yaw) and config/robotToCamera (double[7]: x, y, z, qw, qx, qy, qz)
+    //  <root>/config/ledMode                   (int)   -> LedController (-1 auto, 0 off, 1 on, 2 blink)
+    //  <root>/<node>/config/constrainedSeed  (double[3]: x, y, yaw) and config/robotToCamera (double[7]: x, y, z, qw, qx, qy, qz)
     //                                          -> the detector's floor-constrained solve (published in the result packet)
     //  <root>/<node>/config/enabled            (bool)  -> start or stop that node (SinkManager.SetSinkEnabled)
     //  <root>/<node>/config/snapshot           (any write) -> save that node's latest frame
-    //  <root>/<camera>/config/inputSnapshot    (any write) -> save a raw-frame snapshot
-    //  <root>/<camera>/config/outputSnapshot   (any write) -> save the detector's annotated frame
+    //  <root>/<node>/config/fpsLimit           (int)   -> cap how many results per second that node publishes (<= 0: unlimited)
     // and publishes the settings actually in effect back under status/ (recording, ledMode, per node enabled and
-    // fpsLimit), plus the graph description under .graph. <camera> is the camera's name (a detector's id also works). Requests are idempotent desired state,
+    // fpsLimit), plus the graph description under .graph. <node> is the node's table (see .graph). Requests are idempotent desired state,
     // so several NT sinks seeing the same write is harmless.
     public sealed class NetworkTablesControlService : BackgroundService
     {
@@ -82,19 +80,21 @@ namespace Server
         private static void Tick()
         {
             ApplyForgottenSinks();
+            List<int> detectorIds = SinkManager.Instance.GetAllSinks()
+                .Where(s => s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink).Select(s => s.Id).ToList();
+            // the vision LED follows the detectors whether or not a robot is connected
+            LedController.Instance.SetAutoActive(detectorIds.Any(SinkManager.Instance.IsSinkRunning));
             List<int> ntSinkIds = SinkManager.Instance.getAllSinkIds()
                 .Where(id => SinkManager.Instance.GetSinkById(id)?.Type == SinkType.NetworkTablesSink)
                 .ToList();
             if (ntSinkIds.Count == 0) return;
 
-            Dictionary<int, string> aliases = ComputeCameraAliases(
+            Dictionary<int, string> tables = ComputeNodeTables(
                 SourceManager.Instance.GetAllSourceIds().Select(id => SourceManager.Instance.GetSourceById(id)).Where(s => s != null)!,
                 SinkManager.Instance.GetAllSinks());
-            RefreshAliases(ntSinkIds, aliases);
+            RefreshAliases(ntSinkIds, tables);
 
             // every NetworkTablesSink publishes every detector node, however it was bound
-            List<int> detectorIds = SinkManager.Instance.GetAllSinks()
-                .Where(s => s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink).Select(s => s.Id).ToList();
             foreach (int ntSinkId in ntSinkIds)
                 foreach (int detectorId in detectorIds)
                     ManagerWrapper.Instance.EnsureSourceBoundToSink(detectorId, ntSinkId);
@@ -129,23 +129,24 @@ namespace Server
                 ManagerWrapper.Instance.SetNetworkTablesSinkLedStatus(ntSinkId, (int)LedController.Instance.Mode);
             }
             PublishCameraStatus(ntSinkIds, detectorIds);
-            PublishGraph(ntSinkIds, aliases);
+            PublishGraph(ntSinkIds, tables);
         }
 
         private static readonly Dictionary<int, (string json, DateTime at)> PublishedGraph = new();
 
-        // every node (sources and sinks) with its display name, the NT table its topics are under (an alias or the id), kind, running state and input
-        internal static string BuildGraphJson(IEnumerable<Source> sources, IEnumerable<Sink> sinks, Dictionary<int, string> aliases, Func<int, bool> isRunning)
+        // every node (sources and sinks) with its display name, the NT table its topics are under (see ComputeNodeTables; the id when it has none),
+        // kind, running state and input
+        internal static string BuildGraphJson(IEnumerable<Source> sources, IEnumerable<Sink> sinks, Dictionary<int, string> tables, Func<int, bool> isRunning)
         {
             var nodes = new List<object>();
             foreach (Source source in sources)
-                nodes.Add(new { id = source.Id, name = source.Name, table = source.Id.ToString(), kind = source.Type.ToString(), enabled = true, input = (int?)source.CropParentId });
+                nodes.Add(new { id = source.Id, name = source.Name, table = tables.TryGetValue(source.Id, out string? sourceTable) ? sourceTable : source.Id.ToString(), kind = source.Type.ToString(), enabled = true, input = (int?)source.CropParentId });
             foreach (Sink sink in sinks)
                 nodes.Add(new
                 {
                     id = sink.Id,
-                    name = aliases.TryGetValue(sink.Id, out string? alias) ? alias : sink.Name,
-                    table = alias ?? sink.Id.ToString(),
+                    name = sink.Name,
+                    table = tables.TryGetValue(sink.Id, out string? sinkTable) ? sinkTable : sink.Id.ToString(),
                     kind = sink.Type.ToString(),
                     enabled = isRunning(sink.Id),
                     input = (int?)sink.Source?.Id,
@@ -153,11 +154,11 @@ namespace Server
             return JsonSerializer.Serialize(new { nodes });
         }
 
-        private static void PublishGraph(List<int> ntSinkIds, Dictionary<int, string> aliases)
+        private static void PublishGraph(List<int> ntSinkIds, Dictionary<int, string> tables)
         {
             var sources = SourceManager.Instance.GetAllSourceIds().Select(id => SourceManager.Instance.GetSourceById(id)).Where(s => s != null).Select(s => s!).ToList();
             var sinks = SinkManager.Instance.GetAllSinks().ToList();
-            string json = BuildGraphJson(sources, sinks, aliases, SinkManager.Instance.IsSinkRunning);
+            string json = BuildGraphJson(sources, sinks, tables, SinkManager.Instance.IsSinkRunning);
 
             foreach (int ntSinkId in ntSinkIds)
             {
@@ -167,28 +168,31 @@ namespace Server
             }
         }
 
-        // detector node id -> the name of the camera it runs on: the camera's detector with the lowest id carries its name, so the name
-        // stays with one node however the others are switched.
-        internal static Dictionary<int, string> ComputeCameraAliases(IEnumerable<Source> sources, IEnumerable<Sink> sinks)
+        // node id -> the NT table its topics are published under: the node's own name with characters outside [A-Za-z0-9_.-] replaced
+        // by '_', made unique across cameras and detectors by appending the id; a node without a name gets its id. Other sinks have no table.
+        internal static Dictionary<int, string> ComputeNodeTables(IEnumerable<Source> sources, IEnumerable<Sink> sinks)
         {
-            var aliases = new Dictionary<int, string>();
-            var usedNames = new HashSet<string>();
-            List<Sink> sinkList = sinks.ToList();
-
-            foreach (Sink sink in sinkList.Where(s => s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink).OrderBy(s => s.Id))
+            var tables = new Dictionary<int, string>();
+            var used = new HashSet<string>();
+            var named = sources.Select(s => (s.Id, s.Name))
+                .Concat(sinks.Where(s => s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink).Select(s => (s.Id, s.Name)))
+                .OrderBy(n => n.Id);
+            foreach (var (id, name) in named)
             {
-                Source? bound = sink.Source;
-                if (bound != null && bound.Type == SourceType.Camera && usedNames.Add(bound.Name))
-                    aliases[sink.Id] = bound.Name;
+                string table = new string((name ?? string.Empty).Select(c => char.IsAsciiLetterOrDigit(c) || c == '_' || c == '.' || c == '-' ? c : '_').ToArray());
+                if (table.Length == 0) table = id.ToString();
+                else if (!used.Add(table)) table = $"{table}-{id}";
+                used.Add(table);
+                tables[id] = table;
             }
-            return aliases;
+            return tables;
         }
 
-        private static void RefreshAliases(List<int> ntSinkIds, Dictionary<int, string> aliases)
+        private static void RefreshAliases(List<int> ntSinkIds, Dictionary<int, string> tables)
         {
             foreach (int ntSinkId in ntSinkIds)
             {
-                foreach (var (nodeId, name) in aliases)
+                foreach (var (nodeId, name) in tables)
                 {
                     var key = (ntSinkId, nodeId);
                     if (AppliedAliases.TryGetValue(key, out string? applied) && applied == name) continue;
@@ -196,7 +200,7 @@ namespace Server
                     AppliedAliases[key] = name;
                 }
 
-                foreach (var key in AppliedAliases.Keys.Where(k => k.ntSinkId == ntSinkId && !aliases.ContainsKey(k.nodeId)).ToList())
+                foreach (var key in AppliedAliases.Keys.Where(k => k.ntSinkId == ntSinkId && !tables.ContainsKey(k.nodeId)).ToList())
                 {
                     ManagerWrapper.Instance.SetNetworkTablesSinkNodeAlias(ntSinkId, key.nodeId.ToString(), "");
                     AppliedAliases.Remove(key);
@@ -208,10 +212,7 @@ namespace Server
         {
             foreach (int nodeId in detectorIds)
             {
-                Source? camera = ResolveCamera(nodeId);
-                if (camera == null) continue;
-
-                int fpsLimit = camera.FpsLimit ?? -1;
+                int fpsLimit = ManagerWrapper.Instance.GetSourceFpsLimit(nodeId);
                 bool enabled = SinkManager.Instance.IsSinkRunning(nodeId);
                 string status = $"{fpsLimit}|{enabled}";
 
@@ -227,28 +228,18 @@ namespace Server
             }
         }
 
-        // the camera a node belongs to: the source itself, or the camera a detector is bound to
-        private static Source? ResolveCamera(int nodeId)
-        {
-            Source? owner = SourceManager.Instance.GetSourceById(nodeId);
-            if (owner != null) return owner;
-
-            Source? bound = SinkManager.Instance.GetSinkById(nodeId)?.Source;
-            return bound == null ? null : SourceManager.Instance.GetSourceById(bound.Id);
-        }
-
         private static void ApplyLedRequest(int value)
         {
-            if (value < (int)LedMode.Default || value > (int)LedMode.Blink)
+            if (value < (int)LedMode.Auto || value > (int)LedMode.Blink)
             {
-                Console.WriteLine($"NT ledMode request {value} ignored: expected -1 (default), 0 (off), 1 (on) or 2 (blink)");
+                Console.WriteLine($"NT ledMode request {value} ignored: expected -1 (auto), 0 (off), 1 (on) or 2 (blink)");
                 return;
             }
             LedController.Instance.SetMode((LedMode)value);
         }
 
-        // entries are {"sourceId": "<nodeId>", "enabled"?, "snapshots"?, "fpsLimit"?, "inputSnapshots"?, "outputSnapshots"?}
-        // (see NetworkTablesSink::PollConfigRequests); enabled and snapshots apply to that node, fpsLimit to the camera it runs on.
+        // entries are {"sourceId": "<nodeId>", "enabled"?, "snapshots"?, "fpsLimit"?}
+        // (see NetworkTablesSink::PollConfigRequests); each applies to that node.
         private static void ApplyConfigRequests(string json)
         {
             if (string.IsNullOrEmpty(json) || json == "[]") return;
@@ -290,35 +281,24 @@ namespace Server
 
                 if (entry.TryGetProperty("snapshots", out _)) TakeNodeSnapshot(nodeId);
 
-                bool needsCamera = entry.TryGetProperty("fpsLimit", out JsonElement fpsLimit)
-                    | entry.TryGetProperty("inputSnapshots", out JsonElement inputSnapshots)
-                    | entry.TryGetProperty("outputSnapshots", out JsonElement outputSnapshots);
-                if (!needsCamera) continue;
-
-                Source? camera = ResolveCamera(nodeId);
-                if (camera == null)
-                {
-                    Console.WriteLine($"NT request for {nodeId} ignored: no camera runs that node");
-                    continue;
-                }
-
-                if (entry.TryGetProperty("fpsLimit", out fpsLimit))
+                if (entry.TryGetProperty("fpsLimit", out JsonElement fpsLimit))
                 {
                     try
                     {
-                        SourceManager.Instance.SetFpsLimit(camera.Id, fpsLimit.GetInt32());
+                        int fps = fpsLimit.GetInt32();
+                        // a camera remembers its cap across restarts; a detector's applies until it is rebuilt
+                        if (SourceManager.Instance.GetSourceById(nodeId) != null) SourceManager.Instance.SetFpsLimit(nodeId, fps);
+                        else ManagerWrapper.Instance.SetSourceFpsLimit(nodeId, fps > 0 ? fps : -1);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"NT fpsLimit request for source {camera.Id} ignored: {ex.Message}");
+                        Console.WriteLine($"NT fpsLimit request for node {nodeId} ignored: {ex.Message}");
                     }
                 }
-
-                if (entry.TryGetProperty("inputSnapshots", out inputSnapshots)) TakeSnapshot(camera.Id, SnapshotKind.Input);
-                if (entry.TryGetProperty("outputSnapshots", out outputSnapshots)) TakeSnapshot(camera.Id, SnapshotKind.Output);
             }
         }
 
+        // a snapshot waits for a fresh frame, so it runs off the tick
         private static void TakeNodeSnapshot(int nodeId)
         {
             _ = Task.Run(() =>
@@ -335,23 +315,5 @@ namespace Server
             });
         }
 
-        // a snapshot waits for a fresh frame, so it runs off the tick
-        private static void TakeSnapshot(int sourceId, SnapshotKind kind)
-        {
-            _ = Task.Run(() =>
-            {
-                try
-                {
-                    string? saved = SnapshotService.Instance.Save(sourceId, kind);
-                    Console.WriteLine(saved == null
-                        ? $"NT {kind} snapshot request for source {sourceId}: no frame available"
-                        : $"NT {kind} snapshot saved: {saved}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"NT {kind} snapshot request for source {sourceId} failed: {ex.Message}");
-                }
-            });
-        }
     }
 }

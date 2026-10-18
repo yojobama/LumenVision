@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Server.Controllers
 {
-    // The snapshots saved under snapshots/<camera>/ (by the UI or a robot's NT snapshot request).
+    // The snapshots saved under snapshots/<node>/ (by the UI or a robot's NT snapshot request).
     internal class SnapshotController : ControllerBase
     {
         // GET: every saved snapshot, newest first
@@ -30,17 +30,8 @@ namespace Server.Controllers
             return Task.FromResult(SnapshotService.Instance.Delete(Path));
         }
 
-        // POST: save a snapshot of a camera now (Kind is "input" for the raw frame or "output" for the detector's annotated frame).
-        // Returns the new snapshot's path, or null when the camera has no frame yet.
+        // POST: save the latest frame of any node (camera, crop or detector): annotated for a detector, raw otherwise; null when it has none yet
         [HttpPost("snapshot/take")]
-        public Task<string?> Take([FromQuery] int SourceID, [FromQuery] string Kind = "input")
-        {
-            SnapshotKind kind = string.Equals(Kind, "output", StringComparison.OrdinalIgnoreCase) ? SnapshotKind.Output : SnapshotKind.Input;
-            return Task.Run(() => SnapshotService.Instance.Save(SourceID, kind));
-        }
-
-        // POST: save the latest frame of any node (camera, crop or detector); null when it has none yet
-        [HttpPost("snapshot/takeNode")]
         public Task<string?> TakeNode([FromQuery] int NodeID)
         {
             return Task.Run(() => SnapshotService.Instance.SaveNode(NodeID));

@@ -5,10 +5,10 @@ using System.Threading;
 
 namespace Server
 {
-    // vision LED modes, numbered as PhotonVision's VisionLEDMode
+    // Auto follows the detectors (lit while any is running); the others are fixed. The numbers are what a robot writes.
     public enum LedMode
     {
-        Default = -1,
+        Auto = -1,
         Off = 0,
         On = 1,
         Blink = 2,
@@ -62,7 +62,7 @@ namespace Server
             this.output = output;
             this.followsSettings = followsSettings;
             blinkTimer = new Timer(_ => Toggle(), null, Timeout.Infinite, Timeout.Infinite);
-            Mode = LedMode.Default;
+            Mode = LedMode.Auto;
             Apply(false);
         }
 
@@ -70,6 +70,19 @@ namespace Server
         public bool Available => output != null;
 
         public LedMode Mode { get; private set; }
+
+        private bool autoActive;
+
+        // Tells Auto mode whether any detector is running; the LED follows it.
+        public void SetAutoActive(bool active)
+        {
+            lock (sync)
+            {
+                if (autoActive == active) return;
+                autoActive = active;
+                if (Mode == LedMode.Auto) Apply(active);
+            }
+        }
 
         // The LED settings changed: re-opens the GPIO (or releases it) and puts the current mode back on the new output.
         public void SettingsChanged()
@@ -82,7 +95,7 @@ namespace Server
                 try { old?.Set(false); } catch (Exception) { /* the old line may already be gone */ }
                 old?.Dispose();
                 output = OpenConfiguredOutput();
-                Apply(Mode == LedMode.On || (Mode == LedMode.Blink && blinkState));
+                Apply(Mode == LedMode.On || (Mode == LedMode.Auto && autoActive) || (Mode == LedMode.Blink && blinkState));
             }
         }
 
@@ -102,6 +115,10 @@ namespace Server
                         blinkState = true;
                         Apply(true);
                         blinkTimer.Change(BlinkPeriod, BlinkPeriod);
+                        break;
+                    case LedMode.Auto:
+                        blinkTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                        Apply(autoActive);
                         break;
                     default:
                         blinkTimer.Change(Timeout.Infinite, Timeout.Infinite);

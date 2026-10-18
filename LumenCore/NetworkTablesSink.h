@@ -15,7 +15,7 @@
 class SystemMonitor;
 
 // Version of the robot-facing topic layout, published as "<rootTable>/.protocol" so a vendordep can refuse a coprocessor it cannot talk to.
-inline constexpr int kNetworkTablesProtocol = 3;
+inline constexpr int kNetworkTablesProtocol = 4;
 
 struct NetworkTablesConfig {
 	// exactly one of these should be set; teamNumber takes precedence if both are
@@ -50,9 +50,8 @@ public:
 	// small JSON status blob (connected, server, identity, latency)
 	std::string GetConnectionStatus() const;
 
-	// Drains "<sourceId>/config/fpsLimit", ".../enabled", ".../snapshot", ".../inputSnapshot" and
-	// ".../outputSnapshot" writes since the last call as a JSON array of {"sourceId", "fpsLimit"?, "enabled"?,
-	// "snapshots"?, "inputSnapshots"?, "outputSnapshots"?,
+	// Drains "<sourceId>/config/fpsLimit", ".../enabled" and ".../snapshot" writes since the last call as a JSON array of
+	// {"sourceId", "fpsLimit"?, "enabled"?, "snapshots"?,
 	// "constrainedSeed"? ([x, y, yaw]), "robotToCamera"? ([x, y, z, qw, qx, qy, qz])};
 	// the snapshot fields count the writes seen (each write is one request, whatever its value); each request is returned once.
 	std::string PollConfigRequests();
@@ -115,8 +114,6 @@ private:
 		int snapshots = 0;
 		std::optional<std::vector<double>> constrainedSeed;   // [x, y, yaw]
 		std::optional<std::vector<double>> robotToCamera;     // [x, y, z, qw, qx, qy, qz]
-		int inputSnapshots = 0;
-		int outputSnapshots = 0;
 	};
 	// guarded by m_ConfigMutex; OnConfigValueChanged runs on ntcore's listener thread
 	std::unordered_map<std::string, PendingConfigRequest> m_PendingConfig;

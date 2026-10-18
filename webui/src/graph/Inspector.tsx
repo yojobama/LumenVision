@@ -148,10 +148,11 @@ export const Inspector: React.FC<{
     }
   };
 
-  const takeSnapshot = async (kind: 'input' | 'output') => {
-    if (!source) return;
+  const takeSnapshot = async () => {
+    const nodeId = sink?.Id ?? source?.Id;
+    if (nodeId == null) return;
     try {
-      const saved = await api.takeSnapshot(source.Id, kind);
+      const saved = await api.takeSnapshot(nodeId);
       onToast(saved ? `Snapshot saved: ${saved}` : 'No frame available yet', saved ? 'success' : 'error');
     } catch {
       onToast('Failed to take a snapshot', 'error');
@@ -519,15 +520,9 @@ export const Inspector: React.FC<{
               </div>
             </details>
 
-            <div className="flex gap-2">
-              <button onClick={() => takeSnapshot('input')} className="flex-1 px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs">
-                Input snapshot
-              </button>
-              <button onClick={() => takeSnapshot('output')} className="flex-1 px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs"
-                title="The active detector's annotated frame (the raw frame when no detector runs)">
-                Output snapshot
-              </button>
-            </div>
+            <button onClick={takeSnapshot} className="w-full px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs">
+              Snapshot
+            </button>
 
             <p className="text-xs text-gray-400">
               Not every device/driver honours all of these - a control this camera doesn't support fails with a toast rather than silently doing nothing.
@@ -541,6 +536,13 @@ export const Inspector: React.FC<{
               <span className="text-sm text-gray-700 dark:text-gray-300">Enabled</span>
               <ToggleSwitch enabled={isRunning ?? false} onChange={toggleEnabled} />
             </div>
+
+            {(isApriltagSink || isObjectDetectionSink) && (
+              <button onClick={takeSnapshot} title="Saves this detector's annotated frame"
+                className="w-full px-2 py-1 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded text-xs">
+                Snapshot
+              </button>
+            )}
 
             {/* sets the backend directly on the sink (rebuilds the detector in place) */}
             {isApriltagSink && (

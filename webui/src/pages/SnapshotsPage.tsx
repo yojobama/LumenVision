@@ -5,7 +5,7 @@ import type { SnapshotEntry } from '../types';
 
 const api = new ApiService();
 
-// Every saved snapshot (taken from a camera's Inspector panel or by a robot's NT snapshot request), grouped by camera.
+// Every saved snapshot (taken from a camera's Inspector panel or by a robot's NT snapshot request), grouped by node.
 export const SnapshotsPage: React.FC<{ onToast: (m: string, t: 'success' | 'error' | 'info') => void }> = ({ onToast }) => {
   const [snapshots, setSnapshots] = useState<SnapshotEntry[]>([]);
   const [loading, setLoading] = useState(true);

@@ -60,7 +60,7 @@ class LumenHardwareTest {
             Thread.sleep(3000);
             System.out.println("HIL: led reads back " + coprocessor.getLed());
             camera.setFpsLimit(0);
-            coprocessor.setLed(LumenLedMode.DEFAULT);
+            coprocessor.setLed(LumenLedMode.AUTO);
             Thread.sleep(1000);
         } finally {
             camera.close();

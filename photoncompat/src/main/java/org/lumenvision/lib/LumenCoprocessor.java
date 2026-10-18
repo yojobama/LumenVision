@@ -30,7 +30,7 @@ public class LumenCoprocessor {
     public static final String DEFAULT_ROOT_TABLE = "lumenvision";
 
     /** The topic-layout version this library speaks; the coprocessor publishes its own as {@code .protocol}. */
-    public static final int PROTOCOL_VERSION = 3;
+    public static final int PROTOCOL_VERSION = 4;
 
     private final BooleanPublisher recordingRequestPub;
     private final BooleanSubscriber recordingStatusSub;

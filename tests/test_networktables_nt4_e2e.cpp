@@ -305,20 +305,20 @@ TEST_CASE("NetworkTablesSink surfaces the robot's fps, snapshot and LED requests
 	robot.StartClient4("LumenCoreTests-nt4-controls-robot");
 	auto front = robot.GetTable("lumenvision/front");
 	front->PutNumber("config/fpsLimit", 15);
-	front->PutNumber("config/inputSnapshot", 1);
-	front->PutNumber("config/outputSnapshot", 1);
+	front->PutNumber("config/snapshot", 1);
+	front->PutNumber("config/inputSnapshot", 1); // a retired topic: ignored
 	robot.GetTable("lumenvision")->PutNumber("config/ledMode", 2);
 
 	nlohmann::json requests;
 	REQUIRE(WaitUntil([&] {
 		requests = nlohmann::json::parse(ntSink->PollConfigRequests(), nullptr, false);
-		return !requests.is_discarded() && !requests.empty() && requests[0].size() >= 4;
+		return !requests.is_discarded() && !requests.empty() && requests[0].size() >= 3;
 	}));
 	// the robot addressed the camera by name; the request comes back keyed by the node id behind it
 	REQUIRE(requests[0]["sourceId"] == "node-7");
 	REQUIRE(requests[0]["fpsLimit"] == 15);
-	REQUIRE(requests[0]["inputSnapshots"] == 1);
-	REQUIRE(requests[0]["outputSnapshots"] == 1);
+	REQUIRE(requests[0]["snapshots"] == 1);
+	REQUIRE_FALSE(requests[0].contains("inputSnapshots"));
 
 	int led = -2;
 	REQUIRE(WaitUntil([&] { led = ntSink->PollLedRequest(); return led != -2; }));

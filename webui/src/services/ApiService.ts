@@ -1081,7 +1081,7 @@ export class ApiService {
     return `${this.baseUrl}/log/download`;
   }
 
-  // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<camera>/ (SnapshotController.cs)
+  // Snapshot Controller routes (/api/snapshot*): stills saved under snapshots/<node>/ (SnapshotController.cs)
   async listSnapshots(): Promise<SnapshotEntry[]> {
     const response = await fetch(`${this.baseUrl}/snapshot/list`);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -1089,8 +1089,9 @@ export class ApiService {
   }
 
   // Saves a still of the camera now; "output" is the detector's annotated frame. Resolves to the new path, or null when no frame exists yet.
-  async takeSnapshot(sourceId: number, kind: 'input' | 'output'): Promise<string | null> {
-    const response = await fetch(`${this.baseUrl}/snapshot/take?SourceID=${sourceId}&Kind=${kind}`, { method: 'POST' });
+  // Saves the latest frame of a node: annotated for a detector, raw for a camera
+  async takeSnapshot(nodeId: number): Promise<string | null> {
+    const response = await fetch(`${this.baseUrl}/snapshot/take?NodeID=${nodeId}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();
   }
