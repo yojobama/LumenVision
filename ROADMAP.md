@@ -322,11 +322,12 @@ redone after every change.
 
 ### E0. Positioning decision
 
-PhotonVision's API is the *de facto* standard; the closer you are, the cheaper a team's switch.
-So: **mirror `photonlib`'s shape deliberately, and ship a compatibility package that makes
-migration a one-line import change.** Not a clone — LumenVision has things Photon does not (per-target
-stereo range, a node graph) — but the 90% path should look familiar enough that a team's existing
-`RobotContainer` compiles after an import swap.
+PhotonVision's API is the *de facto* standard, but LumenVision is a graph of named nodes, not a list of pipelines. So the
+vendordep has two layers: LumenVision's own API (`org.lumenvision.lib`) built around nodes that can be started, stopped,
+snapshotted and read, and a compatibility layer (`org.lumenvision.photoncompat`) that maps `photonlib`'s classes onto it, so a
+team's existing `RobotContainer` compiles after an import swap. PhotonVision features that the graph already covers (driver
+mode, pipeline switching, input and output snapshots) are not separate server features: the compatibility layer expresses them as
+node operations. See `docs/NATIVE_API_PLAN.md` for the migration.
 
 ### E1. Transport and schema
 
@@ -374,44 +375,26 @@ entirely on it:
 ### E2. Java API
 
 ```java
-package org.<name>.lib;
+LumenCoprocessor coprocessor = new LumenCoprocessor(NetworkTableInstance.getDefault());
+LumenGraph graph = coprocessor.getGraph();            // every node, its table, kind, state and input
+coprocessor.startRecording();  coprocessor.setLed(LumenLedMode.AUTO);
 
-LumenCamera cam = new LumenCamera("front");
-List<LumenPipelineResult> unread = cam.getAllUnreadResults();   // the 2025+ Photon idiom
-boolean ok = cam.isConnected();
+LumenDetector tags = new LumenDetector("front");      // a detector node, by its table
+LumenPipelineResult r = tags.getAllUnreadResults().get(0);   // or getLatestResult()
+r.hasTargets();  r.getBestTarget();  r.getTimestampSeconds();  r.getMultiTagResult();
 
-LumenPipelineResult r = unread.get(unread.size() - 1);
-r.hasTargets();  r.getTargets();  r.getBestTarget();
-r.getTimestampSeconds();          // FPGA timebase
-r.getMultiTagResult();            // Optional<MultiTargetPNPResult>
+tags.setEnabled(false);  tags.takeSnapshot();  tags.setFpsLimit(30);  // any node: LumenNode
+tags.getCameraMatrix();                                // Optional<Matrix<N3,N3>>
 
-LumenTrackedTarget t = r.getBestTarget();
-t.getYaw(); t.getPitch(); t.getArea(); t.getSkew();
-t.getFiducialId();  t.getDetectedObjectClassId();  t.getDetectedObjectConfidence();
-t.getBestCameraToTarget();        // Transform3d
-t.getAlternateCameraToTarget();  t.getPoseAmbiguity();
-t.getDetectedCorners();
-// LumenVision-only, and the reason a team would choose it:
-t.getStereoDistanceMeters();      // OptionalDouble, from DepthFusionNode
-t.getStereoTranslation();         // Optional<Translation3d>
-
-LumenPoseEstimator est = new LumenPoseEstimator(
-    fieldLayout, PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, robotToCamera);
-Optional<EstimatedRobotPose> pose = est.update(r);
-
-LumenUtils.calculateDistanceToTargetMeters(...);   // same signatures as PhotonUtils
-LumenUtils.estimateCameraToTargetTranslation(...);
-LumenUtils.getYawToPose(...);  LumenUtils.getDistanceToPose(...);
-
-cam.setPipelineIndex(1);  cam.setDriverMode(true);  cam.takeInputSnapshot();
-cam.getCameraMatrix();    // Optional<Matrix<N3,N3>>
+LumenPoseEstimator est = new LumenPoseEstimator(fieldLayout, robotToCamera);
+Optional<LumenRobotPose> pose = est.estimateMultiTag(r);   // the coprocessor's solves; estimateConstrained too
 ```
 
-Plus `org.<name>.photoncompat`, exposing `PhotonCamera`, `PhotonPipelineResult`,
-`PhotonTrackedTarget`, `PhotonPoseEstimator` and `PhotonUtils` with identical member signatures
-as thin wrappers. A migrating team changes the import line and nothing else. (Deliberately *not*
-the literal `org.photonvision` package: it would collide if both vendordeps are installed, and
-squatting someone else's namespace is not okay.)
+`org.lumenvision.photoncompat` offers `PhotonCamera`, `PhotonPipelineResult`, `PhotonTrackedTarget`, `PhotonPoseEstimator` (all
+photonlib pose strategies) and `PhotonUtils` with photonlib's member signatures: pipelines are the camera's detector nodes
+(`withPipelines(...)` names them), driver mode stops them and snapshots go to the camera or detector node. (Deliberately *not* the
+literal `org.photonvision` package: it would collide if both vendordeps are installed, and squatting someone else's namespace is not
+okay.)
 
 **Version handshake:** on construction, compare `.version` against the library's own and print a
 loud, unmissable DriverStation warning on mismatch. The single most common support question in
@@ -427,13 +410,9 @@ FRC vision is "I updated one side and not the other."
 - **Multi-tag PnP on the coprocessor.** `cv::solvePnP` over all visible tags against the field
   layout in one shot — materially more accurate than averaging single-tag poses, and it is what
   `MULTI_TAG_PNP_ON_COPROCESSOR` means. Needs the season's `AprilTagFieldLayout` JSON on the Pi.
-- **Pipeline profiles.** `setPipelineIndex` has no meaning in LumenVision today — there is a node graph,
-  not a list of pipelines. Add named **profiles**: a saved graph configuration, switchable at
-  runtime, indexed for NT compatibility. Teams genuinely need this ("tag mode" in auto, "game
-  piece mode" in teleop), and it maps cleanly onto the profiles UI in Phase F.
-- **Driver mode.** Bypass processing, raise exposure, stream raw.
-- **Snapshots.** `takeInputSnapshot()` / `takeOutputSnapshot()` writing to disk, downloadable
-  from the UI. This is how teams debug a match afterwards, and it costs almost nothing to add.
+- **Starting and stopping nodes.** A detector can be switched off and on by id over REST and NT, and the choice is kept across
+  restarts. Several detectors can share a camera ("tag mode" in auto, "game piece mode" in teleop is two detectors, one running).
+- **Snapshots.** Any node can save its latest frame to disk, downloadable from the UI. This is how teams debug a match afterwards.
 
 ### E4. Packaging
 

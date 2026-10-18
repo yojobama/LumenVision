@@ -79,20 +79,22 @@ publishes each into its own subtable under the configured root table (default `/
 
 ### Topics
 
-Each camera publishes under `/<root>/<camera>/`, where `<camera>` is the camera's name in the UI (characters outside
-`A-Za-z0-9_.-` become `_`; a detector's id also works as an alias). Every value is stamped with the frame's
+Every camera and detector node publishes under `/<root>/<table>/`, where `<table>` is the node's name in the UI (characters
+outside `A-Za-z0-9_.-` become `_`, and a repeated name gets `-<id>` appended; a node without a name uses its id). `/<root>/.graph`
+lists every node with its `table`, kind, running state and input, so robot code finds nodes by name. `/<root>/.protocol` is the
+topic-layout version (4); the vendordep refuses a coprocessor that speaks another one. Every value is stamped with the frame's
 **capture time**, not its arrival time, so feed that timestamp to your robot's pose estimator.
 
 | Topic | Type | Meaning |
 |---|---|---|
 | `result` | raw | The binary result packet (schema v2, below): targets, multi-tag pose, constrained pose. Sent with "send all" so a reader's queue sees every frame. |
-| `tags/*`, `multitag/*` | numbers | Flat per-tag and multi-tag values for dashboards. |
+| `hasTargets`, `targetYaw`, `targetPitch`, `targetArea`, `targetPose` | bool / numbers | The best target, flattened for dashboards. |
 | `cameraIntrinsics`, `cameraDistortion` | double[] | The calibration in use (3x3 row-major; OpenCV distortion coefficients). |
-| `config/pipelineIndex`, `config/driverMode`, `config/fpsLimit` | int / bool / int | Robot-written controls. `status/*` reports the value in effect. |
-| `config/inputSnapshot`, `config/outputSnapshot` | any write | Save a raw or annotated snapshot. |
+| `config/enabled`, `config/fpsLimit` | bool / int | Start or stop the node (kept across restarts) and cap its published results per second. `status/*` reports the value in effect. |
+| `config/snapshot` | any write | Save the node's latest frame (annotated for a detector, raw for a camera). |
 | `config/constrainedSeed`, `config/robotToCamera` | double[3], double[7] | Start the floor-constrained solve: seed `[x, y, yaw]` (layout frame) and the camera mount `[x, y, z, qw, qx, qy, qz]`. |
-| `/<root>/config/ledMode`, `config/recording` | int / bool | Global LED (-1 default, 0 off, 1 on, 2 blink) and recording. |
-| `/<root>/heartbeat`, `/<root>/.version` | double / string | Liveness and the coprocessor's version (compared with the vendordep's). |
+| `/<root>/config/ledMode`, `config/recording` | int / bool | Global LED (-1 auto: lit while a detector runs, 0 off, 1 on, 2 blink) and recording. |
+| `/<root>/heartbeat`, `/<root>/.version`, `/<root>/.protocol` | double / string / int | Liveness, the coprocessor's version (compared with the vendordep's) and its topic-layout version. |
 
 ### Frames and units
 
@@ -112,17 +114,24 @@ between the C++ encoder and the Java decoder.
 
 ### Robot code: the `photoncompat` vendordep
 
-`photoncompat/` is a Java vendordep with PhotonLib-shaped classes (`org.lumenvision.photoncompat.compat.PhotonCamera`,
-`PhotonPoseEstimator`, ...) and native ones (`LumenCamera`, `LumenPoseEstimator`). It covers `getLatestResult` and
-`getAllUnreadResults`, driver mode, pipeline index, snapshots, LED, FPS limit, camera intrinsics, every pose strategy
-(lowest ambiguity, closest to height/reference/last, average, coprocessor multi-tag with fallback, distance/trig solve and
-constrained SolvePnP) and a version check. `MULTI_TAG_PNP_ON_RIO` is mapped to coprocessor multi-tag.
+`photoncompat/` is one Java artifact with two packages. `org.lumenvision.lib` is LumenVision's own API: `LumenCoprocessor`
+(recording, the LED, the node graph), `LumenNode` (start, stop and snapshot any node by name), `LumenDetector` (results,
+calibration, FPS limit, the constrained-solve seed) and `LumenPoseEstimator` (the coprocessor's multi-tag and constrained
+solves). `org.lumenvision.photoncompat` maps PhotonLib's classes onto it (`PhotonCamera`, `PhotonPoseEstimator`, `PhotonUtils`,
+the simulation), so a team migrating changes its imports:
+
+- A PhotonVision pipeline is a detector node fed by the camera. `setPipelineIndex` runs that node and stops the camera's other
+  detectors (pipelines are the camera's detectors in id order, or `new PhotonCamera("front").withPipelines("tags", "notes")`).
+- Driver mode stops every detector of the camera; its video keeps streaming from the camera node.
+- `takeInputSnapshot` saves the camera's own frame and `takeOutputSnapshot` the running detector's annotated one.
+- Every pose strategy runs in `PhotonPoseEstimator`: the client-side ones from the targets and the field layout, the coprocessor
+  ones (multi-tag, constrained SolvePnP) from the coprocessor. `MULTI_TAG_PNP_ON_RIO` is mapped to coprocessor multi-tag.
 
 - **Install from a release:** add `https://github.com/yojobama/LumenVision/releases/latest/download/photoncompat.json`
   in the WPILib "Manage Vendor Libraries" dialog.
 - **Install from a checkout:** `cd photoncompat && ./gradlew installIntoRobot` publishes to `photoncompat/build/maven-repo` and
   writes `robot/vendordeps/photoncompat.json` pointing at it (git-ignored). `robot/` is an example project: see
-  `subsystems/VisionSubsystem.java`.
+  `subsystems/VisionSubsystem.java` (the native API) and `PhotonCompatVisionSubsystem.java` (PhotonLib names).
 - **Simulation:** `org.lumenvision.photoncompat.sim` has `VisionSystemSim`, `PhotonCameraSim`, `SimCameraProperties`,
   `VisionTargetSim` and `TargetModel`. A simulated camera projects targets through a pinhole model and publishes the same
   topics as the coprocessor, so `PhotonCamera` and the estimators read it unchanged. Poses are ground truth (zero
@@ -145,8 +154,8 @@ board) returns a session id and a preview sink id (`/stream/mjpeg?SinkID=`). Cal
 implicitly. `POST .../{id}/stop` frees the session. Results persist to `calibrations.json`, keyed by
 camera device path + resolution, and are listed by `GET /api/calibration/saved`.
 
-An AprilTag pipeline profile picks up the source camera's saved calibration at its current
-resolution when it is activated, so calibrate first and the profile gets real-world pose; a camera
+An AprilTag detector bound to a camera picks up the camera's saved calibration at its current
+resolution, so calibrate first and the detector gets real-world pose; a camera
 with no calibration at its current resolution runs uncalibrated (the graph shows a "Calibration
 stale" badge when a saved calibration is for a different resolution).
 
@@ -154,8 +163,7 @@ stale" badge when a saved calibration is for a different resolution).
 
 `ApriltagSink` runs on the CPU (libapriltag) or on the GPU through the vkapriltag submodule (Vulkan compute,
 pinned to tag `v1.7.0`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
-`PATCH /api/apriltagSink/backend` (or `refine*` parameters on `createWithBackend` and
-`POST /api/source/profiles/apriltag`); `GET /api/apriltagSink/tuning` returns what is actually in effect.
+`PATCH /api/apriltagSink/backend` (or `refine*` parameters on `createWithBackend`); `GET /api/apriltagSink/tuning` returns what is actually in effect.
 
 - **Refine edges** sharpens corner positions. On the Vulkan backend its implementation is selectable with `refineMode`
   (`0` upstream, `1` exact — the default, bit-identical to upstream, `2` fast, `3` ultra-fast, which only refines quads
@@ -233,7 +241,7 @@ calibration from the Calibration tab.
 connection between them performs the real REST bind (with structurally invalid connections — e.g.
 a second source onto a single-source sink — rejected before the drag completes), and the
 right-hand inspector covers per-node parameters, a live WebRTC preview, the latest result JSON,
-and pipeline profile switching. State (topology, per-node FPS/latency, device stats) is pushed
+and starting and stopping each node. State (topology, per-node FPS/latency, device stats) is pushed
 over a `/ws/state` WebSocket, not polled.
 **Graph shortcuts.** Select a node, then Ctrl+C / Ctrl+V copies it (Ctrl+Shift+V also keeps the copy's source binding), F2 renames
 it in the inspector and Delete removes it. Copying runs on the server (`POST /api/sink/duplicate`, `POST /api/source/duplicate`):
@@ -248,9 +256,10 @@ so give it another pipeline instead.
 - *Rotate, mirror and crop* reshapes the camera's frames (`GET/PATCH /api/cameraSource/{id}/transform`). Saved calibrations follow the
   transform automatically (the principal point, focal lengths and tangential distortion are remapped), but calibrate with the transform
   cleared: sessions refuse a transformed camera.
-- A pipeline profile can keep its **own camera settings** (control values, transform, FPS limit): tick *own camera settings* on the profile.
-  While that profile is active, camera edits belong to it, and the camera's own settings come back when another profile is activated.
-- Input and output **snapshots** can be taken from the inspector or by a robot (`PhotonCamera.takeInputSnapshot()`); the `/snapshots`
+- Several detectors can be bound to one camera and switched by starting and stopping them; a configuration saved with the older
+  per-camera pipeline profiles is converted when it loads (each profile becomes a detector node, the active one running, and the
+  original file is kept as `data.json.before-nodes`).
+- **Snapshots** of a camera or a detector can be taken from the inspector or by a robot (`PhotonCamera.takeInputSnapshot()`); the `/snapshots`
   page lists, downloads and deletes them.
 - *Stream quality* (live view and MJPEG): bitrate, frame rate, a size divisor and JPEG quality, applied to the running stream and saved.
 
@@ -328,7 +337,6 @@ robot network or put it behind something that authenticates.
 See `docs/history/IMPLEMENTATION_PLAN.md`'s phase status lines for the authoritative historical
 record, and `ROADMAP.md` for what's planned next. Currently: RKNN object detection runs but still
 takes ONNX-style BGR input rather than the NPU's native NV12 (ROADMAP.md C1); a stored calibration
-is applied to an AprilTag pipeline profile when it is activated, but not yet to a standalone
-`ApriltagSink` restored after a restart; and WebRTC has been verified by
+is applied to an AprilTag detector bound to the camera; and WebRTC has been verified by
 compiling/linking against the real libraries, not
 against an actual browser ICE handshake in this environment.
