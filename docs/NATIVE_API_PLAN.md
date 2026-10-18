@@ -154,3 +154,12 @@ Work:
 Gate 7 (done): CI release build green; the `.deb` installs with the offline installer on the Pi over a config that still has profiles, and
 migrates it; full Chrome pass over Graph, Inspector, Match, Snapshots, Stereo and Settings; both robot examples against the Pi; every suite green,
 with the final test counts and the removed tests listed in the release notes.
+
+## Progress
+
+| Phase | State | Notes |
+|-------|-------|-------|
+| 0 | done | Baseline recorded (native 102, server 247, Java 44 plus 2 skipped hardware tests); fixtures in `Server.Tests/fixtures`; the Pi's saved config has no pipeline profiles. |
+| 1 | done | Native 103, server 255. Deviation: `Sink.Enabled` is stored as a `DisabledNodes` list in `data.json` (sinks are rebuilt in many places and would lose a per-record flag); sources have no enabled state; per-node `fpsLimit` is left for phase 5. Pi check (CI build `0.0.0-dev56`, offline installer): stopping and starting a detector over REST stops and resumes its results while the camera and another detector keep running, and `DisabledNodes` is written; snapshots by node id work for a camera and a detector. The NT half could not be run against the Pi from this machine (the Pi is on another subnet and the PC's firewall blocks inbound 5810), so NT behaviour is covered by the native end-to-end and server tests. |
+| 2 | done | Java 49 tests (3 skipped hardware). `org.lumenvision.lib` and `org.lumenvision.photoncompat` split as planned; compat `setPipelineIndex` still uses the old `config/pipelineIndex` topic until phase 3. |
+| 3 | blocked on a decision | A camera's pipelines become sibling detector nodes, but the server lets a sink bind only one source, while an NT sink must publish every detector of a camera (the native `NetworkTablesSink` already accepts several). |
