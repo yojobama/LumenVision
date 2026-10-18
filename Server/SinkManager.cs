@@ -532,9 +532,8 @@ namespace Server
                 sink.ObjectDetectionModelId);
         }
 
-        // Gives every AprilTag detector fed by this camera its saved calibration at the camera's current resolution. A detector made from the
-        // graph starts without one, and without one it can give no pose, so no multi-tag or field pose from a field layout either. A camera
-        // with no calibration at the current resolution leaves its detectors uncalibrated rather than posing with intrinsics for another size.
+        // Gives every AprilTag detector fed by this camera its saved calibration at the camera's current resolution.
+        // A camera with none at that resolution leaves its detectors uncalibrated.
         public void RefreshApriltagCalibrations(int sourceId)
         {
             Source? source = SourceManager.Instance.GetSourceById(sourceId);

@@ -20,9 +20,8 @@ public:
 	// copied from it) is in use. The Mat wraps `owner`'s buffer without owning it; .clone() gives a self-contained copy.
 	cv::Mat Acquire(int rows, int cols, int type, std::shared_ptr<void>& owner);
 
-	// Every buffer starts on a kBlockAlignment boundary and is sized up to a multiple of it, so a GPU can import a pooled
-	// frame in place (VK_EXT_external_memory_host wants an aligned pointer and size). Buffers are never freed while the
-	// process runs, so an import of one stays valid.
+	// Buffers start on a kBlockAlignment boundary and are sized to a multiple of it, so a GPU can import them in place.
+	// They are never freed while the process runs, so an import stays valid.
 	static constexpr size_t kBlockAlignment = 4096;
 
 	// The size to import for a pooled buffer starting at `data`: its capacity (the row data rounded up to kBlockAlignment).

@@ -34,8 +34,7 @@ public:
 	// lets a caller rebuild an equivalent detector (e.g. to switch backend) without separate tracking
 	double GetTagSize() const { return m_DetectionInfo.tagsize; }
 	CameraCalibrationResult GetCalibration() const;
-	// Gives a running detector its camera's calibration (a sink made from the graph starts without one, and needs it for any pose, multi-tag
-	// or field pose). Safe between frames: the next frame is solved with it. An empty calibration (fx/fy 0) takes it away again.
+	// Gives a running detector its camera's calibration, used from the next frame; an empty one (fx/fy 0) removes it.
 	void SetCalibration(const CameraCalibrationResult& calibration);
 	bool HasCalibration() const;
 

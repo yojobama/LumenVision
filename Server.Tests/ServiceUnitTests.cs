@@ -19,8 +19,7 @@ public class ServiceUnitTests
     [Fact]
     public void TheServiceRunsEveryThreadAtOnePriority()
     {
-        // A thread inherits its creator's nice value, and the NPU runtime raises the thread that loads a model to -19, so without this a detector
-        // restarted from a web request ran at nice 0 beside boot-time ones at -19 and came out 30-60% slower (see docs/PERFORMANCE_ANALYSIS.md).
+        // Every thread must run at one priority, so the unit sets Nice=-19 for the whole service.
         Assert.Contains("\nNice=-19", UnitText().Replace("\r\n", "\n"));
     }
 }

@@ -175,8 +175,7 @@ namespace Server.Controllers.sources
             SourceManager.Instance.SetCameraTransform(id, transform);
         }
 
-        // POST: publish a fixed crop of this camera's frame as an independent source that sinks bind to like any camera. It is saved and
-        // restored with the rest of the configuration. For the two halves of a side-by-side camera use cameraSource/{id}/split.
+        // POST: publish a fixed crop of this camera's frame as an independent source; for side-by-side halves use cameraSource/{id}/split.
         [HttpPost("cameraSource/{id}/roi")]
         public Task<int> CreateRoi(int id, [FromQuery] int x, [FromQuery] int y, [FromQuery] int width, [FromQuery] int height, [FromQuery] string name = "crop")
         {

@@ -2,10 +2,7 @@
 #include <catch2/catch_approx.hpp>
 #include "DepthFusionNode.h"
 
-// A depth grid of 4 columns x 3 rows of 10x10 px blocks (metres; 0 = no depth), laid out row by row:
-//   1 2 3 0
-//   0 5 5 5
-//   9 9 9 9
+// A depth grid of 4 columns x 3 rows of 10x10 px blocks (metres; 0 = no depth), row by row: 1 2 3 0 / 0 5 5 5 / 9 9 9 9
 namespace {
 const std::vector<float> kDepth = { 1, 2, 3, 0, 0, 5, 5, 5, 9, 9, 9, 9 };
 constexpr int kCols = 4, kRows = 3, kBlock = 10;

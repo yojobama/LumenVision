@@ -67,7 +67,7 @@ TEST_CASE("RKNN YOLOv8 and YOLO11 exports, fused and multi-scale, each find the 
 	REQUIRE_FALSE(frame.empty());
 	std::vector<ObjectDetection> detections = backend.Infer(frame);
 
-	// ultralytics finds exactly one bus and three people here; the multi-scale decoder used to report ~1600 detections
+	// ultralytics finds exactly one bus and three people here
 	int bus = 0, people = 0;
 	for (const ObjectDetection& d : detections) {
 		if (d.GetClassName() == "bus") bus++;

@@ -75,8 +75,7 @@ private:
 	// detector will read it without an upload copy. False for any other frame, which Detect() uploads as before.
 	bool ImportFrameIfPossible(const cv::Mat& gray);
 
-	// One Vulkan context per GPU is shared by every Vulkan AprilTag sink in the process (one instance, device and pipeline cache
-	// instead of one each), and each sink gets its own submission lane, spread over the device's compute queue families.
+	// One Vulkan context per GPU is shared by every Vulkan AprilTag sink; each sink gets its own submission lane.
 	struct SharedContext {
 		std::shared_ptr<apriltag_vulkan::vk::Context> context;
 		uint32_t stream = 0; // this sink's index among the context's streams

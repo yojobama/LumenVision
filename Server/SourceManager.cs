@@ -126,8 +126,7 @@ namespace Server
             _ => throw Server.Web.ApiException.BadRequest($"unknown split '{layout}' (left, right, top or bottom)"),
         };
 
-        // Publishes part of a source's frame as a source of its own. `layout` (left/right/top/bottom) cuts the matching half of the camera's
-        // current frame and keeps cutting it when the camera changes resolution; without one `region` is the fixed rectangle to keep.
+        // Publishes part of a source's frame as a source of its own: `layout` cuts a half and keeps re-cutting it, else `region` is the fixed rectangle.
         public int InitializeCropSource(int parentId, string name, string? layout = null, CropRegionDto? region = null, int? id = null)
         {
             Source parent = GetSourceById(parentId) ?? throw Server.Web.ApiException.NotFound($"no source with id {parentId}");

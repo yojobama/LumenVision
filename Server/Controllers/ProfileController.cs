@@ -8,9 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace Server.Controllers
 {
-    // Where each node's time goes, per stage, over its last few seconds of results (LumenCore's StageProfile). See Manager::GetNodeProfilesJson for
-    // what the stages mean: "age" is the latency a node publishes at, "interval" the time between its results, "wait"/"process" a sink's queueing and
-    // work, and the rest the node's own steps (a camera's "decode", a detector's "detect", "pose", ...).
+    // Per-stage timings of each node (LumenCore's StageProfile); see Manager::GetNodeProfilesJson for the stage names.
     internal class ProfileController : ControllerBase
     {
         // GET: every node that has produced timings, with its name and kind

@@ -114,7 +114,7 @@ public class CropSourceTests
             Assert.Equal(SourceType.Crop, record.Type);
             Assert.Equal(parent, record.CropParentId);
 
-            // this threw "no source (or dual-role sink) with id" while crops were unregistered native nodes
+            // binding a crop's id as a source works like any other source
             SinkManager.Instance.BindSourceToSink(sink, crop);
             Assert.Equal(crop, SinkManager.Instance.GetSinkById(sink)!.Source!.Id);
             Assert.True(SourceManager.Instance.IsSourceActive(crop)); // binding starts it (and the camera it is cut from)

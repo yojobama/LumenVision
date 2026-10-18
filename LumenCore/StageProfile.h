@@ -8,12 +8,8 @@
 #include <string_view>
 #include <vector>
 
-// Where a node's time goes, per named stage, over a rolling window of its most recent frames. Always on: a record is two clock reads and a
-// short lock, which is negligible next to any stage worth measuring. Read through Manager::GetNodeProfiles (and GET /api/profile).
-//
-// Stage names are short fixed strings ("gray", "detect", "rknn-run", ...). A stage that runs once per frame gets one sample per frame, so
-// its count tracks the frame count; "age" is special: the age of the frame when the node published its result, i.e. the end-to-end latency
-// the UI shows as "ms", recorded as a distribution rather than the last value.
+// Rolling window of a node's recent per-stage timings, read through Manager::GetNodeProfiles (GET /api/profile).
+// "age" is the frame's age when the node published (the latency the UI shows); other names are the node's own stages.
 class StageProfile
 {
 public:
@@ -70,9 +66,8 @@ private:
 	std::chrono::steady_clock::time_point m_Start;
 };
 
-// Records the time since the previous mark under a stage name, for a sequence of stages in one function:
-//   StageLap lap(profile); Work(); lap.Mark("a"); MoreWork(); lap.Mark("b");
-// Skip() restarts the clock without recording (for work that is not part of any stage, such as a one-off rebuild).
+// Records the time since the previous mark under a stage name: lap.Mark("a"); lap.Mark("b");
+// Skip() restarts the clock without recording.
 class StageLap
 {
 public:
