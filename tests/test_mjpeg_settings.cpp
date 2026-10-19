@@ -79,3 +79,32 @@ TEST_CASE("changing the settings of something that is not an MjpegSink throws", 
 	REQUIRE_THROWS(manager.SetMjpegSinkSettings(detectorId, 50, 1));
 	REQUIRE_THROWS(manager.SetMjpegSinkSettings(123456, 50, 1));
 }
+
+TEST_CASE("Shutdown stops and destroys every running node and may be called twice", "[manager][shutdown]") {
+	Manager manager;
+	const std::filesystem::path clip = std::filesystem::temp_directory_path() / "lumencore-test-shutdown.avi";
+	{
+		cv::Mat bus = cv::imread(std::string(LUMEN_TEST_DATA_DIR) + "/bus.jpg");
+		REQUIRE_FALSE(bus.empty());
+		cv::VideoWriter writer(clip.string(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 30.0, bus.size());
+		REQUIRE(writer.isOpened());
+		for (int i = 0; i < 300; i++) writer.write(bus);
+	}
+	int sourceId = manager.CreateVideoFileSource(clip.string(), 30);
+	int detectorId = manager.CreateApriltagDetector();
+	int sinkId = manager.CreateMjpegSink(80);
+	manager.BindSourceToSink(sourceId, detectorId);
+	manager.BindSourceToSink(detectorId, sinkId);
+	manager.StartSinkById(sinkId);
+	manager.StartSinkById(detectorId);
+	manager.StartSourceById(sourceId);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+	manager.Shutdown();
+
+	REQUIRE(manager.GetAllSinks().empty());
+	REQUIRE(manager.GetAllSources().empty());
+	manager.Shutdown();
+	std::error_code ignored;
+	std::filesystem::remove(clip, ignored);
+}

@@ -78,6 +78,16 @@ Manager::~Manager()
 	m_Sinks.clear();
 }
 
+void Manager::Shutdown()
+{
+    m_SystemMonitor->StopMonitoring();
+    // a sink's thread reads from its sources, so the sinks stop (and are destroyed) first
+    for (int sinkId : GetAllSinks()) StopSinkById(sinkId);
+    for (int sourceId : GetAllSources()) StopSourceById(sourceId);
+    m_Sinks.clear();
+    m_Sources.clear();
+}
+
 vector<int> Manager::GetAllSinks()
 {
     m_Logger->EnterLog("GetAllSinks called");

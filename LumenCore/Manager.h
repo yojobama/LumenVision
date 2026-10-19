@@ -51,6 +51,8 @@ public:
 
 	// utility functions
 	vector<int> GetAllSinks();
+	// Stops every node and destroys it, sinks first, so no processing thread is still running when the process starts exiting.
+	void Shutdown();
 	vector<int> GetAllSources();
 
 	std::vector<std::string> GetAvailableVideoEncoders();

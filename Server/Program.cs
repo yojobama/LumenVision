@@ -149,6 +149,9 @@ namespace Server
             var app = CreateWebServer(args);
             // blocks until SIGTERM/SIGINT (systemd stop/restart, or Ctrl+C in a terminal)
             app.Run();
+
+            // process exit runs native static destructors (OpenCV, MPP, RKNN) that the pipeline threads still use, so stop and destroy them first
+            ManagerWrapper.Instance.Shutdown();
         }
     }
 }
