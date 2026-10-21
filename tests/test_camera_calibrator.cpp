@@ -81,3 +81,47 @@ TEST_CASE("CameraCalibrator recovers the intrinsics of a synthetic camera", "[ca
 	REQUIRE_THAT(result.cy, Catch::Matchers::WithinAbs(kHeight / 2.0, 20.0));
 	REQUIRE(rig.calibrator->GetCalibrationResult().fx == result.fx);
 }
+
+namespace {
+
+// The generated checkerboard PDF that prompted this test: 12 x 8 squares, so 11 x 7 interior corners, black where (row + col) is even.
+cv::Mat PrintedBoardFrame()
+{
+	cv::Mat frame(720, 1280, CV_8UC1, cv::Scalar(255));
+	const int square = 50, x0 = 340, y0 = 160;
+	for (int r = 0; r < 8; r++)
+		for (int c = 0; c < 12; c++)
+			if ((r + c) % 2 == 0) cv::rectangle(frame, cv::Rect(x0 + c * square, y0 + r * square, square, square), cv::Scalar(0), cv::FILLED);
+	cv::GaussianBlur(frame, frame, cv::Size(5, 5), 1.2);
+	return frame;
+}
+
+// whether a calibrator configured with this pattern size accepts the frame as a board detection
+bool DetectsPrintedBoard(int rows, int cols)
+{
+	auto logger = std::make_shared<Logger>("LumenCoreTests-camera-calibrator.log");
+	std::atomic<uint64_t> clock{1000};
+	auto source = std::make_shared<FrameSource>(logger, "cam", &clock);
+	CalibrationBoardConfig config;
+	config.rows = rows;
+	config.cols = cols;
+	auto calibrator = std::make_shared<CameraCalibrator>(logger, "cal", config);
+	REQUIRE(calibrator->BindSource(source));
+	source->Toggle(true);
+	calibrator->ISink::Toggle(true);
+	source->SetFrame(PrintedBoardFrame());
+	source->WaitForFrames(3);
+	bool found = calibrator->SaveBoardDetection();
+	calibrator->ISink::Toggle(false);
+	source->Toggle(false);
+	return found;
+}
+
+}
+
+TEST_CASE("a 12 x 8 square printed board is found only with its own interior corner counts", "[calibration][camera]") {
+	CHECK(DetectsPrintedBoard(7, 11));     // 7 corners down, 11 across: what the printed board has
+	CHECK(DetectsPrintedBoard(11, 7));     // the other orientation is accepted too
+	CHECK_FALSE(DetectsPrintedBoard(11, 8)); // rows and columns typed as the corner and square counts mixed up
+	CHECK_FALSE(DetectsPrintedBoard(8, 12)); // the square counts instead of the interior corner counts
+}
