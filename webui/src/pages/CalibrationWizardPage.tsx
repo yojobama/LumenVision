@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { ArrowLeft, Camera, CheckCircle, XCircle, Trash2, Play, RefreshCw } from 'lucide-react';
 import { ApiService } from '../services/ApiService';
 import { CoverageHeatmap } from '../components/CoverageHeatmap';
-import { MjpegStream } from '../components/MjpegStream';
+import { StreamView } from '../components/StreamView';
 import { useCalibrationSession } from '../hooks/useCalibrationSession';
 import type { CameraCalibrationResult, CalibrationCoverage } from '../types';
 
@@ -97,7 +97,7 @@ export const CalibrationWizardPage: React.FC<{
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h2 className="font-semibold text-gray-900 dark:text-white mb-3">1. Capture snapshots</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <MjpegStream sinkId={state.session.PreviewSinkId} onStop={() => {}} onError={() => onToast('Preview error', 'error')} />
+          <StreamView sinkId={state.session.PreviewSinkId} sourceId={null} createFallback={() => api.createCalibrationPreviewFallback(id)} onStop={() => {}} onError={() => onToast('Preview error', 'error')} />
           <CoverageHeatmap coverage={coverage} />
         </div>
         <div className="flex items-center gap-2 mt-4">

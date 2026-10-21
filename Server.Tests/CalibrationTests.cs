@@ -83,6 +83,25 @@ public class CalibrationSessionTests
     }
 
     [Fact]
+    public void ThePreviewOfASessionIsAWebRtcSinkNotAnMjpegOne()
+    {
+        int calibrator = ManagerWrapper.Instance.CreateCameraCalibrator(CalibrationBoardType.BOARD_CHECKERBOARD, 7, 11, 0.0159f, 0.018f, 10);
+        int preview = -1;
+        try
+        {
+            preview = CalibrationSessionManager.CreatePreview(calibrator, out int fallback);
+
+            if (fallback < 0) Assert.NotEmpty(ManagerWrapper.Instance.GetWebRTCSinkStatus(preview)); // only a WebRTC sink has signalling status
+            else Assert.Equal(preview, fallback); // a build without WebRTC previews through MJPEG, and says so
+        }
+        finally
+        {
+            if (preview >= 0) ManagerWrapper.Instance.DeleteSink(preview);
+            ManagerWrapper.Instance.DeleteSink(calibrator);
+        }
+    }
+
+    [Fact]
     public void AnUnknownSessionIsNotFoundAndStoppingItIsANoOp()
     {
         Assert.Equal(404, Assert.Throws<ApiException>(() => CalibrationSessionManager.Instance.Get(987654)).StatusCode);

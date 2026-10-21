@@ -11,12 +11,14 @@ const api = new ApiService();
 interface StreamViewProps extends WebRTCStreamProps {
   // node whose output the fallback MJPEG sink binds to; null means no fallback is possible
   sourceId: number | null;
+  // makes the fallback MJPEG sink for a stream whose owner (a calibration session) manages it: resolves to its sink id, which the owner deletes
+  createFallback?: () => Promise<number>;
 }
 
 type FallbackState = { kind: 'creating' } | { kind: 'ready'; sinkId: number } | { kind: 'failed' };
 
 // Live previews use WebRTC; MJPEG is created only as a fallback when WebRTC negotiation fails.
-export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkId, ...rest }) => {
+export const StreamView: React.FC<StreamViewProps> = ({ sourceId, createFallback, onError, sinkId, ...rest }) => {
   const [fallback, setFallback] = useState<FallbackState | null>(null);
   // A ref (set synchronously before any await) guards against duplicate WebRTC error callbacks
   // each creating their own MjpegSink.
@@ -46,7 +48,7 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
   }, []);
 
   const handleWebRtcError = useCallback(async (error: string) => {
-    if (sourceId == null || fallbackStarted.current) {
+    if ((sourceId == null && !createFallback) || fallbackStarted.current) {
       // no source to bind, or a fallback is already in flight/done - just surface the error
       onError(error);
       return;
@@ -56,9 +58,14 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
     setFallback({ kind: 'creating' });
     let mjpegId: number | null = null;
     try {
+      if (createFallback) {
+        // not kept in fallbackSinkIdRef: the owner of this stream deletes the sink
+        setFallback({ kind: 'ready', sinkId: await createFallback() });
+        return;
+      }
       mjpegId = await api.createMjpegSink(`preview-mjpeg-${sourceId}`);
       fallbackSinkIdRef.current = mjpegId;
-      await api.bindSinkToSource(mjpegId, sourceId);
+      await api.bindSinkToSource(mjpegId, sourceId!);
       await api.toggleSink(mjpegId, true);
       setFallback({ kind: 'ready', sinkId: mjpegId });
     } catch (fallbackError) {
@@ -71,7 +78,7 @@ export const StreamView: React.FC<StreamViewProps> = ({ sourceId, onError, sinkI
       setFallback({ kind: 'failed' });
       onError(error);
     }
-  }, [sourceId, onError, sinkId]);
+  }, [sourceId, createFallback, onError, sinkId]);
 
 
   if (fallback?.kind === 'ready') {

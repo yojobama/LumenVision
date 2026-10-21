@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { ArrowLeft, Layers, CheckCircle, XCircle, Trash2, Play, RefreshCw } from 'lucide-react';
 import { ApiService } from '../services/ApiService';
 import { CoverageHeatmap } from '../components/CoverageHeatmap';
-import { MjpegStream } from '../components/MjpegStream';
+import { StreamView } from '../components/StreamView';
 import { useCalibrationSession } from '../hooks/useCalibrationSession';
 import type { StereoCalibrationResult, CalibrationCoverage } from '../types';
 import { EPIPOLAR_RMS_GATE } from '../types';
@@ -102,7 +102,7 @@ export const StereoCalibrationWizardPage: React.FC<{
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h2 className="font-semibold text-gray-900 dark:text-white mb-3">1. Capture pairs</h2>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Left eye on the left, right eye on the right; each shows its own detection state.</p>
-        <MjpegStream sinkId={state.session.PreviewSinkId} onStop={() => {}} onError={() => onToast('Preview error', 'error')} />
+        <StreamView sinkId={state.session.PreviewSinkId} sourceId={null} createFallback={() => api.createCalibrationPreviewFallback(id)} onStop={() => {}} onError={() => onToast('Preview error', 'error')} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Left coverage</p>

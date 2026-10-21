@@ -191,6 +191,13 @@ export class ApiService {
     return this.sessionRequest(`${id}`);
   }
 
+  // the MJPEG preview of a session, for when its WebRTC preview cannot connect; resolves to the sink id
+  async createCalibrationPreviewFallback(id: number): Promise<number> {
+    const response = await fetch(`${this.baseUrl}/calibration/${id}/previewFallback`, { method: 'POST' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+
   async stopCalibrationSession(id: number): Promise<void> {
     const response = await fetch(`${this.baseUrl}/calibration/${id}/stop`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);

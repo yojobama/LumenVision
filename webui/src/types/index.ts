@@ -74,7 +74,7 @@ export interface CalibrationBoard {
   markerSizeMeters?: number;
 }
 
-// mirrors CalibrationSessionDto; PreviewSinkId is an MJPEG sink streamed from /stream/mjpeg
+// mirrors CalibrationSessionDto; PreviewSinkId is a WebRTC sink (POST calibration/{id}/previewFallback makes an MJPEG one for when WebRTC cannot connect)
 export interface CalibrationSession {
   SessionId: number;
   Kind: 'camera' | 'stereo';

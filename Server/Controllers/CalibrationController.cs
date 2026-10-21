@@ -58,7 +58,14 @@ namespace Server.Controllers
             return Task.FromResult(CalibrationSessionDto.From(CalibrationSessionManager.Instance.Get(id)));
         }
 
-        // POST: end a session and free its native calibrator and preview sink
+        // POST: the MJPEG preview of a session, for a page whose WebRTC preview could not connect; returns the sink id (streamed from /stream/mjpeg)
+        [HttpPost("calibration/{id}/previewFallback")]
+        public Task<int> PreviewFallback(int id)
+        {
+            return Task.FromResult(CalibrationSessionManager.Instance.EnsureFallbackPreview(id));
+        }
+
+        // POST: end a session and free its native calibrator and preview sinks
         [HttpPost("calibration/{id}/stop")]
         public Task Stop(int id)
         {

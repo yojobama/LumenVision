@@ -10,13 +10,15 @@ namespace Server
 {
     public enum CalibrationSessionKind { Camera, Stereo }
 
-    // One interactive calibration run: a private native calibrator plus an MJPEG preview sink, both
-    // kept out of SinkManager (and therefore out of the graph, data.json and graph profiles).
+    // One interactive calibration run: a private native calibrator plus a WebRTC preview sink (and an MJPEG one made on demand
+    // when WebRTC cannot connect), all kept out of SinkManager (and therefore out of the graph, data.json and graph profiles).
     public sealed class CalibrationSession
     {
         public int Id { get; init; }
         public CalibrationSessionKind Kind { get; init; }
         public int PreviewSinkId { get; init; }
+        // the MJPEG sink the page asks for when the WebRTC preview cannot connect (see EnsureFallbackPreview); -1 until then
+        public int FallbackPreviewSinkId { get; set; } = -1;
         public int SourceId { get; init; }
         public int? Source2Id { get; init; }
         // ROI sources the session created to split one camera into eyes; deleted with the session
@@ -70,13 +72,41 @@ namespace Server
                 ?? throw ApiException.BadRequest($"source {sourceId} is not a camera");
         }
 
-        // Binds the calibrator's overlay output to a fresh MJPEG sink served by /stream/mjpeg.
-        private static int CreatePreview(int calibratorId)
+        // Binds the calibrator's overlay output to a fresh WebRTC sink (signalled through the webrtcSink routes by its id). A build without
+        // WebRTC gets an MJPEG sink instead, which is also reported as the fallback, so the page shows MJPEG straight away.
+        internal static int CreatePreview(int calibratorId, out int fallbackId)
         {
-            int previewId = ManagerWrapper.Instance.CreateMjpegSink(80);
+            fallbackId = -1;
+            int previewId;
+            try
+            {
+                previewId = ManagerWrapper.Instance.CreateWebRTCSink(4000, 30, ManagerWrapper.Instance.GetPreferredWebRTCEncoder());
+            }
+            catch (ApplicationException)
+            {
+                previewId = ManagerWrapper.Instance.CreateMjpegSink(80);
+                fallbackId = previewId;
+            }
             ManagerWrapper.Instance.BindSourceToSink(calibratorId, previewId);
             ManagerWrapper.Instance.StartSinkById(previewId);
             return previewId;
+        }
+
+        // The MJPEG preview for a page whose WebRTC preview failed to connect: made once, served by /stream/mjpeg, deleted with the session.
+        public int EnsureFallbackPreview(int sessionId)
+        {
+            CalibrationSession session = Get(sessionId);
+            lock (session)
+            {
+                if (session.FallbackPreviewSinkId < 0)
+                {
+                    int fallbackId = ManagerWrapper.Instance.CreateMjpegSink(80);
+                    ManagerWrapper.Instance.BindSourceToSink(session.Id, fallbackId);
+                    ManagerWrapper.Instance.StartSinkById(fallbackId);
+                    session.FallbackPreviewSinkId = fallbackId;
+                }
+                return session.FallbackPreviewSinkId;
+            }
         }
 
         // A calibration is stored for the camera's own pixels, so a session must see untransformed frames (stereo splitting also cuts them by pixel).
@@ -95,12 +125,13 @@ namespace Server
 
             int id = ManagerWrapper.Instance.CreateCameraCalibrator(boardType, rows, cols, squareSizeMeters, markerSizeMeters, arucoDictionaryId);
             int previewId = -1;
+            int fallbackId = -1;
             try
             {
                 ManagerWrapper.Instance.BindSourceToSink(sourceId, id);
                 SourceManager.Instance.EnableSourceById(sourceId);
                 ManagerWrapper.Instance.StartSinkById(id);
-                previewId = CreatePreview(id);
+                previewId = CreatePreview(id, out fallbackId);
             }
             catch
             {
@@ -111,7 +142,7 @@ namespace Server
 
             var session = new CalibrationSession
             {
-                Id = id, Kind = CalibrationSessionKind.Camera, PreviewSinkId = previewId,
+                Id = id, Kind = CalibrationSessionKind.Camera, PreviewSinkId = previewId, FallbackPreviewSinkId = fallbackId,
                 SourceId = sourceId, CameraPath = cameraPath,
                 ManagedSources = new Dictionary<int, bool> { [sourceId] = wasActive },
             };
@@ -163,6 +194,7 @@ namespace Server
 
             int id = ManagerWrapper.Instance.CreateStereoCalibrator(boardType, rows, cols, squareSizeMeters);
             int previewId = -1;
+            int fallbackId = -1;
             try
             {
                 if (!ManagerWrapper.Instance.BindStereoSources(id, leftId, rightId))
@@ -170,7 +202,7 @@ namespace Server
                 foreach (int sourceId in managedSourceIds) SourceManager.Instance.EnableSourceById(sourceId);
                 foreach (int roiId in ownedRoiIds) ManagerWrapper.Instance.StartSinkById(roiId);
                 ManagerWrapper.Instance.StartSinkById(id);
-                previewId = CreatePreview(id);
+                previewId = CreatePreview(id, out fallbackId);
             }
             catch
             {
@@ -181,7 +213,7 @@ namespace Server
 
             var session = new CalibrationSession
             {
-                Id = id, Kind = CalibrationSessionKind.Stereo, PreviewSinkId = previewId,
+                Id = id, Kind = CalibrationSessionKind.Stereo, PreviewSinkId = previewId, FallbackPreviewSinkId = fallbackId,
                 SourceId = leftId, Source2Id = rightId, OwnedRoiSourceIds = ownedRoiIds,
                 CameraPath = leftPath, Camera2Path = rightPath,
                 ManagedSources = wasActive,
@@ -196,6 +228,7 @@ namespace Server
             if (!sessions.TryRemove(sessionId, out var session)) return;
 
             ManagerWrapper.Instance.DeleteSink(session.PreviewSinkId);
+            if (session.FallbackPreviewSinkId >= 0 && session.FallbackPreviewSinkId != session.PreviewSinkId) ManagerWrapper.Instance.DeleteSink(session.FallbackPreviewSinkId);
             ManagerWrapper.Instance.DeleteSink(session.Id);
 
             foreach (int roiId in session.OwnedRoiSourceIds) ManagerWrapper.Instance.DeleteSource(roiId);

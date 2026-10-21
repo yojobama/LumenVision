@@ -149,7 +149,8 @@ Use the WebUI's **Calibration** tab, or the REST API:
 
 `POST /api/calibration/camera/start?sourceId=` (default 6x9 checkerboard, 25mm squares; pass
 `boardType`, `rows`, `cols`, `squareSizeMeters` — and `markerSizeMeters` for ChArUco — for another
-board) returns a session id and a preview sink id (`/stream/mjpeg?SinkID=`). Call
+board) returns a session id and a preview sink id (a WebRTC sink; the page falls back to an MJPEG one from
+`POST /api/calibration/{id}/previewFallback` only if WebRTC cannot connect). Call
 `POST /api/calibration/{id}/saveDetection` for each snapshot (need at least 4), then
 `POST .../{id}/runCamera` to compute the result — calibration only happens when explicitly asked, never
 implicitly. `POST .../{id}/stop` frees the session. Results persist to `calibrations.json`, keyed by
