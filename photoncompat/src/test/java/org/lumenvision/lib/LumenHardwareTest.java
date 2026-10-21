@@ -131,4 +131,44 @@ class LumenHardwareTest {
         }
         return after;
     }
+
+    // Recording one node over NT: the coprocessor starts a RecordSink on it and reports it back, and stops it again.
+    @Test
+    void aNodeCanBeRecordedAndStoppedOverNetworkTables() throws Exception {
+        assumeTrue(System.getProperty("lumen.hil") != null, "hardware test: set -Dlumen.hil=true");
+
+        NetworkTableInstance server = NetworkTableInstance.create();
+        server.startServer("", "0.0.0.0", 1735, 5810);
+        LumenCoprocessor coprocessor = new LumenCoprocessor(server, "lumenvision");
+        LumenNode node = null;
+        try {
+            long deadline = System.currentTimeMillis() + 40_000;
+            while (System.currentTimeMillis() < deadline && coprocessor.getGraph().getNodes().isEmpty()) Thread.sleep(200);
+            String table = System.getProperty("lumen.hil.node");
+            LumenGraph.Node target = coprocessor.getGraph().getNodes().stream()
+                    .filter(n -> table == null ? n.isCamera() : n.getTable().equals(table)).findFirst().orElseThrow();
+            node = new LumenNode(server, "lumenvision", target.getTable());
+            System.out.println("HIL: recording node " + target.getName() + " at table " + target.getTable());
+
+            node.startRecording();
+            long until = System.currentTimeMillis() + 15_000;
+            while (System.currentTimeMillis() < until && !node.isRecording()) Thread.sleep(100);
+            assertTrue(node.isRecording(), "status/recording should read true");
+            Thread.sleep(3000);
+
+            node.stopRecording();
+            until = System.currentTimeMillis() + 15_000;
+            while (System.currentTimeMillis() < until && node.isRecording()) Thread.sleep(100);
+            assertTrue(!node.isRecording(), "status/recording should read false");
+            System.out.println("HIL: recording started and stopped over NT");
+        } finally {
+            if (node != null) {
+                node.stopRecording();
+                Thread.sleep(500);
+                node.close();
+            }
+            server.stopServer();
+            server.close();
+        }
+    }
 }
