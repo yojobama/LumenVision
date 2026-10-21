@@ -84,13 +84,14 @@ TEST_CASE("CameraCalibrator recovers the intrinsics of a synthetic camera", "[ca
 
 namespace {
 
-// The generated checkerboard PDF that prompted this test: 12 x 8 squares, so 11 x 7 interior corners, black where (row + col) is even.
+// The generated checkerboard PDF that prompted this test: 11 x 8 squares (its twelfth column is white and indistinguishable from the margin),
+// so 10 x 7 interior corners, black where (row + col) is even.
 cv::Mat PrintedBoardFrame()
 {
 	cv::Mat frame(720, 1280, CV_8UC1, cv::Scalar(255));
 	const int square = 50, x0 = 340, y0 = 160;
 	for (int r = 0; r < 8; r++)
-		for (int c = 0; c < 12; c++)
+		for (int c = 0; c < 11; c++)
 			if ((r + c) % 2 == 0) cv::rectangle(frame, cv::Rect(x0 + c * square, y0 + r * square, square, square), cv::Scalar(0), cv::FILLED);
 	cv::GaussianBlur(frame, frame, cv::Size(5, 5), 1.2);
 	return frame;
@@ -119,9 +120,31 @@ bool DetectsPrintedBoard(int rows, int cols)
 
 }
 
-TEST_CASE("a 12 x 8 square printed board is found only with its own interior corner counts", "[calibration][camera]") {
-	CHECK(DetectsPrintedBoard(7, 11));     // 7 corners down, 11 across: what the printed board has
-	CHECK(DetectsPrintedBoard(11, 7));     // the other orientation is accepted too
-	CHECK_FALSE(DetectsPrintedBoard(11, 8)); // rows and columns typed as the corner and square counts mixed up
-	CHECK_FALSE(DetectsPrintedBoard(8, 12)); // the square counts instead of the interior corner counts
+TEST_CASE("an 11 x 8 square printed board is found only with its own interior corner counts", "[calibration][camera]") {
+	CHECK(DetectsPrintedBoard(7, 10));      // 7 corners down, 10 across: what the printed board has
+	CHECK(DetectsPrintedBoard(10, 7));      // the other orientation is accepted too
+	CHECK_FALSE(DetectsPrintedBoard(11, 8)); // the square counts instead of the interior corner counts
+	CHECK_FALSE(DetectsPrintedBoard(7, 11)); // one corner too many across
+}
+
+// Diagnostic, not part of the normal run: LUMEN_CALIB_IMAGE=<file> reports which pattern sizes and detector flags find a board in a real camera frame.
+TEST_CASE("which chessboard detector settings find the board in a real frame", "[.][diagnostic][calibration]") {
+	const char* path = std::getenv("LUMEN_CALIB_IMAGE");
+	REQUIRE(path != nullptr);
+	cv::Mat gray = cv::imread(path, cv::IMREAD_GRAYSCALE);
+	REQUIRE_FALSE(gray.empty());
+	const std::vector<std::pair<std::string, int>> flagSets = {
+		{"adaptive+normalize+fast (what the calibrator uses)", cv::CALIB_CB_ADAPTIVE_THRESH | cv::CALIB_CB_NORMALIZE_IMAGE | cv::CALIB_CB_FAST_CHECK},
+		{"adaptive+normalize", cv::CALIB_CB_ADAPTIVE_THRESH | cv::CALIB_CB_NORMALIZE_IMAGE},
+		{"default", 0},
+	};
+	for (const auto& [name, flags] : flagSets) {
+		for (cv::Size size : {cv::Size(11, 7), cv::Size(7, 11), cv::Size(11, 8), cv::Size(10, 7), cv::Size(12, 8)}) {
+			std::vector<cv::Point2f> corners;
+			bool found = cv::findChessboardCorners(gray, size, corners, flags);
+			WARN(name << " " << size.width << "x" << size.height << ": " << (found ? "FOUND" : "no"));
+		}
+	}
+	std::vector<cv::Point2f> corners;
+	WARN("findChessboardCornersSB 11x7: " << cv::findChessboardCornersSB(gray, cv::Size(11, 7), corners));
 }
