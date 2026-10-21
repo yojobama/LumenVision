@@ -465,10 +465,11 @@ namespace Server
         public bool DeleteRecordSinkSegment(int sinkId, string filename) =>
             ManagerWrapper.Instance.DeleteRecordSinkSegment(sinkId, filename);
 
-        public string WebRTCCreateOffer(int sinkId) => ManagerWrapper.Instance.WebRTCCreateOffer(sinkId);
-        public void WebRTCSetAnswer(int sinkId, string sdp) => ManagerWrapper.Instance.WebRTCSetAnswer(sinkId, sdp);
-        public void WebRTCAddIceCandidate(int sinkId, string candidate, string mid) =>
-            ManagerWrapper.Instance.WebRTCAddIceCandidate(sinkId, candidate, mid);
+        // peerId names one viewer: each viewer has its own connection to the sink, so several can watch it at once (empty = one shared viewer)
+        public string WebRTCCreateOffer(int sinkId, string peerId = "") => ManagerWrapper.Instance.WebRTCCreateOffer(sinkId, peerId);
+        public void WebRTCSetAnswer(int sinkId, string sdp, string peerId = "") => ManagerWrapper.Instance.WebRTCSetAnswer(sinkId, sdp, peerId);
+        public void WebRTCAddIceCandidate(int sinkId, string candidate, string mid, string peerId = "") =>
+            ManagerWrapper.Instance.WebRTCAddIceCandidate(sinkId, candidate, mid, peerId);
         public bool IsWebRTCSinkConnected(int sinkId) => ManagerWrapper.Instance.IsWebRTCSinkConnected(sinkId);
         public string GetWebRTCSinkStatus(int sinkId) => ManagerWrapper.Instance.GetWebRTCSinkStatus(sinkId);
 

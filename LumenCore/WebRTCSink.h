@@ -6,6 +6,8 @@
 #include <opencv2/opencv.hpp>
 #include <atomic>
 #include <condition_variable>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -27,7 +29,9 @@ struct WebRTCSinkConfig {
 };
 
 // Terminal sink: binds to any single frame-producing node (raw camera or a detector's annotated output) and encodes+streams
-// it over WebRTC. Signalling is exposed as plain string methods so libdatachannel types never reach swig.i.
+// it over WebRTC to any number of viewers. Each viewer is a peer with its own PeerConnection, named by the viewer in its signalling
+// calls (an empty name is one shared "default" peer for clients that do not name themselves); one encoder feeds them all.
+// Signalling is exposed as plain string methods so libdatachannel types never reach swig.i.
 //
 // Uses non-trickle ICE: CreateOffer() blocks (with a timeout) until local candidate gathering completes, then returns one
 // SDP with every candidate embedded; unsuitable for p2p links with asymmetric NAT that need trickle.
@@ -36,12 +40,14 @@ public:
 	WebRTCSink(std::shared_ptr<Logger> logger, std::string id, WebRTCSinkConfig config);
 	~WebRTCSink() override;
 
-	// returns the complete local SDP offer once ICE gathering finishes, or throws
-	// std::runtime_error on timeout
-	std::string CreateOffer();
-	void SetAnswer(const std::string& sdp);
-	void AddIceCandidate(const std::string& candidate, const std::string& mid);
+	// returns the complete local SDP offer for the named viewer once ICE gathering finishes, or throws
+	// std::runtime_error on timeout; a repeat offer for the same name replaces that viewer's connection only
+	std::string CreateOffer(const std::string& peerId = "");
+	void SetAnswer(const std::string& sdp, const std::string& peerId = "");
+	void AddIceCandidate(const std::string& candidate, const std::string& mid, const std::string& peerId = "");
+	// whether any viewer is connected
 	bool IsConnected() const;
+	// {"connected": any viewer connected, "peers": viewer count, "iceState", "gatheringComplete"} (the last two of the newest viewer)
 	std::string GetConnectionStatus() const;
 
 	// Changes the target bitrate, frame rate and size divisor (N shrinks frames to 1/N width and height; 1 = full size). The encoder is
@@ -50,7 +56,19 @@ public:
 
 private:
 	void Process(const std::vector<SourceResult>& results) override;
-	void InitializePeerConnection(); // caller must already hold m_ConnectionMutex
+
+	// One viewer: its own connection, video track and RTCP sender reports.
+	struct Peer {
+		std::shared_ptr<rtc::PeerConnection> connection;
+		std::shared_ptr<rtc::Track> track;
+		std::shared_ptr<rtc::RtcpSrReporter> srReporter;
+		bool gatheringComplete = false; // guarded by m_GatheringMutex
+		bool streaming = false;         // the encoder has been given a keyframe for this viewer; touched by the encoding thread only
+		uint64_t order = 0;             // creation order, to find the newest
+	};
+	std::shared_ptr<Peer> CreatePeer(); // caller must already hold m_ConnectionMutex
+	std::shared_ptr<Peer> FindPeer(const std::string& peerId) const;
+	void PruneClosedPeers(); // caller must already hold m_ConnectionMutex
 
 	bool EnsureEncoderInitialized(int width, int height);
 	void EncodeAndSend(const cv::Mat& bgrFrame);
@@ -65,16 +83,14 @@ private:
 	bool m_SettingsChanged = false;
 	int m_ScaleDivisor = 1;
 
-	// Guards m_PeerConnection/m_Track/m_SrReporter reassignment: CreateOffer() replaces all three per negotiation,
-	// racing with Process()'s thread reading m_Track via EncodeAndSend().
+	// Guards m_Peers: signalling threads add and replace viewers while Process()'s thread reads their tracks in EncodeAndSend().
 	mutable std::mutex m_ConnectionMutex;
-	std::shared_ptr<rtc::PeerConnection> m_PeerConnection;
-	std::shared_ptr<rtc::Track> m_Track;
-	std::shared_ptr<rtc::RtcpSrReporter> m_SrReporter;
+	std::map<std::string, std::shared_ptr<Peer>> m_Peers;
+	uint64_t m_NextPeerOrder = 1;
 
+	// Guards every Peer::gatheringComplete; one condition variable serves all viewers' CreateOffer() waits.
 	mutable std::mutex m_GatheringMutex;
 	std::condition_variable m_GatheringCv;
-	bool m_GatheringComplete = false;
 
 	AVCodecContext* m_CodecContext = nullptr;
 	SwsContext* m_SwsContext = nullptr;

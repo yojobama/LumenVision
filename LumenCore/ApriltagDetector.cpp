@@ -6,6 +6,8 @@
 #include "CoordinateFrames.h"
 #include "CpuApriltagBackend.h"
 #include "FramePool.h"
+#include "TagOverlay.h"
+#include <array>
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
 #endif
@@ -437,6 +439,11 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					multiTagIds.push_back(detection->id);
 				}
 
+				// the best pose, kept for the overlay until the tag has been drawn
+				std::array<double, 9> overlayRotation{};
+				std::array<double, 3> overlayTranslation{};
+				bool hasOverlayPose = false;
+
 				// estimate_tag_pose returns invalid pose pointers for degenerate intrinsics (fx=fy=0), which
 				// corrupts the heap when freed, so skip pose estimation without valid intrinsics.
 				if (m_HasCalibration && m_Tuning.singleTagPose) {
@@ -486,6 +493,12 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 						detectionJson["poseAmbiguity"] = 0.0;
 					}
 
+					if (wantsFrame) {
+						for (int k = 0; k < 9; k++) overlayRotation[k] = best.R->data[k];
+						for (int k = 0; k < 3; k++) overlayTranslation[k] = best.t->data[k];
+						hasOverlayPose = true;
+					}
+
 					// the estimator allocates every pose.R/pose.t it returns; the caller must free them (apriltag/common/matd.h).
 					matd_destroy(pose1.R);
 					matd_destroy(pose1.t);
@@ -511,6 +524,11 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 					cv::line(colouredFrame, cv::Point(detection->p[2][0], detection->p[2][1]),
 						cv::Point(detection->p[3][0], detection->p[3][1]),
 						cv::Scalar(0xff, 0, 0), 2);
+
+					if (hasOverlayPose) {
+						DrawTagPose(colouredFrame, overlayRotation.data(), overlayTranslation.data(), m_DetectionInfo.tagsize,
+							m_CameraMatrix, m_HasDistortion ? m_DistCoeffs : cv::Mat());
+					}
 
 					std::stringstream ss;
 					ss << detection->id;

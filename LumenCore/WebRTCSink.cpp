@@ -23,37 +23,35 @@ WebRTCSink::WebRTCSink(std::shared_ptr<Logger> logger, std::string id, WebRTCSin
 	, m_PendingConfig(config)
 {
 	if (m_Logger) m_Logger->EnterLog("WebRTCSink constructed, encoder=" + config.encoderName);
-	std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-	InitializePeerConnection();
 }
 
 WebRTCSink::~WebRTCSink()
 {
 	ShutdownEncoder();
 	std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-	if (m_PeerConnection) m_PeerConnection->close();
+	for (auto& entry : m_Peers) {
+		if (entry.second->connection) entry.second->connection->close();
+	}
+	m_Peers.clear();
 }
 
-// Builds a fresh PeerConnection/Track/SrReporter triple; caller must hold m_ConnectionMutex. CreateOffer() calls it for
-// every new negotiation, since a new browser RTCPeerConnection cannot be answered against a stale "stable" peer connection.
-void WebRTCSink::InitializePeerConnection()
+// Builds a fresh PeerConnection/Track/SrReporter for one viewer; caller must hold m_ConnectionMutex.
+std::shared_ptr<WebRTCSink::Peer> WebRTCSink::CreatePeer()
 {
-	if (m_PeerConnection) m_PeerConnection->close();
-
-	{
-		std::lock_guard<std::mutex> gatheringLock(m_GatheringMutex);
-		m_GatheringComplete = false;
-	}
+	auto peer = std::make_shared<Peer>();
+	peer->order = m_NextPeerOrder++;
 
 	Configuration rtcConfig;
 	rtcConfig.portRangeBegin = kIcePortRangeBegin;
 	rtcConfig.portRangeEnd = kIcePortRangeEnd;
 	rtcConfig.enableIceUdpMux = true;
-	m_PeerConnection = std::make_shared<PeerConnection>(rtcConfig);
-	m_PeerConnection->onGatheringStateChange([this](PeerConnection::GatheringState state) {
-		if (state == PeerConnection::GatheringState::Complete) {
+	peer->connection = std::make_shared<PeerConnection>(rtcConfig);
+	std::weak_ptr<Peer> weakPeer = peer;
+	peer->connection->onGatheringStateChange([this, weakPeer](PeerConnection::GatheringState state) {
+		if (state != PeerConnection::GatheringState::Complete) return;
+		if (auto locked = weakPeer.lock()) {
 			std::lock_guard<std::mutex> lock(m_GatheringMutex);
-			m_GatheringComplete = true;
+			locked->gatheringComplete = true;
 			m_GatheringCv.notify_all();
 		}
 	});
@@ -61,50 +59,76 @@ void WebRTCSink::InitializePeerConnection()
 	Description::Video video("video", Description::Direction::SendOnly);
 	video.addH264Codec(H264_PAYLOAD_TYPE);
 	video.addSSRC(kSsrcValue, "lumen-video");
-	m_Track = m_PeerConnection->addTrack(video);
+	peer->track = peer->connection->addTrack(video);
 
 	auto rtpConfig = std::make_shared<RtpPacketizationConfig>(kSsrcValue, "lumen-video", H264_PAYLOAD_TYPE, H264RtpPacketizer::ClockRate);
 	auto packetizer = std::make_shared<H264RtpPacketizer>(NalUnit::Separator::StartSequence, rtpConfig);
-	m_SrReporter = std::make_shared<RtcpSrReporter>(rtpConfig);
-	packetizer->addToChain(m_SrReporter);
+	peer->srReporter = std::make_shared<RtcpSrReporter>(rtpConfig);
+	packetizer->addToChain(peer->srReporter);
 	packetizer->addToChain(std::make_shared<RtcpNackResponder>());
-	m_Track->setMediaHandler(packetizer);
+	peer->track->setMediaHandler(packetizer);
+	return peer;
 }
 
-std::string WebRTCSink::CreateOffer()
+// Drops viewers whose connection has ended, so closed browser tabs do not pile up; caller must hold m_ConnectionMutex.
+void WebRTCSink::PruneClosedPeers()
 {
-	std::shared_ptr<PeerConnection> pc;
+	for (auto it = m_Peers.begin(); it != m_Peers.end();) {
+		const auto state = it->second->connection->state();
+		if (state == PeerConnection::State::Closed || state == PeerConnection::State::Failed) {
+			it->second->connection->close();
+			it = m_Peers.erase(it);
+		} else {
+			++it;
+		}
+	}
+}
+
+std::shared_ptr<WebRTCSink::Peer> WebRTCSink::FindPeer(const std::string& peerId) const
+{
+	std::lock_guard<std::mutex> lock(m_ConnectionMutex);
+	auto it = m_Peers.find(peerId.empty() ? std::string("default") : peerId);
+	return it == m_Peers.end() ? nullptr : it->second;
+}
+
+std::string WebRTCSink::CreateOffer(const std::string& peerId)
+{
+	const std::string key = peerId.empty() ? std::string("default") : peerId;
+	std::shared_ptr<Peer> peer;
 	{
 		std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-		InitializePeerConnection();
-		pc = m_PeerConnection;
+		PruneClosedPeers();
+		auto previous = m_Peers.find(key);
+		if (previous != m_Peers.end()) previous->second->connection->close();
+		peer = CreatePeer();
+		m_Peers[key] = peer;
 	}
 
-	pc->setLocalDescription();
+	peer->connection->setLocalDescription();
 
 	{
 		std::unique_lock<std::mutex> lock(m_GatheringMutex);
-		if (!m_GatheringCv.wait_for(lock, std::chrono::seconds(10), [this] { return m_GatheringComplete; })) {
+		if (!m_GatheringCv.wait_for(lock, std::chrono::seconds(10), [&peer] { return peer->gatheringComplete; })) {
 			throw std::runtime_error("WebRTCSink::CreateOffer: ICE gathering did not complete within 10s");
 		}
 	}
 
-	auto description = pc->localDescription();
+	auto description = peer->connection->localDescription();
 	if (!description.has_value()) {
 		throw std::runtime_error("WebRTCSink::CreateOffer: no local description after gathering completed");
 	}
 	return std::string(description.value());
 }
 
-void WebRTCSink::SetAnswer(const std::string& sdp)
+void WebRTCSink::SetAnswer(const std::string& sdp, const std::string& peerId)
 {
-	std::shared_ptr<PeerConnection> pc;
-	{
-		std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-		pc = m_PeerConnection;
+	std::shared_ptr<Peer> peer = FindPeer(peerId);
+	if (!peer) {
+		if (m_Logger) m_Logger->EnterLog(::LogLevel::Warning, "WebRTCSink::SetAnswer: no viewer '" + peerId + "' (no offer was made for it)");
+		return;
 	}
 	try {
-		pc->setRemoteDescription(Description(sdp, Description::Type::Answer));
+		peer->connection->setRemoteDescription(Description(sdp, Description::Type::Answer));
 	} catch (const std::exception& e) {
 		// Swallowed, not rethrown: an exception crossing the SWIG/P-Invoke boundary without an %exception typemap can
 		// terminate the server, and a bad answer just fails this attempt (the browser notices via connectionstatechange/timeout).
@@ -112,15 +136,12 @@ void WebRTCSink::SetAnswer(const std::string& sdp)
 	}
 }
 
-void WebRTCSink::AddIceCandidate(const std::string& candidate, const std::string& mid)
+void WebRTCSink::AddIceCandidate(const std::string& candidate, const std::string& mid, const std::string& peerId)
 {
-	std::shared_ptr<PeerConnection> pc;
-	{
-		std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-		pc = m_PeerConnection;
-	}
+	std::shared_ptr<Peer> peer = FindPeer(peerId);
+	if (!peer) return;
 	try {
-		pc->addRemoteCandidate(Candidate(candidate, mid));
+		peer->connection->addRemoteCandidate(Candidate(candidate, mid));
 	} catch (const std::exception& e) {
 		// libdatachannel throws std::logic_error if a candidate arrives before the remote description is set (a real race);
 		// a dropped candidate is harmless, so it is swallowed.
@@ -140,24 +161,34 @@ void WebRTCSink::SetSettings(int bitrateKbps, int fps, int scaleDivisor)
 bool WebRTCSink::IsConnected() const
 {
 	std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-	return m_PeerConnection && m_PeerConnection->state() == PeerConnection::State::Connected;
+	for (const auto& entry : m_Peers) {
+		if (entry.second->connection->state() == PeerConnection::State::Connected) return true;
+	}
+	return false;
 }
 
 std::string WebRTCSink::GetConnectionStatus() const
 {
-	std::shared_ptr<PeerConnection> pc;
+	bool anyConnected = false;
+	size_t peerCount = 0;
+	std::shared_ptr<Peer> newest;
 	{
 		std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-		pc = m_PeerConnection;
+		peerCount = m_Peers.size();
+		for (const auto& entry : m_Peers) {
+			if (entry.second->connection->state() == PeerConnection::State::Connected) anyConnected = true;
+			if (!newest || entry.second->order > newest->order) newest = entry.second;
+		}
 	}
-	bool gatheringComplete;
-	{
+	bool gatheringComplete = false;
+	if (newest) {
 		std::lock_guard<std::mutex> gLock(m_GatheringMutex);
-		gatheringComplete = m_GatheringComplete;
+		gatheringComplete = newest->gatheringComplete;
 	}
 	nlohmann::json status{
-		{"connected", pc && pc->state() == PeerConnection::State::Connected},
-		{"iceState", static_cast<int>(pc ? pc->iceState() : PeerConnection::IceState::Closed)},
+		{"connected", anyConnected},
+		{"peers", peerCount},
+		{"iceState", static_cast<int>(newest ? newest->connection->iceState() : PeerConnection::IceState::Closed)},
 		{"gatheringComplete", gatheringComplete},
 	};
 	return status.dump();
@@ -241,12 +272,21 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 	if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
 	const cv::Mat& bgrFrame = m_ScaleDivisor > 1 ? scaled : sourceFrame;
 
-	std::shared_ptr<rtc::Track> track;
+	std::vector<std::shared_ptr<Peer>> openPeers;
 	{
 		std::lock_guard<std::mutex> lock(m_ConnectionMutex);
-		track = m_Track;
+		PruneClosedPeers();
+		for (const auto& entry : m_Peers) {
+			if (entry.second->track && entry.second->track->isOpen()) openPeers.push_back(entry.second);
+		}
 	}
-	if (!track || !track->isOpen()) return;
+	if (openPeers.empty()) return;
+	// a viewer that has just opened its track can only start decoding at a keyframe, so the encoder restarts (its first frame is one)
+	bool newViewer = false;
+	for (const auto& peer : openPeers) {
+		if (!peer->streaming) { peer->streaming = true; newViewer = true; }
+	}
+	if (newViewer) ShutdownEncoder();
 	if (!EnsureEncoderInitialized(bgrFrame.cols, bgrFrame.rows)) return;
 
 	// RGA first (hardware); sws_scale is the fallback when RGA is not compiled in or the hardware call fails at
@@ -272,10 +312,12 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 	while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
 		binary sample(reinterpret_cast<byte*>(packet->data), reinterpret_cast<byte*>(packet->data) + packet->size);
 		double elapsedSeconds = static_cast<double>(m_FrameCounter) / m_Config.fps;
-		try {
-			track->sendFrame(sample, std::chrono::duration<double>(elapsedSeconds));
-		} catch (const std::exception& e) {
-			if (m_Logger) m_Logger->EnterLog(::LogLevel::Warning, std::string("WebRTCSink: sendFrame failed: ") + e.what());
+		for (const auto& peer : openPeers) {
+			try {
+				peer->track->sendFrame(sample, std::chrono::duration<double>(elapsedSeconds));
+			} catch (const std::exception& e) {
+				if (m_Logger) m_Logger->EnterLog(::LogLevel::Warning, std::string("WebRTCSink: sendFrame failed: ") + e.what());
+			}
 		}
 		av_packet_unref(packet);
 	}

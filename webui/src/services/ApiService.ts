@@ -1,6 +1,9 @@
 import type { NodeProfile, CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
 import { apiClient } from '../api/client';
 
+// the `&peer=` part of a WebRTC signalling URL
+const peerQuery = (peerId?: string) => (peerId ? `&peer=${encodeURIComponent(peerId)}` : '');
+
 export class ApiService {
   // Relative to the page origin, so it works when the server is reached by hostname or IP.
   private baseUrl = `${window.location.origin}/api`;
@@ -511,14 +514,15 @@ export class ApiService {
 
   // Blocks briefly for server-side ICE gathering. Returned as raw text/plain because SDP contains
   // literal \r\n that breaks response.json().
-  async getWebRTCOffer(sinkId: number): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/webrtcSink/offer?sinkId=${sinkId}`, { method: 'POST' });
+  // peerId names this viewer: each viewer gets its own connection to the sink, so several can watch one sink at once
+  async getWebRTCOffer(sinkId: number, peerId?: string): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/webrtcSink/offer?sinkId=${sinkId}${peerQuery(peerId)}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.text();
   }
 
-  async sendWebRTCAnswer(sinkId: number, sdp: string): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/webrtcSink/answer?sinkId=${sinkId}`, {
+  async sendWebRTCAnswer(sinkId: number, sdp: string, peerId?: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/webrtcSink/answer?sinkId=${sinkId}${peerQuery(peerId)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
       body: sdp
@@ -526,8 +530,9 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }
 
-  async sendWebRTCIceCandidate(sinkId: number, candidate: string, mid: string): Promise<void> {
+  async sendWebRTCIceCandidate(sinkId: number, candidate: string, mid: string, peerId?: string): Promise<void> {
     const params = new URLSearchParams({ sinkId: String(sinkId), candidate, mid: mid ?? '' });
+    if (peerId) params.set('peer', peerId);
     const response = await fetch(`${this.baseUrl}/webrtcSink/candidate?${params.toString()}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
   }

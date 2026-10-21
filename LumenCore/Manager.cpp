@@ -1687,25 +1687,31 @@ namespace {
     }
 }
 
-string Manager::WebRTCCreateOffer(int sinkId)
+string Manager::WebRTCCreateOffer(int sinkId) { return WebRTCCreateOffer(sinkId, string()); }
+
+void Manager::WebRTCSetAnswer(int sinkId, string sdp) { WebRTCSetAnswer(sinkId, sdp, string()); }
+
+void Manager::WebRTCAddIceCandidate(int sinkId, string candidate, string mid) { WebRTCAddIceCandidate(sinkId, candidate, mid, string()); }
+
+string Manager::WebRTCCreateOffer(int sinkId, string peerId)
 {
     auto sink = FindWebRTCSink(m_Sinks, sinkId);
     if (!sink) throw std::runtime_error("no WebRTCSink with id " + std::to_string(sinkId));
-    return sink->CreateOffer();
+    return sink->CreateOffer(peerId);
 }
 
-void Manager::WebRTCSetAnswer(int sinkId, string sdp)
+void Manager::WebRTCSetAnswer(int sinkId, string sdp, string peerId)
 {
     auto sink = FindWebRTCSink(m_Sinks, sinkId);
     if (!sink) throw std::runtime_error("no WebRTCSink with id " + std::to_string(sinkId));
-    sink->SetAnswer(sdp);
+    sink->SetAnswer(sdp, peerId);
 }
 
-void Manager::WebRTCAddIceCandidate(int sinkId, string candidate, string mid)
+void Manager::WebRTCAddIceCandidate(int sinkId, string candidate, string mid, string peerId)
 {
     auto sink = FindWebRTCSink(m_Sinks, sinkId);
     if (!sink) throw std::runtime_error("no WebRTCSink with id " + std::to_string(sinkId));
-    sink->AddIceCandidate(candidate, mid);
+    sink->AddIceCandidate(candidate, mid, peerId);
 }
 
 void Manager::SetWebRTCSinkSettings(int sinkId, int bitrateKbps, int fps, int scaleDivisor)
@@ -1752,6 +1758,18 @@ void Manager::WebRTCSetAnswer(int, string)
     throw std::runtime_error("WebRTC support is not compiled into this build of LumenCore");
 }
 void Manager::WebRTCAddIceCandidate(int, string, string)
+{
+    throw std::runtime_error("WebRTC support is not compiled into this build of LumenCore");
+}
+string Manager::WebRTCCreateOffer(int, string)
+{
+    throw std::runtime_error("WebRTC support is not compiled into this build of LumenCore");
+}
+void Manager::WebRTCSetAnswer(int, string, string)
+{
+    throw std::runtime_error("WebRTC support is not compiled into this build of LumenCore");
+}
+void Manager::WebRTCAddIceCandidate(int, string, string, string)
 {
     throw std::runtime_error("WebRTC support is not compiled into this build of LumenCore");
 }

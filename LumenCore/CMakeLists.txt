@@ -39,6 +39,7 @@ set(LUMEN_CORE_SOURCES
     ResultPacket.cpp
     CoordinateFrames.cpp
     ConstrainedPnp.cpp
+    TagOverlay.cpp
     ApriltagFamily.cpp
     FrameTransform.cpp
     RoiSource.cpp

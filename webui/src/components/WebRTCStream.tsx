@@ -28,6 +28,8 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
   // and never close the peer connection
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const disconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // names this viewer to the server so that other tabs or browsers watching the same sink do not displace it
+  const peerId = useRef(`v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   const api = new ApiService();
 
   useEffect(() => {
@@ -84,22 +86,22 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
           return;
         }
         try {
-          await api.sendWebRTCIceCandidate(sinkId, event.candidate.candidate, event.candidate.sdpMid || '');
+          await api.sendWebRTCIceCandidate(sinkId, event.candidate.candidate, event.candidate.sdpMid || '', peerId.current);
         } catch (err) {
           console.warn('Failed to send ICE candidate:', err);
         }
       };
 
       // getWebRTCOffer returns a plain SDP string (not JSON) after server-side ICE gathering
-      const offerSdp = await api.getWebRTCOffer(sinkId);
+      const offerSdp = await api.getWebRTCOffer(sinkId, peerId.current);
       await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      await api.sendWebRTCAnswer(sinkId, answer.sdp || '');
+      await api.sendWebRTCAnswer(sinkId, answer.sdp || '', peerId.current);
       answerSent = true;
       for (const candidate of pendingCandidates) {
         try {
-          await api.sendWebRTCIceCandidate(sinkId, candidate.candidate, candidate.sdpMid || '');
+          await api.sendWebRTCIceCandidate(sinkId, candidate.candidate, candidate.sdpMid || '', peerId.current);
         } catch (err) {
           console.warn('Failed to send buffered ICE candidate:', err);
         }

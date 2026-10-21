@@ -31,27 +31,29 @@ namespace Server.Controllers.sinks
         }
 
         // POST: get an SDP offer (blocks briefly for ICE gathering), written as raw text/plain since SDP contains literal \r\n.
+        // `peer` is a name the viewer picks and repeats on its answer and candidates: every viewer gets its own connection to the sink, so
+        // several browsers or tabs can watch it at once (without one, all unnamed viewers share one connection and displace each other).
         [HttpPost("webrtcSink/offer")]
-        public async Task CreateOffer([FromQuery] int sinkId)
+        public async Task CreateOffer([FromQuery] int sinkId, [FromQuery] string? peer = null)
         {
-            string sdp = SinkManager.Instance.WebRTCCreateOffer(sinkId);
+            string sdp = SinkManager.Instance.WebRTCCreateOffer(sinkId, peer ?? "");
             await HttpContext.SendStringAsync(sdp, "text/plain", Encoding.UTF8);
         }
 
         // POST: submit the browser's SDP answer
         [HttpPost("webrtcSink/answer")]
-        public async Task SetAnswer([FromQuery] int sinkId)
+        public async Task SetAnswer([FromQuery] int sinkId, [FromQuery] string? peer = null)
         {
             using var reader = new StreamReader(HttpContext.OpenRequestStream());
             string sdp = await reader.ReadToEndAsync();
-            SinkManager.Instance.WebRTCSetAnswer(sinkId, sdp);
+            SinkManager.Instance.WebRTCSetAnswer(sinkId, sdp, peer ?? "");
         }
 
         // POST: submit one of the browser's trickled ICE candidates
         [HttpPost("webrtcSink/candidate")]
-        public Task AddIceCandidate([FromQuery] int sinkId, [FromQuery] string candidate, [FromQuery] string mid)
+        public Task AddIceCandidate([FromQuery] int sinkId, [FromQuery] string candidate, [FromQuery] string mid, [FromQuery] string? peer = null)
         {
-            SinkManager.Instance.WebRTCAddIceCandidate(sinkId, candidate, mid);
+            SinkManager.Instance.WebRTCAddIceCandidate(sinkId, candidate, mid, peer ?? "");
             return Task.CompletedTask;
         }
 

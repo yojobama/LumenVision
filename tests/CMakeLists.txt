@@ -22,6 +22,7 @@ add_executable(LumenCoreTests
     test_snapshot.cpp
     test_multitag_pnp.cpp
     test_sgbm_synthetic_disparity.cpp
+    test_tag_overlay.cpp
     test_camera_calibrator.cpp
     test_apriltag_tuning.cpp
     test_result_packet.cpp

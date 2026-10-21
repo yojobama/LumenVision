@@ -314,6 +314,10 @@ public:
 	string WebRTCCreateOffer(int sinkId);
 	void WebRTCSetAnswer(int sinkId, string sdp);
 	void WebRTCAddIceCandidate(int sinkId, string candidate, string mid);
+	// the same for one named viewer: every viewer has its own connection to the sink, so several can watch it at once
+	string WebRTCCreateOffer(int sinkId, string peerId);
+	void WebRTCSetAnswer(int sinkId, string sdp, string peerId);
+	void WebRTCAddIceCandidate(int sinkId, string candidate, string mid, string peerId);
 	bool IsWebRTCSinkConnected(int sinkId);
 	string GetWebRTCSinkStatus(int sinkId);
 
