@@ -227,6 +227,8 @@ void NetworkTablesSink::OnConfigValueChanged(const nt::Event& event)
 		m_PendingConfig[sourceId].robotToCamera = std::vector<double>(transform.begin(), transform.end());
 	} else if (leaf == "enabled" && valueData->value.IsBoolean()) {
 		m_PendingConfig[sourceId].enabled = valueData->value.GetBoolean();
+	} else if (leaf == "recording" && valueData->value.IsBoolean()) {
+		m_PendingConfig[sourceId].recording = valueData->value.GetBoolean();
 	} else if (leaf == "snapshot") {
 		m_PendingConfig[sourceId].snapshots++;
 	}
@@ -245,6 +247,7 @@ std::string NetworkTablesSink::PollConfigRequests()
 		nlohmann::json entry{ {"sourceId", sourceId} };
 		if (request.fpsLimit.has_value()) entry["fpsLimit"] = request.fpsLimit.value();
 		if (request.enabled.has_value()) entry["enabled"] = request.enabled.value();
+		if (request.recording.has_value()) entry["recording"] = request.recording.value();
 		if (request.snapshots > 0) entry["snapshots"] = request.snapshots;
 		if (request.constrainedSeed.has_value()) entry["constrainedSeed"] = request.constrainedSeed.value();
 		if (request.robotToCamera.has_value()) entry["robotToCamera"] = request.robotToCamera.value();
@@ -290,6 +293,11 @@ void NetworkTablesSink::PublishNodeStatus(const std::string& nodeId, int fpsLimi
 void NetworkTablesSink::PublishNodeEnabled(const std::string& nodeId, bool enabled)
 {
 	m_Instance.GetTable(m_Config.rootTable + "/" + TableNameForNode(nodeId))->PutBoolean("status/enabled", enabled);
+}
+
+void NetworkTablesSink::PublishNodeRecording(const std::string& nodeId, bool recording)
+{
+	m_Instance.GetTable(m_Config.rootTable + "/" + TableNameForNode(nodeId))->PutBoolean("status/recording", recording);
 }
 
 void NetworkTablesSink::SetGraphJson(const std::string& json)

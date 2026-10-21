@@ -1600,6 +1600,14 @@ void Manager::SetNetworkTablesSinkNodeEnabled(int sinkId, string nodeId, bool en
         p_NtSink->PublishNodeEnabled(nodeId, enabled);
 }
 
+void Manager::SetNetworkTablesSinkNodeRecording(int sinkId, string nodeId, bool recording)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return;
+    if (NetworkTablesSink* p_NtSink = dynamic_cast<NetworkTablesSink*>(sink->second.get()))
+        p_NtSink->PublishNodeRecording(nodeId, recording);
+}
+
 void Manager::SetNetworkTablesSinkGraph(int sinkId, string json)
 {
     auto sink = m_Sinks.find(sinkId);
@@ -1640,6 +1648,7 @@ void Manager::SetNetworkTablesSinkRecordingStatus(int, bool) {}
 void Manager::SetNetworkTablesSinkNodeAlias(int, string, string) {}
 void Manager::SetNetworkTablesSinkNodeEnabled(int, string, bool) {}
 void Manager::SetNetworkTablesSinkGraph(int, string) {}
+void Manager::SetNetworkTablesSinkNodeRecording(int, string, bool) {}
 int Manager::PollNetworkTablesSinkLedRequest(int) { return -2; }
 void Manager::SetNetworkTablesSinkLedStatus(int, int) {}
 void Manager::SetNetworkTablesSinkNodeStatus(int, string, int) {}

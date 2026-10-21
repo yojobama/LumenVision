@@ -19,14 +19,16 @@ public final class LumenGraph {
         private final String table;
         private final String kind;
         private final boolean enabled;
+        private final boolean recording;
         private final int input;
 
-        Node(int id, String name, String table, String kind, boolean enabled, int input) {
+        Node(int id, String name, String table, String kind, boolean enabled, boolean recording, int input) {
             this.id = id;
             this.name = name;
             this.table = table;
             this.kind = kind;
             this.enabled = enabled;
+            this.recording = recording;
             this.input = input;
         }
 
@@ -51,6 +53,11 @@ public final class LumenGraph {
 
         public boolean isEnabled() {
             return enabled;
+        }
+
+        /** Whether a recording is running on the node. */
+        public boolean isRecording() {
+            return recording;
         }
 
         public int getInput() {
@@ -84,7 +91,7 @@ public final class LumenGraph {
             if (json != null && !json.isEmpty()) {
                 for (JsonNode n : MAPPER.readTree(json).path("nodes")) {
                     nodes.add(new Node(n.path("id").asInt(), n.path("name").asText(), n.path("table").asText(String.valueOf(n.path("id").asInt())), n.path("kind").asText(),
-                            n.path("enabled").asBoolean(true), n.path("input").isNull() || n.path("input").isMissingNode() ? -1 : n.path("input").asInt()));
+                            n.path("enabled").asBoolean(true), n.path("recording").asBoolean(false), n.path("input").isNull() || n.path("input").isMissingNode() ? -1 : n.path("input").asInt()));
                 }
             }
         } catch (java.io.IOException e) {

@@ -72,6 +72,21 @@ namespace Server.Controllers.sinks
             return Task.FromResult(SinkManager.Instance.SetAllRecording(enabled));
         }
 
+        // POST: start or stop recording one node (camera, crop or detector); the robot does the same via NT <root>/<node>/config/recording.
+        [HttpPost("recordSink/node")]
+        public Task SetNodeRecording([FromQuery] int NodeID, [FromQuery] bool enabled)
+        {
+            SinkManager.Instance.SetNodeRecording(NodeID, enabled);
+            return Task.CompletedTask;
+        }
+
+        // GET: whether a RecordSink is running on this node
+        [HttpGet("recordSink/node")]
+        public Task<bool> IsNodeRecording([FromQuery] int NodeID)
+        {
+            return Task.FromResult(SinkManager.Instance.IsNodeRecording(NodeID));
+        }
+
         // GET: whether any RecordSink is currently running
         [HttpGet("recordSink/all")]
         public Task<bool> IsAnyRecording()

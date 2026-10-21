@@ -295,6 +295,8 @@ public:
 	void SetNetworkTablesSinkNodeStatus(int sinkId, string nodeId, int fpsLimit);
 	// publishes "<root>/<node>/status/enabled" (see NetworkTablesSink::PublishNodeEnabled)
 	void SetNetworkTablesSinkNodeEnabled(int sinkId, string nodeId, bool enabled);
+	// publishes "<root>/<node>/status/recording" (see NetworkTablesSink::PublishNodeRecording)
+	void SetNetworkTablesSinkNodeRecording(int sinkId, string nodeId, bool recording);
 	// the JSON the sink republishes as "<root>/.graph" (see NetworkTablesSink::SetGraphJson)
 	void SetNetworkTablesSinkGraph(int sinkId, string json);
 	// publishes a node's topics under `alias` instead of its id (see NetworkTablesSink::SetNodeAlias); "" clears it

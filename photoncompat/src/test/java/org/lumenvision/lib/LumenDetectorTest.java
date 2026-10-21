@@ -205,6 +205,25 @@ class LumenDetectorTest {
     }
 
     @Test
+    void recordingIsWrittenToTheNodeAndReadBackFromItsStatus() {
+        BooleanSubscriber request = coprocessor.getBooleanTopic("/" + ROOT + "/front/config/recording").subscribe(false);
+        try (BooleanPublisher status = coprocessor.getBooleanTopic("/" + ROOT + "/front/status/recording").publish()) {
+            assertFalse(camera.isRecording());
+
+            camera.startRecording();
+            assertTrue(waitFor(request::get));
+            status.set(true);
+            assertTrue(waitFor(camera::isRecording));
+
+            camera.stopRecording();
+            assertTrue(waitFor(() -> !request.get()));
+            status.set(false);
+            assertTrue(waitFor(() -> !camera.isRecording()));
+        }
+        request.close();
+    }
+
+    @Test
     void theConstrainedSeedAndCameraMountArePublishedAsArrays() {
         DoubleArraySubscriber seed = coprocessor.getDoubleArrayTopic("/" + ROOT + "/front/config/constrainedSeed").subscribe(new double[0]);
         DoubleArraySubscriber mount = coprocessor.getDoubleArrayTopic("/" + ROOT + "/front/config/robotToCamera").subscribe(new double[0]);
@@ -238,7 +257,7 @@ class LumenDetectorTest {
     @Test
     void theGraphIsReadFromTheCoprocessorAndAnOldProtocolIsRefused() throws IOException {
         String graph = "{\"nodes\":[{\"id\":1,\"name\":\"front\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
-                + "{\"id\":2,\"name\":\"front\",\"kind\":\"ApriltagSink\",\"enabled\":false,\"input\":1}]}";
+                + "{\"id\":2,\"name\":\"front\",\"kind\":\"ApriltagSink\",\"enabled\":false,\"recording\":true,\"input\":1}]}";
         try (StringPublisher graphPub = coprocessor.getStringTopic("/" + ROOT + "/.graph").publish();
                 StringPublisher versionPub = coprocessor.getStringTopic("/" + ROOT + "/.version").publish();
                 IntegerPublisher protocolPub = coprocessor.getIntegerTopic("/" + ROOT + "/.protocol").publish();
@@ -249,6 +268,8 @@ class LumenDetectorTest {
             assertEquals(1, parsed.findCamera("front").orElseThrow().getId());
             assertEquals(List.of(2), parsed.detectorsOf(1).stream().map(LumenGraph.Node::getId).toList());
             assertFalse(parsed.findById(2).orElseThrow().isEnabled());
+            assertTrue(parsed.findById(2).orElseThrow().isRecording());
+            assertFalse(parsed.findById(1).orElseThrow().isRecording());
 
             // a coprocessor with another protocol version: its results are ignored
             LumenDetector.setVersionCheckEnabled(true);

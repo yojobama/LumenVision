@@ -19,6 +19,8 @@ public class LumenNode implements AutoCloseable {
     private final BooleanPublisher enabledPub;
     private final IntegerPublisher snapshotPub;
     private final BooleanSubscriber enabledSub;
+    private final BooleanPublisher recordingPub;
+    private final BooleanSubscriber recordingSub;
     private long snapshotCount;
 
     /**
@@ -34,6 +36,8 @@ public class LumenNode implements AutoCloseable {
         enabledPub = instance.getBooleanTopic(base + "config/enabled").publish();
         snapshotPub = instance.getIntegerTopic(base + "config/snapshot").publish();
         enabledSub = instance.getBooleanTopic(base + "status/enabled").subscribe(true);
+        recordingPub = instance.getBooleanTopic(base + "config/recording").publish();
+        recordingSub = instance.getBooleanTopic(base + "status/recording").subscribe(false);
     }
 
     /** The NT table name a node's topics are published under: its name with characters outside {@code [A-Za-z0-9_.-]} replaced by {@code _}. */
@@ -71,6 +75,24 @@ public class LumenNode implements AutoCloseable {
         return enabledSub.get();
     }
 
+    /** Starts or stops recording this node's frames on the coprocessor (annotated for a detector, raw for a camera). */
+    public void setRecording(boolean recording) {
+        recordingPub.set(recording);
+    }
+
+    public void startRecording() {
+        setRecording(true);
+    }
+
+    public void stopRecording() {
+        setRecording(false);
+    }
+
+    /** Whether the coprocessor reports a recording running on this node; false until it has reported. */
+    public boolean isRecording() {
+        return recordingSub.get();
+    }
+
     /** Saves the node's latest frame on the coprocessor (the annotated frame for a detector, the raw one for a camera). */
     public void takeSnapshot() {
         snapshotPub.set(++snapshotCount);
@@ -78,7 +100,7 @@ public class LumenNode implements AutoCloseable {
 
     @Override
     public void close() {
-        for (AutoCloseable closeable : new AutoCloseable[] { enabledPub, snapshotPub, enabledSub }) {
+        for (AutoCloseable closeable : new AutoCloseable[] { enabledPub, snapshotPub, enabledSub, recordingPub, recordingSub }) {
             try {
                 closeable.close();
             } catch (Exception ignored) {

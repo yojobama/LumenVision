@@ -382,7 +382,7 @@ namespace Server
                 {
                     foreach (var sink in sinks.Where(s => s.Type == SinkType.RecordSink).ToList())
                     {
-                        if (IsSinkRunning(sink.Id)) DisableSinkById(sink.Id);
+                        if (IsSinkRunning(sink.Id)) SetSinkEnabled(sink.Id, false);
                     }
                     DB.Instance.Save();
                     return 0;
@@ -393,24 +393,49 @@ namespace Server
                 {
                     Source source = SourceManager.Instance.GetSourceById(sourceId);
                     if (source == null) continue;
-                    Sink? recordSink = sinks.FirstOrDefault(s => s.Type == SinkType.RecordSink && s.Source?.Id == sourceId);
-                    int recordSinkId;
-                    if (recordSink != null)
-                    {
-                        recordSinkId = recordSink.Id;
-                    }
-                    else
-                    {
-                        recordSinkId = AddRecordSink($"{source.Name}-match");
-                        BindSourceToSink(recordSinkId, sourceId);
-                    }
-                    if (!IsSinkRunning(recordSinkId)) EnableSinkById(recordSinkId);
+                    int recordSinkId = FindOrCreateRecordSink(sourceId, $"{source.Name}-match");
+                    if (!IsSinkRunning(recordSinkId)) SetSinkEnabled(recordSinkId, true);
                     running++;
                 }
                 DB.Instance.Save();
                 return running;
             }
         }
+
+        // the RecordSink bound to a node, created (and bound) when it has none
+        private int FindOrCreateRecordSink(int nodeId, string name)
+        {
+            Sink? existing = sinks.FirstOrDefault(s => s.Type == SinkType.RecordSink && s.Source?.Id == nodeId);
+            if (existing != null) return existing.Id;
+            int recordSinkId = AddRecordSink(name);
+            BindSourceToSink(recordSinkId, nodeId);
+            return recordSinkId;
+        }
+
+        private string? NodeName(int nodeId) =>
+            SourceManager.Instance.GetSourceById(nodeId)?.Name ?? sinks.FirstOrDefault(s => s.Id == nodeId)?.Name;
+
+        // Starts or stops recording one node (a camera, a crop or a detector): a RecordSink bound to it records its frames. Idempotent.
+        public void SetNodeRecording(int nodeId, bool enabled)
+        {
+            lock (_recordAllLock)
+            {
+                string name = NodeName(nodeId) ?? throw Server.Web.ApiException.NotFound($"no node with id {nodeId}");
+                if (enabled)
+                {
+                    int recordSinkId = FindOrCreateRecordSink(nodeId, $"{name}-rec");
+                    if (!IsSinkRunning(recordSinkId)) SetSinkEnabled(recordSinkId, true);
+                    return;
+                }
+                foreach (Sink recordSink in sinks.Where(s => s.Type == SinkType.RecordSink && s.Source?.Id == nodeId).ToList())
+                {
+                    if (IsSinkRunning(recordSink.Id)) SetSinkEnabled(recordSink.Id, false);
+                }
+            }
+        }
+
+        public bool IsNodeRecording(int nodeId) =>
+            sinks.Any(s => s.Type == SinkType.RecordSink && s.Source?.Id == nodeId && IsSinkRunning(s.Id));
 
         public bool IsAnyRecording() =>
             sinks.Any(s => s.Type == SinkType.RecordSink && IsSinkRunning(s.Id));
@@ -933,10 +958,11 @@ namespace Server
             return ManagerWrapper.Instance.IsSinkActive(id);
         }
 
-        // detection nodes a robot or the UI can switch off; the ones switched off stay off after a restart
+        // detection nodes and recordings a robot or the UI can switch off; the ones switched off stay off after a restart
         private readonly HashSet<int> disabledNodes = new HashSet<int>();
 
-        private static bool HasSavedEnabledState(SinkType type) => type == SinkType.ApriltagSink || type == SinkType.ObjectDetectionSink;
+        private static bool HasSavedEnabledState(SinkType type) =>
+            type == SinkType.ApriltagSink || type == SinkType.ObjectDetectionSink || type == SinkType.RecordSink;
 
         public bool IsNodeDisabled(int id) { lock (disabledNodes) return disabledNodes.Contains(id); }
 

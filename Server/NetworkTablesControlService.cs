@@ -15,9 +15,10 @@ namespace Server
     //                                          -> the detector's floor-constrained solve (published in the result packet)
     //  <root>/<node>/config/enabled            (bool)  -> start or stop that node (SinkManager.SetSinkEnabled)
     //  <root>/<node>/config/snapshot           (any write) -> save that node's latest frame
+    //  <root>/<node>/config/recording          (bool)  -> record that node (SinkManager.SetNodeRecording)
     //  <root>/<node>/config/fpsLimit           (int)   -> cap how many results per second that node publishes (<= 0: unlimited)
-    // and publishes the settings actually in effect back under status/ (recording, ledMode, per node enabled and
-    // fpsLimit), plus the graph description under .graph. <node> is the node's table (see .graph). Requests are idempotent desired state,
+    // and publishes the settings actually in effect back under status/ (recording, ledMode, per node enabled, recording
+    // and fpsLimit), plus the graph description under .graph. <node> is the node's table (see .graph). Requests are idempotent desired state,
     // so several NT sinks seeing the same write is harmless.
     public sealed class NetworkTablesControlService : BackgroundService
     {
@@ -128,7 +129,7 @@ namespace Server
                 ManagerWrapper.Instance.SetNetworkTablesSinkRecordingStatus(ntSinkId, recording);
                 ManagerWrapper.Instance.SetNetworkTablesSinkLedStatus(ntSinkId, (int)LedController.Instance.Mode);
             }
-            PublishCameraStatus(ntSinkIds, detectorIds);
+            PublishCameraStatus(ntSinkIds, detectorIds, SourceManager.Instance.GetAllSourceIds());
             PublishGraph(ntSinkIds, tables);
         }
 
@@ -136,11 +137,11 @@ namespace Server
 
         // every node (sources and sinks) with its display name, the NT table its topics are under (see ComputeNodeTables; the id when it has none),
         // kind, running state and input
-        internal static string BuildGraphJson(IEnumerable<Source> sources, IEnumerable<Sink> sinks, Dictionary<int, string> tables, Func<int, bool> isRunning)
+        internal static string BuildGraphJson(IEnumerable<Source> sources, IEnumerable<Sink> sinks, Dictionary<int, string> tables, Func<int, bool> isRunning, Func<int, bool>? isRecording = null)
         {
             var nodes = new List<object>();
             foreach (Source source in sources)
-                nodes.Add(new { id = source.Id, name = source.Name, table = tables.TryGetValue(source.Id, out string? sourceTable) ? sourceTable : source.Id.ToString(), kind = source.Type.ToString(), enabled = true, input = (int?)source.CropParentId });
+                nodes.Add(new { id = source.Id, name = source.Name, table = tables.TryGetValue(source.Id, out string? sourceTable) ? sourceTable : source.Id.ToString(), kind = source.Type.ToString(), enabled = true, recording = isRecording?.Invoke(source.Id) ?? false, input = (int?)source.CropParentId });
             foreach (Sink sink in sinks)
                 nodes.Add(new
                 {
@@ -149,6 +150,7 @@ namespace Server
                     table = tables.TryGetValue(sink.Id, out string? sinkTable) ? sinkTable : sink.Id.ToString(),
                     kind = sink.Type.ToString(),
                     enabled = isRunning(sink.Id),
+                    recording = isRecording?.Invoke(sink.Id) ?? false,
                     input = (int?)sink.Source?.Id,
                 });
             return JsonSerializer.Serialize(new { nodes });
@@ -158,7 +160,7 @@ namespace Server
         {
             var sources = SourceManager.Instance.GetAllSourceIds().Select(id => SourceManager.Instance.GetSourceById(id)).Where(s => s != null).Select(s => s!).ToList();
             var sinks = SinkManager.Instance.GetAllSinks().ToList();
-            string json = BuildGraphJson(sources, sinks, tables, SinkManager.Instance.IsSinkRunning);
+            string json = BuildGraphJson(sources, sinks, tables, SinkManager.Instance.IsSinkRunning, SinkManager.Instance.IsNodeRecording);
 
             foreach (int ntSinkId in ntSinkIds)
             {
@@ -208,13 +210,27 @@ namespace Server
             }
         }
 
-        private static void PublishCameraStatus(List<int> ntSinkIds, List<int> detectorIds)
+        private static void PublishCameraStatus(List<int> ntSinkIds, List<int> detectorIds, IEnumerable<int> sourceIds)
         {
+            foreach (int nodeId in sourceIds)
+            {
+                bool recording = SinkManager.Instance.IsNodeRecording(nodeId);
+                foreach (int ntSinkId in ntSinkIds)
+                {
+                    var key = (ntSinkId, nodeId);
+                    string sourceStatus = $"recording|{recording}";
+                    if (PublishedStatus.TryGetValue(key, out var last) && last.status == sourceStatus && DateTime.UtcNow - last.at < StatusRefresh) continue;
+                    ManagerWrapper.Instance.SetNetworkTablesSinkNodeRecording(ntSinkId, nodeId.ToString(), recording);
+                    PublishedStatus[key] = (sourceStatus, DateTime.UtcNow);
+                }
+            }
+
             foreach (int nodeId in detectorIds)
             {
                 int fpsLimit = ManagerWrapper.Instance.GetSourceFpsLimit(nodeId);
                 bool enabled = SinkManager.Instance.IsSinkRunning(nodeId);
-                string status = $"{fpsLimit}|{enabled}";
+                bool nodeRecording = SinkManager.Instance.IsNodeRecording(nodeId);
+                string status = $"{fpsLimit}|{enabled}|{nodeRecording}";
 
                 foreach (int ntSinkId in ntSinkIds)
                 {
@@ -223,6 +239,7 @@ namespace Server
                         continue;
                     ManagerWrapper.Instance.SetNetworkTablesSinkNodeStatus(ntSinkId, nodeId.ToString(), fpsLimit);
                     ManagerWrapper.Instance.SetNetworkTablesSinkNodeEnabled(ntSinkId, nodeId.ToString(), enabled);
+                    ManagerWrapper.Instance.SetNetworkTablesSinkNodeRecording(ntSinkId, nodeId.ToString(), nodeRecording);
                     PublishedStatus[key] = (status, DateTime.UtcNow);
                 }
             }
@@ -238,7 +255,7 @@ namespace Server
             LedController.Instance.SetMode((LedMode)value);
         }
 
-        // entries are {"sourceId": "<nodeId>", "enabled"?, "snapshots"?, "fpsLimit"?}
+        // entries are {"sourceId": "<nodeId>", "enabled"?, "recording"?, "snapshots"?, "fpsLimit"?}
         // (see NetworkTablesSink::PollConfigRequests); each applies to that node.
         private static void ApplyConfigRequests(string json)
         {
@@ -276,6 +293,18 @@ namespace Server
                     catch (Exception ex)
                     {
                         Console.WriteLine($"NT enabled request for {nodeId} ignored: {ex.Message}");
+                    }
+                }
+
+                if (entry.TryGetProperty("recording", out JsonElement recordingElement))
+                {
+                    try
+                    {
+                        SinkManager.Instance.SetNodeRecording(nodeId, recordingElement.GetBoolean());
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"NT recording request for {nodeId} ignored: {ex.Message}");
                     }
                 }
 

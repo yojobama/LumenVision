@@ -91,6 +91,7 @@ topic-layout version (4); the vendordep refuses a coprocessor that speaks anothe
 | `hasTargets`, `targetYaw`, `targetPitch`, `targetArea`, `targetPose` | bool / numbers | The best target, flattened for dashboards. |
 | `cameraIntrinsics`, `cameraDistortion` | double[] | The calibration in use (3x3 row-major; OpenCV distortion coefficients). |
 | `config/enabled`, `config/fpsLimit` | bool / int | Start or stop the node (kept across restarts) and cap its published results per second. `status/*` reports the value in effect. |
+| `config/recording` | bool | Record this node (annotated frames for a detector, raw for a camera); `status/recording` reports it. A recording left stopped stays stopped after a restart. |
 | `config/snapshot` | any write | Save the node's latest frame (annotated for a detector, raw for a camera). |
 | `config/constrainedSeed`, `config/robotToCamera` | double[3], double[7] | Start the floor-constrained solve: seed `[x, y, yaw]` (layout frame) and the camera mount `[x, y, z, qw, qx, qy, qz]`. |
 | `/<root>/config/ledMode`, `config/recording` | int / bool | Global LED (-1 auto: lit while a detector runs, 0 off, 1 on, 2 blink) and recording. |

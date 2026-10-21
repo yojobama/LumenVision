@@ -357,24 +357,29 @@ TEST_CASE("NetworkTablesSink surfaces per-node enabled and snapshot writes and p
 	robot.StartClient4("LumenCoreTests-nt4-node-controls-robot");
 	auto tags = robot.GetTable("lumenvision/tags");
 	tags->PutBoolean("config/enabled", false);
+	tags->PutBoolean("config/recording", true);
 	tags->PutNumber("config/snapshot", 1);
 
 	// ntcore may coalesce back-to-back writes, so one write per poll is checked here
 	int snapshots = 0;
 	bool sawDisable = false;
+	bool sawRecording = false;
 	REQUIRE(WaitUntil([&] {
 		nlohmann::json requests = nlohmann::json::parse(ntSink->PollConfigRequests(), nullptr, false);
 		if (requests.is_discarded()) return false;
 		for (const auto& request : requests) {
 			REQUIRE(request["sourceId"] == "node-9");
 			if (request.contains("enabled") && request["enabled"] == false) sawDisable = true;
+			if (request.contains("recording") && request["recording"] == true) sawRecording = true;
 			snapshots += request.value("snapshots", 0);
 		}
-		return sawDisable && snapshots == 1;
+		return sawDisable && sawRecording && snapshots == 1;
 	}));
 	REQUIRE(ntSink->PollConfigRequests() == "[]");
 
 	ntSink->PublishNodeEnabled("node-9", false);
+	ntSink->PublishNodeRecording("node-9", true);
+	REQUIRE(WaitUntil([&] { return tags->GetEntry("status/recording").Exists() && tags->GetBoolean("status/recording", false); }));
 	REQUIRE(WaitUntil([&] { return tags->GetEntry("status/enabled").Exists() && !tags->GetBoolean("status/enabled", true); }));
 
 	// .graph and .protocol ride on Process(), which runs once a bound source has produced a result

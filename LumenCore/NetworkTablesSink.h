@@ -50,8 +50,8 @@ public:
 	// small JSON status blob (connected, server, identity, latency)
 	std::string GetConnectionStatus() const;
 
-	// Drains "<sourceId>/config/fpsLimit", ".../enabled" and ".../snapshot" writes since the last call as a JSON array of
-	// {"sourceId", "fpsLimit"?, "enabled"?, "snapshots"?,
+	// Drains "<sourceId>/config/fpsLimit", ".../enabled", ".../recording" and ".../snapshot" writes since the last call as a JSON array of
+	// {"sourceId", "fpsLimit"?, "enabled"?, "recording"?, "snapshots"?,
 	// "constrainedSeed"? ([x, y, yaw]), "robotToCamera"? ([x, y, z, qw, qx, qy, qz])};
 	// the snapshot fields count the writes seen (each write is one request, whatever its value); each request is returned once.
 	std::string PollConfigRequests();
@@ -66,6 +66,8 @@ public:
 	void PublishNodeStatus(const std::string& nodeId, int fpsLimit);
 	// Publishes "<rootTable>/<node>/status/enabled": whether the node is running.
 	void PublishNodeEnabled(const std::string& nodeId, bool enabled);
+	// Publishes "<rootTable>/<node>/status/recording": whether a RecordSink is running on the node.
+	void PublishNodeRecording(const std::string& nodeId, bool recording);
 
 	// The graph description republished as "<rootTable>/.graph" on every tick, so robot code can find nodes by name.
 	void SetGraphJson(const std::string& json);
@@ -111,6 +113,7 @@ private:
 	struct PendingConfigRequest {
 		std::optional<int> fpsLimit;
 		std::optional<bool> enabled;
+		std::optional<bool> recording;
 		int snapshots = 0;
 		std::optional<std::vector<double>> constrainedSeed;   // [x, y, yaw]
 		std::optional<std::vector<double>> robotToCamera;     // [x, y, z, qw, qx, qy, qz]

@@ -12,6 +12,9 @@ ignores a coprocessor that reports another one.
 - **Nodes publish under their own names** (made unique with the id). `/<root>/.graph` lists every node and its table; `/<root>/.protocol` is 4.
 - **Per-node controls:** `config/enabled`, `config/snapshot`, `config/fpsLimit`. Removed: `config/pipelineIndex`, `config/driverMode`,
   `config/inputSnapshot`, `config/outputSnapshot`, the `tags/*` and `multitag/*` topics. The result packet is unchanged.
+- **Per-node recording:** `config/recording` / `status/recording` under each node (`LumenNode.startRecording()`, `stopRecording()`, `isRecording()`;
+  REST `POST recordSink/node?NodeID=&enabled=`). The coprocessor-wide `config/recording` still records every camera. A stopped recording now stays
+  stopped across a restart.
 - A NetworkTablesSink publishes every detector node. Snapshots over REST are `POST /api/snapshot/take?NodeID=`.
 - The LED has an auto mode (-1): lit while any detector runs.
 
