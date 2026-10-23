@@ -35,7 +35,7 @@ Findings:
 
 1. Camera decodes MJPEG → BGR (12ms, §1).
 2. `result.frame->AsGray()` converts BGR → GRAY with `cv::cvtColor` ([Frame.cpp](../LumenCore/Frame.cpp#L46-L56)) — another ~2–3ms at 1080p, single-threaded.
-3. If a preview sink is bound (`wantsFrame`), the already-have BGR is **copied in full** into a pooled buffer (~3–4ms at 1080p) for annotation.
+3. If a preview sink is bound (`wantsFrame`), the BGR frame already in hand is **copied in full** into a pooled buffer (~3–4ms at 1080p) for annotation.
 
 The grey image the detector actually uses is derived from a full-colour decode that was only needed for the optional preview. Fix: decode MJPEG directly to greyscale when no frame consumer needs colour (the `FrameConsumer` registry already exists for exactly this kind of decision), or keep the compressed JPEG in `Frame` and decode lazily in `AsGray()`/`AsBgr()`.
 

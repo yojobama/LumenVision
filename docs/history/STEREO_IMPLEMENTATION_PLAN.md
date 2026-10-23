@@ -506,8 +506,8 @@ Matching this project's convention of distinguishing "compiled and linked" from 
    `SgbmStereoBackend` is the escape hatch if the answer is bad — at which point the honest framing
    is "SGBM at reduced resolution on CPU", not "stereo doesn't work".
 5. **VEPU contention with WebRTC** — see §10.6 item 5.
-6. **One `cs_context` per node**, each with its own persistent MPP context and buffers. RK3588 has
-   two encoder cores; a third concurrent stereo node will queue. Not a near-term problem (one stereo
+6. **One `cs_context` per node**, each with its own persistent MPP context and buffers. The RK3588 has
+   two encoder cores, so a third concurrent stereo node will queue. Not a near-term problem (one stereo
    pair per coprocessor is the realistic deployment) but worth knowing before someone creates four.
 7. **OpenCV 5's `calib3d` → `calib` rename** — cheap check in §10.2, annoying to hit mid-write.
 8. **The `min_disparity` / negative-disparity subtlety** if cross-checking is ever added — §10.3.

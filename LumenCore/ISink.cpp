@@ -136,7 +136,7 @@ bool ISink::BindSource(std::shared_ptr<ISource> p_Source) {
         return true;
     }
 
-    m_Logger->EnterLog(LogLevel::Error, "ISink::BindSource: Source is null");
+    m_Logger->EnterLog(LogLevel::Error, "ISink::BindSource: source is null");
 
     return false;
 }

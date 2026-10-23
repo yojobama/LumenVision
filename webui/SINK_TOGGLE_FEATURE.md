@@ -91,7 +91,7 @@ Created a reusable toggle switch component with:
 
 ### GET /api/sink/getStatus
 - **Query Parameters**: `SinkID` (int)
-- **Returns**: `boolean` - true if sink is enabled, false if disabled
+- **Returns**: `boolean` - true if the sink is enabled, false if it is disabled
 - **Called**: When loading sink data to display current status
 
 ### PATCH /api/sink/toggle
@@ -99,14 +99,14 @@ Created a reusable toggle switch component with:
   - `SinkID` (int) - The ID of the sink to toggle
   - `Enabled` (bool) - true to enable, false to disable
 - **Returns**: No content (204)
-- **Called**: When user clicks the toggle switch
+- **Called**: When the user clicks the toggle switch
 
 ## Testing Recommendations
 
 1. **Basic Toggle**: Verify that clicking the toggle switch changes the sink state
 2. **Status Persistence**: Verify that sink status is maintained after page refresh
 3. **Multiple Sinks**: Test toggling multiple sinks and verify each maintains its own state
-4. **Error Handling**: Test behaviour when API is unavailable or returns errors
+4. **Error Handling**: Test behaviour when the API is unavailable or returns errors
 5. **Visual States**: Verify the toggle switch displays correctly in both light and dark modes
 
 ## Future Enhancements

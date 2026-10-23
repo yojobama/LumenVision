@@ -82,7 +82,7 @@ The current implementation includes basic H.264 structure:
 - **IDR Frames**: Intra-coded frames for key frames
 
 ### Image Processing
-- **Colour Conversion**: RGB ? YUV420 using ITU-R BT.601 standard
+- **Colour Conversion**: RGB to YUV420 using ITU-R BT.601 standard
 - **Subsampling**: 4:2:0 chroma subsampling for efficiency
 - **Test Pattern**: Gradient pattern for demonstration
 

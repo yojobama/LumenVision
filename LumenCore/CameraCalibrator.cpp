@@ -194,7 +194,7 @@ void CameraCalibrator::Process(const std::vector<SourceResult>& results)
 	const Frame& frame = results[0].frame.value();
 
 	if (frame.empty()) {
-		m_Logger->EnterLog(LogLevel::Error, "CameraCalibrator: Blank frame grabbed.");
+		m_Logger->EnterLog(LogLevel::Error, "CameraCalibrator: blank frame grabbed");
 		return;
 	}
 

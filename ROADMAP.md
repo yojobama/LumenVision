@@ -411,7 +411,7 @@ FRC vision is "I updated one side and not the other."
   layout in one shot — materially more accurate than averaging single-tag poses, and it is what
   `MULTI_TAG_PNP_ON_COPROCESSOR` means. Needs the season's `AprilTagFieldLayout` JSON on the Pi.
 - **Starting and stopping nodes.** A detector can be switched off and on by id over REST and NT, and the choice is kept across
-  restarts. Several detectors can share a camera ("tag mode" in auto, "game piece mode" in teleop is two detectors, one running).
+  restarts. Several detectors can share a camera ("tag mode" in auto, "game piece mode" in teleop are two detectors, one running).
 - **Snapshots.** Any node can save its latest frame to disk, downloadable from the UI. This is how teams debug a match afterwards.
 
 ### E4. Packaging

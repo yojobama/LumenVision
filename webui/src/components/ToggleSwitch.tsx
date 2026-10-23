@@ -16,7 +16,7 @@ export const ToggleSwitch: React.FC<{
           ? 'bg-green-600 dark:bg-green-500'
           : 'bg-gray-300 dark:bg-gray-600'
       }`}
-      title={enabled ? 'Enabled - Click to disable' : 'Disabled - Click to enable'}
+      title={enabled ? 'Enabled - click to disable' : 'Disabled - click to enable'}
     >
       <span
         className={`inline-block w-4 h-4 transform transition-transform bg-white rounded-full ${

@@ -87,6 +87,6 @@ When additional sink types and WebRTC functionality are implemented in the C# se
 
 1. Update the sink type options in `AddSinkModal`
 2. Enable WebRTC streaming controls in the dashboard
-3. Add endpoint for retrieving all sinks
+3. Add an endpoint for retrieving all sinks
 4. Implement sink renaming functionality
 5. Add support for additional device monitoring metrics

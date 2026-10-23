@@ -234,7 +234,7 @@ the same grid), then `PATCH .../attachDepthSource` to point it at the depth sink
 plain C++ reference, not a bound source — the full depth grid is deliberately never serialised
 through JSON). Each detection comes back with `distanceMeters`/`xMeters`/`yMeters` added.
 
-The WebUI's "Stereo" page covers creating and binding stereo depth sinks, choosing a saved stereo
+The WebUI's "Stereo" page covers creating and binding stereo depth sinks, and choosing a saved stereo
 calibration from the Calibration tab.
 
 ## WebUI

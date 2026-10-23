@@ -476,7 +476,7 @@ silently broken - `handleAddSink` rejected every type except a literal `'Aprilta
 now both work too.
 
 Verified for real, end to end, through the actual browser against the Orange Pi - and this is
-where three separate server-crashing bugs surfaced, all the same underlying class: **swig.i had
+where three separate server-crashing bugs surfaced, all of the same underlying class: **swig.i had
 no `%exception` block anywhere**, so any C++ exception thrown by application code (not just a
 SWIG-recognized case) crosses the P/Invoke boundary completely uncaught and calls
 `std::terminate()`, killing the *entire server process* over what is often a perfectly ordinary,
@@ -692,7 +692,7 @@ incrementally rather than waiting for all of them to land.
 
    Investigating this also surfaced that **the Orange Pi had never actually been provisioned by
    `install-deps.sh`**: it still had apt's unpatched `libapriltag3t64` (3.3.0) installed instead
-   of the patched v3.4.5 vkapriltag needs, and `libdatachannel` was entirely absent, and no .NET
+   of the patched v3.4.5 vkapriltag needs, `libdatachannel` was entirely absent, and no .NET
    runtime was installed at all. Ran `install-deps.sh --skip-opencv --with-webrtc --with-nt4` for
    real on the board (OpenCV 5, ntcore/wpiutil and ONNX Runtime were already present from an
    earlier partial run) and installed the .NET 10 ASP.NET Core runtime via `dotnet-install.sh`.
