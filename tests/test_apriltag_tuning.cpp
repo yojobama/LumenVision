@@ -275,7 +275,7 @@ TEST_CASE("a running detector given its camera's calibration afterwards starts p
 	std::filesystem::remove(layoutPath);
 }
 
-TEST_CASE("a tag is found in a crop of a larger gray frame, which is a view with the parent's row stride", "[apriltag][crop]") {
+TEST_CASE("a tag is found in a crop of a larger grey frame, which is a view with the parent's row stride", "[apriltag][crop]") {
 	// the left half is plain white, the tag is in the right half - as one eye of a side-by-side stereo camera sees it
 	const cv::Mat tag = RenderTag(APRILTAG_FAMILY_36H11, 3);
 	cv::Mat wide(tag.rows, tag.cols * 2, CV_8UC1, cv::Scalar(255));

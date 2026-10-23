@@ -39,7 +39,7 @@ Added the following methods to interact with the sink toggle endpoints:
 
 #### New ToggleSwitch Component
 Created a reusable toggle switch component with:
-- Green background when enabled, gray when disabled
+- Green background when enabled, grey when disabled
 - Animated sliding toggle button
 - Hover and focus states
 - Disabled state support
@@ -61,10 +61,10 @@ Created a reusable toggle switch component with:
 
 ## User Experience
 
-### Toggle Switch Behavior
+### Toggle Switch Behaviour
 1. **Visual Feedback**: 
    - Enabled: Green background with toggle on the right
-   - Disabled: Gray background with toggle on the left
+   - Disabled: Grey background with toggle on the left
    - Smooth animation when switching states
 
 2. **Interaction**:
@@ -84,7 +84,7 @@ Created a reusable toggle switch component with:
 
 2. **Sinks Page**:
    - In each sink card
-   - With a labeled status ("Enabled" / "Disabled")
+   - With a labelled status ("Enabled" / "Disabled")
    - Above the stream control buttons
 
 ## API Endpoints Used
@@ -106,7 +106,7 @@ Created a reusable toggle switch component with:
 1. **Basic Toggle**: Verify that clicking the toggle switch changes the sink state
 2. **Status Persistence**: Verify that sink status is maintained after page refresh
 3. **Multiple Sinks**: Test toggling multiple sinks and verify each maintains its own state
-4. **Error Handling**: Test behavior when API is unavailable or returns errors
+4. **Error Handling**: Test behaviour when API is unavailable or returns errors
 5. **Visual States**: Verify the toggle switch displays correctly in both light and dark modes
 
 ## Future Enhancements

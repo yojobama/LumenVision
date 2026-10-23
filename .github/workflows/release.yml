@@ -1,7 +1,7 @@
 name: Release
 
 # Builds the backend .deb, board images and the photoncompat vendordep, and publishes them to a
-# GitHub Release on a pushed version tag. A workflow_dispatch run builds and uploads artifacts only;
+# GitHub Release on a pushed version tag. A workflow_dispatch run builds and uploads artefacts only;
 # publish-release runs only for a tag.
 on:
   push:

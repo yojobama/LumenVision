@@ -6,7 +6,7 @@
 VideoFileFrameSource::VideoFileFrameSource(std::shared_ptr<Logger> logger, std::string filePath, int fps, std::string m_ID) : ISource(logger, m_ID)
 {
 	if (logger) logger->EnterLog("VideoFileFrameSource constructed with filePath: " + filePath);
-	logger->EnterLog(LogLevel::Info, "initializing a video file capture device");
+	logger->EnterLog(LogLevel::Info, "initialising a video file capture device");
 	this->m_Capture = cv::VideoCapture(filePath);
 	if (!m_Capture.isOpened()) throw "unable to open video file: " + filePath;
     this->m_Fps = fps;

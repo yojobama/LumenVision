@@ -377,7 +377,7 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 	};
 	auto putString = [&](const std::string& key, const std::string& v) { table->GetEntry(key).SetValue(nt::Value::MakeString(v, captureNtUs)); };
 
-	// AprilTag detector shape: a bare array of {id, center, corners, pose:{x,y,z,R}} objects, or an object envelope
+	// AprilTag detector shape: a bare array of {id, centre, corners, pose:{x,y,z,R}} objects, or an object envelope
 	// {"tags": [...], "multiTag": {...} | null, "calibration": {...} | null}; ObjectDetectionSink publishes a bare array of
 	// {classId, confidence, box, ...}. Detected structurally, as no "type" field exists.
 	nlohmann::json tagsArray;

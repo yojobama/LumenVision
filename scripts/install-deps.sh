@@ -594,7 +594,7 @@ build_webrtc() {
 # ---------------------------------------------------------------------------
 # 7. NT4 — ntcore + wpiutil, opt-in via --with-nt4
 # ---------------------------------------------------------------------------
-# Prebuilt WPILib C++ artifacts from Maven (no apt package); versions are listed at
+# Prebuilt WPILib C++ artefacts from Maven (no apt package); versions are listed at
 # https://frcmaven.wpi.edu/ui/repos/tree/General/release/edu/wpi/first/ntcore/ntcore-cpp
 NTCORE_VERSION="${NTCORE_VERSION:-2025.3.2}"
 

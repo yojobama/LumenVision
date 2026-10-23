@@ -40,7 +40,7 @@ public:
 	// Must return within a bounded time even if the device stops producing frames (e.g. unplugged): ISource::Toggle(false)
 	// blocks joining the capture thread, so a backend that blocks forever here hangs stop/delete/shutdown.
 	// preferGray: true when no bound sink needs colour this cycle (see ISource::HasActiveFrameConsumer); a backend that can
-	// decode straight to grayscale should. Backends may ignore this hint and always produce BGR.
+	// decode straight to greyscale should. Backends may ignore this hint and always produce BGR.
 	virtual CameraGrabResult Grab(bool preferGray = false) = 0;
 
 	virtual std::string Name() const = 0;

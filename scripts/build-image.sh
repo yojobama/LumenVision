@@ -222,7 +222,7 @@ rm -f /root/*.deb /root/customize.sh
 EOS
 chmod +x "$CUSTOMIZE_SCRIPT"
 
-echo "==> [5/6] Booting systemd-nspawn and running the customization"
+echo "==> [5/6] Booting systemd-nspawn and running the customisation"
 systemd-nspawn -D "$MOUNT_DIR" -b --machine="$CONTAINER_NAME" --resolv-conf=copy-host >/dev/null 2>&1 &
 CONTAINER_BOOTED=1
 

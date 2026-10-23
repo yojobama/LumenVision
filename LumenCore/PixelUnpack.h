@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-// Raw-sensor mono formats (V4L2 Y10/Y16/Y10P/Y10BPACK) -> 8-bit grayscale, keeping the most significant 8 bits.
+// Raw-sensor mono formats (V4L2 Y10/Y16/Y10P/Y10BPACK) -> 8-bit greyscale, keeping the most significant 8 bits.
 //
 // Free of <linux/videodev2.h> so it builds on every platform. `stride` is the driver's bytesperline (may exceed
 // width * bytes-per-pixel); `dst` is (re)created as CV_8UC1 width x height, or written in place if already that size.

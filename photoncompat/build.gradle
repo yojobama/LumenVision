@@ -33,7 +33,7 @@ repositories {
 // Must match the GradleRIO version in robot/.wpilib/wpilib_preferences.json
 ext.wpilibVersion = "2026.2.1"
 
-// WPILib's native artifact classifier for the machine running the tests
+// WPILib's native artefact classifier for the machine running the tests
 def osName = System.getProperty("os.name").toLowerCase()
 ext.nativeClassifier = osName.contains("win") ? "windowsx86-64"
         : osName.contains("mac") ? "osxuniversal"
@@ -44,7 +44,7 @@ configurations {
 }
 
 dependencies {
-    // WPILib's published POMs declare no dependencies, so each artifact is listed explicitly.
+    // WPILib's published POMs declare no dependencies, so each artefact is listed explicitly.
     // api: the public API exposes WPIMath geometry and NetworkTables types to consumers.
     api "edu.wpi.first.wpimath:wpimath-java:${wpilibVersion}"
     api "edu.wpi.first.ntcore:ntcore-java:${wpilibVersion}"

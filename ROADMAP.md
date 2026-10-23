@@ -165,7 +165,7 @@ Why this matters concretely, in code that exists today:
 | Waste today | What `Frame` enables |
 |---|---|
 | `CameraFrameSource` captures MJPEG, OpenCV decodes it to BGR on the CPU, every frame | keep it compressed until someone needs pixels; decode on the VPU (C2) |
-| `ApriltagDetector::Process` does `cvtColor(BGR2GRAY)` every frame | capture NV12/YUYV and the Y plane *is* the grayscale image — zero work, zero copy |
+| `ApriltagDetector::Process` does `cvtColor(BGR2GRAY)` every frame | capture NV12/YUYV and the Y plane *is* the greyscale image — zero work, zero copy |
 | `ApriltagDetector` and `ObjectDetectionSink` both `clone()` the frame and draw overlays unconditionally | annotate only when a WebRTC/Record sink is actually bound downstream (C4) |
 | `WebRTCSink` colour-converts to YUV then encodes with `libx264` | hand the NV12 DMA-BUF straight to `h264_rkmpp` (C2) |
 | YOLO preprocessing letterboxes/resizes with `cv::resize` on the CPU | RGA does it in hardware (C3); RKNN also takes NV12 input directly |
@@ -270,7 +270,7 @@ Resize, crop, colour-space conversion and YOLO letterboxing on the Rockchip 2D e
 - **Annotate on demand.** `ApriltagDetector::Process` and `ObjectDetectionSink::Process` both
   `clone()` and draw every frame unconditionally. Make it conditional on a downstream frame
   consumer existing. On a headless competition robot this is pure waste today.
-- **Grayscale from the Y plane** instead of `cvtColor(BGR2GRAY)`.
+- **Greyscale from the Y plane** instead of `cvtColor(BGR2GRAY)`.
 - **Fix the frame-count race.** `ISource::m_FrameCount` is a plain `uint64_t` written under
   `m_ResultLock` but read lock-free by `ISink::ProcessingThreadLoop` via `GetCurrentFrameCount()`
   — a data race. And `ISink` stores the last-seen count as `int` (`m_Sources` is
@@ -354,7 +354,7 @@ REST stays, for configuration from the WebUI only.
 /<Root>/<node>/config/driverMode     (boolean, robot-writable)
 ```
 
-Serialization: a **hand-rolled versioned byte packet** on the `raw` topic — the approach
+Serialisation: a **hand-rolled versioned byte packet** on the `raw` topic — the approach
 `photonlib` settled on, for the right reason: results are variable-length, and WPILib's `Struct`
 requires a fixed size. Zero new dependencies on either side. The first two bytes are a schema
 version; the vendordep refuses to decode a version it does not know and says so loudly. Publish
@@ -416,7 +416,7 @@ FRC vision is "I updated one side and not the other."
 
 ### E4. Packaging
 
-- Pure-Java artifact, no JNI — everything arrives over NT, and the maths is wpimath's.
+- Pure-Java artefact, no JNI — everything arrives over NT, and the maths is wpimath's.
 - Maven repo on GitHub Pages: `https://yojobama.github.io/LumenVision/maven` (release.yml
   publishes `photoncompat/build/maven-repo` to gh-pages under `maven/`).
 - `<Name>.json` vendordep manifest with `frcYear`, `uuid`, `mavenUrls`, `jsonUrl`,
@@ -476,7 +476,7 @@ Calibration and stereo calibration are inherently step-by-step and do not belong
 graph nodes.* Wizards, with:
 
 - a **live coverage heatmap** showing where board detections have landed in the frame, so the
-  operator knows to move toward the corners — the single biggest usability gap in every existing
+  operator knows to move towards the corners — the single biggest usability gap in every existing
   FRC calibration tool;
 - the snapshot count and the acceptance gate (≥ 4 mono, ≥ 8 stereo) shown as progress;
 - `epipolarRms` with the 0.5 px gate as a pass/fail light, not a number in a table;

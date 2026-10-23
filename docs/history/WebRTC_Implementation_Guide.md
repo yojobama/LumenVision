@@ -26,7 +26,7 @@ This implementation adds WebRTC video streaming capability to the FRCV system, a
 
 ## How It Works
 
-### 1. Stream Initialization
+### 1. Stream Initialisation
 ```
 Client                    Server
   |                         |
@@ -46,7 +46,7 @@ Client                    Server
 ### 2. Video Pipeline
 1. **Frame Capture**: Get preview image from sink (30 FPS)
 2. **Image Conversion**: Convert Image8U to RGB byte array
-3. **Color Space**: Convert RGB to YUV420 (I420) format
+3. **Colour Space**: Convert RGB to YUV420 (I420) format
 4. **H.264 Encoding**: Encode frame with SPS/PPS/IDR NAL units
 5. **RTP Transmission**: Package and send via WebRTC
 
@@ -82,7 +82,7 @@ The current implementation includes basic H.264 structure:
 - **IDR Frames**: Intra-coded frames for key frames
 
 ### Image Processing
-- **Color Conversion**: RGB ? YUV420 using ITU-R BT.601 standard
+- **Colour Conversion**: RGB ? YUV420 using ITU-R BT.601 standard
 - **Subsampling**: 4:2:0 chroma subsampling for efficiency
 - **Test Pattern**: Gradient pattern for demonstration
 
@@ -128,7 +128,7 @@ foreach (var packet in rtpPackets) {
 ## Dependencies Added
 - **SIPSorcery**: WebRTC implementation
 - **SIPSorceryMedia.FFmpeg**: Media processing (for future use)
-- **System.Text.Json**: JSON serialization for API
+- **System.Text.Json**: JSON serialisation for API
 
 ## Testing
 1. **Build the Server**: Ensure all dependencies are installed

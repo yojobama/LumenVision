@@ -27,7 +27,7 @@ hardware utilisation). This file is the quick-start.
 **No CMake, no Linux-native build (yet — see `ROADMAP.md`).** Visual Studio drives everything:
 `LumenCore.vcxproj` builds inside WSL2 (`Debug|x64` / `Release|x64`, local dev) or remotely on
 the Orange Pi over SSH via the Remote_GCC toolset (`Debug|ARM64` / `Release|ARM64`, the actual
-target). `Server.csproj` consumes the built `.so` as a prebuilt artifact — it does not build
+target). `Server.csproj` consumes the built `.so` as a prebuilt artefact — it does not build
 LumenCore itself, so `dotnet publish` works even from a machine with no C++ toolchain, as long
 as the `.so` exists.
 
@@ -115,7 +115,7 @@ between the C++ encoder and the Java decoder.
 
 ### Robot code: the `photoncompat` vendordep
 
-`photoncompat/` is one Java artifact with two packages. `org.lumenvision.lib` is LumenVision's own API: `LumenCoprocessor`
+`photoncompat/` is one Java artefact with two packages. `org.lumenvision.lib` is LumenVision's own API: `LumenCoprocessor`
 (recording, the LED, the node graph), `LumenNode` (start, stop and snapshot any node by name), `LumenDetector` (results,
 calibration, FPS limit, the constrained-solve seed) and `LumenPoseEstimator` (the coprocessor's multi-tag and constrained
 solves). `org.lumenvision.photoncompat` maps PhotonLib's classes onto it (`PhotonCamera`, `PhotonPoseEstimator`, `PhotonUtils`,
@@ -173,7 +173,7 @@ pinned to tag `v1.7.0`); Vulkan falls back to CPU when no usable device exists. 
 - **Refine margin cutoff** (`probeMargin`, grey levels, Vulkan only, `0` = off) skips edge refinement for quads whose decision
   margin before refinement is below it, which saves CPU time on frames full of non-tag shapes. `APRILTAG_VK_PROBE_MARGIN`
   overrides it; `GET /api/apriltagSink/tuning` reports the value in effect.
-- **Frame ingest**: pooled gray frames are page-aligned so a GPU with `VK_EXT_external_memory_host` reads them in place
+- **Frame ingest**: pooled grey frames are page-aligned so a GPU with `VK_EXT_external_memory_host` reads them in place
   (`ingestMode` is `host-import`; `LUMEN_APRILTAG_FRAME_IMPORT=0` forces the upload path). The Orange Pi's Mali driver does not
   offer that extension, but its unified memory already takes the frame as a direct write, so it reports `copy`.
   Setting the `APRILTAG_VK_REFINE` environment variable (`upstream|exact|fast|ultrafast`) overrides the mode inside the
@@ -203,7 +203,7 @@ over ordinary HTTP requests is enough.
 ## Stereo depth
 
 See `docs/history/STEREO_IMPLEMENTATION_PLAN.md` for the full design (disparity-window
-derivation, sign convention, accuracy expectations, and the risks around camera synchronization
+derivation, sign convention, accuracy expectations, and the risks around camera synchronisation
 worth reading before buying stereo hardware) and `ROADMAP.md` for the upcoming side-by-side
 single-camera layout. The graph node is `StereoDepthSink`, bound to a left/right camera pair via
 `PATCH /api/stereoDepthSink/{id}/bind` (`leftSourceId`/`rightSourceId`) — the ordinary
@@ -231,7 +231,7 @@ Optionally, `POST /api/depthFusionSink/create` fuses a detector's (AprilTag/obje
 bounding boxes with a `StereoDepthSink`'s depth grid — bind the detector to the depth sink's own
 rectified-left frame output (not a raw camera, or its bbox pixel coordinates won't index into
 the same grid), then `PATCH .../attachDepthSource` to point it at the depth sink directly (a
-plain C++ reference, not a bound source — the full depth grid is deliberately never serialized
+plain C++ reference, not a bound source — the full depth grid is deliberately never serialised
 through JSON). Each detection comes back with `distanceMeters`/`xMeters`/`yMeters` added.
 
 The WebUI's "Stereo" page covers creating and binding stereo depth sinks, choosing a saved stereo

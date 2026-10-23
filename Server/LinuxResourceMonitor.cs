@@ -201,7 +201,7 @@ public class LinuxResourceMonitor
     }
     
     /// <summary>
-    /// Gets the overall system RAM utilization (Total, Used, Available) in Megabytes.
+    /// Gets the overall system RAM utilisation (Total, Used, Available) in Megabytes.
     /// Reads /proc/meminfo.
     /// </summary>
     private (double TotalMB, double UsedMB, double AvailableMB) GetMemoryUtilization()
@@ -238,7 +238,7 @@ public class LinuxResourceMonitor
     }
 
     /// <summary>
-    /// Gets the storage utilization only for the root mount point '/'.
+    /// Gets the storage utilisation only for the root mount point '/'.
     /// </summary>
     private DiskInfo GetRootStorageUtilization()
     {
@@ -282,7 +282,7 @@ public class ExampleProgram
 
         monitor.StartMonitoring();
 
-        // Give the monitor time to stabilize (especially for CPU reading)
+        // Give the monitor time to stabilise (especially for CPU reading)
         Console.WriteLine("Giving the monitoring thread 3 seconds to collect initial data...");
         await Task.Delay(3000); 
 

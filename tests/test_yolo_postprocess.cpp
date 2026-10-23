@@ -2,7 +2,7 @@
 #include <catch2/catch_approx.hpp>
 #include "YoloPostProcess.h"
 
-TEST_CASE("Letterbox scales and centers padding correctly for a wider-than-tall image", "[YoloPostProcess]") {
+TEST_CASE("Letterbox scales and centres padding correctly for a wider-than-tall image", "[YoloPostProcess]") {
     cv::Mat input(480, 640, CV_8UC3, cv::Scalar(0, 0, 0));
     // Mark the top-left pixel to check its letterboxed position and the surrounding fill.
     input.at<cv::Vec3b>(0, 0) = cv::Vec3b(255, 255, 255);

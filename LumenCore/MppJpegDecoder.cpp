@@ -173,7 +173,7 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 							if (base && frameWidth >= width && frameHeight >= height && frameHorStride >= width) {
 								// `dst` is the caller's FramePool-acquired buffer, sized/typed for asGray; this class never touches FramePool.
 								if (asGray) {
-									// the Y plane is the grayscale image (no conversion)
+									// the Y plane is the greyscale image (no conversion)
 									cv::Mat yView(height, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(frameHorStride));
 									yView.copyTo(dst);
 								} else {

@@ -37,7 +37,7 @@ TEST_CASE("MppJpegDecoder decodes a real JPEG on real RK3588 JPEG-VPU hardware",
 		}
 	}
 
-	SECTION("grayscale (Y-plane) output") {
+	SECTION("greyscale (Y-plane) output") {
 		cv::Mat referenceGray;
 		cv::cvtColor(reference, referenceGray, cv::COLOR_BGR2GRAY);
 
@@ -51,7 +51,7 @@ TEST_CASE("MppJpegDecoder decodes a real JPEG on real RK3588 JPEG-VPU hardware",
 		REQUIRE(dst.type() == CV_8UC1);
 		cv::Scalar meanRef = cv::mean(referenceGray);
 		cv::Scalar meanDst = cv::mean(dst);
-		INFO("reference gray mean=" << meanRef[0] << " decoded gray mean=" << meanDst[0]);
+		INFO("reference grey mean=" << meanRef[0] << " decoded grey mean=" << meanDst[0]);
 		REQUIRE(std::abs(meanRef[0] - meanDst[0]) < 25.0);
 	}
 

@@ -221,7 +221,7 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		return;
 	}
 
-	// gray first, then remap: remaps one channel instead of three; AsGray() is free when the Frame is already
+	// grey first, then remap: remaps one channel instead of three; AsGray() is free when the Frame is already
 	// GRAY8/NV12-tagged
 	const cv::Mat& grayLeft = left.frame->AsGray();
 	const cv::Mat& grayRight = right.frame->AsGray();

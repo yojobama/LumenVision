@@ -28,7 +28,7 @@ This document describes the comprehensive updates made to the video and image up
 
 ### 3. `src/components/BulkUploadComponent.tsx` (New)
 - **Drag-and-drop upload zone** for bulk file operations
-- **Automatic file categorization** (videos vs images)
+- **Automatic file categorisation** (videos vs images)
 - **Progress tracking** for upload operations
 - **Real-time validation** with detailed error reporting
 - **Mixed file type support** (can upload videos and images simultaneously)
@@ -85,7 +85,7 @@ This document describes the comprehensive updates made to the video and image up
 
 1. **File Selection**: User selects files via modal or drag-and-drop
 2. **Client Validation**: Files validated for type, size, and count
-3. **Upload Preparation**: Valid files categorized by type
+3. **Upload Preparation**: Valid files categorised by type
 4. **Server Upload**: Files sent to appropriate endpoints
 5. **Progress Tracking**: Visual feedback during upload
 6. **Result Display**: Success/failure feedback with details
@@ -105,7 +105,7 @@ This document describes the comprehensive updates made to the video and image up
 - Detailed error messaging
 - Graceful failure recovery
 
-## Performance Optimizations
+## Performance Optimisations
 
 - **Chunked uploads**: Large files handled efficiently
 - **Progress tracking**: Real-time upload status

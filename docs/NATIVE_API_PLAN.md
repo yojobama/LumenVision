@@ -17,7 +17,7 @@ compatibility layer already runs on the new primitives.
 | D3 | Per-pipeline camera overrides (`CameraOverrides`: exposure, controls, transform, FPS limit per profile) | Drop. Migration folds the active profile's overrides into the camera's own settings and logs any it discards. Check the Pi's `data.json` first; if a team relies on them, keep them as a camera-controls preset instead. |
 | D4 | The best-target NT scalars (`hasTargets`, `targetYaw`, `targetPitch`, `targetArea`, `targetPose`) | Keep: dashboards and teams without the vendordep read them. Drop the legacy `tags/*` arrays and `multitag/*` scalars. |
 | D5 | Compatibility between versions | A protocol break: the new vendordep refuses a coprocessor without the new `.protocol` topic, and the new coprocessor stops honouring the old config topics. Release both together with a note. |
-| D6 | Java artifacts | One artifact, two packages: `org.lumenvision.lib` (native) and `org.lumenvision.photoncompat` (PhotonVision-shaped, plus `.sim`). One vendordep JSON. |
+| D6 | Java artefacts | One artefact, two packages: `org.lumenvision.lib` (native) and `org.lumenvision.photoncompat` (PhotonVision-shaped, plus `.sim`). One vendordep JSON. |
 
 ## Phase 0: baseline and safety net
 

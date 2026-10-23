@@ -124,7 +124,7 @@ FrameTransform CameraFrameSource::GetTransform()
 void CameraFrameSource::CaptureFrame()
 {
     if (m_Backend->IsOpened()) {
-        // No bound sink needs colour: ask the backend to decode straight to grayscale. Uses
+        // No bound sink needs colour: ask the backend to decode straight to greyscale. Uses
         // HasActiveColorFrameConsumer(), as a bound detector needs a frame but not colour.
         CameraGrabResult grab = m_Backend->Grab(!HasActiveColorFrameConsumer());
         if (grab.success) {

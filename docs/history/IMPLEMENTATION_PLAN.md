@@ -686,7 +686,7 @@ incrementally rather than waiting for all of them to land.
    `$(RuntimeIdentifier)` (`linux-arm64` → `ARM64`, set by VS's SSH remote target) and by adding a
    build-time `Error` when the resolved `libFRCVLib.so` doesn't exist, so this class of mistake
    fails the build instead of surfacing as a runtime crash on the deployed device.
-   `FRCVLib.vcxproj.user` also had `Debug|x64`'s WSL debugger flavor pointed at the Orange Pi's IP
+   `FRCVLib.vcxproj.user` also had `Debug|x64`'s WSL debugger flavour pointed at the Orange Pi's IP
    (a leftover from before the ARM64/`Remote_GCC` configuration existed) and no debug settings at
    all for `Debug|ARM64`/`Release|ARM64` — both corrected.
 

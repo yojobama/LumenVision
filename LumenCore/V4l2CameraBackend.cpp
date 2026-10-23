@@ -325,7 +325,7 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		cv::Mat jpegView(1, static_cast<int>(bytesUsed), CV_8UC1, const_cast<uint8_t*>(data));
 		// imdecode's 3-arg overload reuses *dst in place when already the right size/type; its return value is the authoritative Mat.
 		//
-		// preferGray decodes straight to grayscale (IMREAD_GRAYSCALE skips chroma upsampling and colour conversion in
+		// preferGray decodes straight to greyscale (IMREAD_GRAYSCALE skips chroma upsampling and colour conversion in
 		// libjpeg-turbo) when nothing downstream needs colour (see ICameraBackend::Grab).
 		//
 		// Acquire happens before either decode path: MppJpegDecoder never touches FramePool, so the software fallback

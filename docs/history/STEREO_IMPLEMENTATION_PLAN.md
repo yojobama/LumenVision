@@ -260,7 +260,7 @@ If it's genuinely OpenCV 5 with `opencv_calib`, then `stereoCalibrate` / `stereo
 
 Follow the established `IApriltagBackend` / `IDetectionBackend` pattern exactly — including the
 **plain, unscoped enum** (a scoped `enum class` becomes a broken opaque `SWIGTYPE_p_*` handle in
-C#; this codebase has learned that three times already), in its own header so the selector can be
+C#; this codebase has learnt that three times already), in its own header so the selector can be
 `%include`d in `swig.i` independently:
 
 ```cpp
@@ -306,7 +306,7 @@ comparable — that comparison is the whole point of shipping it.
 4. **Align dimensions** — crop the rectified pair to a multiple of the backend's native block
    (16 for `lavc_sw`, **32×16 for `rkmpp_hwenc`** — forced by hardware, not configurable). Crop
    inside the rectify ROI; never pad with black. A synthetic black border is a huge, perfectly
-   matchable feature that will pull motion vectors toward it.
+   matchable feature that will pull motion vectors towards it.
 5. **Fill `cs_frame`** — `data[0] = mat.data`, `stride[0] = (int)mat.step`, `data[1] = nullptr`,
    `fmt = CS_PIX_FMT_GRAY8`. A `cv::Mat` ROI is not continuous but *is* correctly strided, so no
    copy is needed.
@@ -388,7 +388,7 @@ answers and must run with the gate disabled (`min_disparity = -1e6f`).
   NT4 and not much better over the REST surface.
 - **Frame** (`SourceResult::frame`) — one of three, selected by a plain enum
   `StereoFrameOutput { DEPTH_COLORMAP, RECTIFIED_LEFT, DEPTH_OVERLAY }`. `DEPTH_COLORMAP` is
-  `cv::applyColorMap` over normalized disparity upscaled with `INTER_NEAREST` (or
+  `cv::applyColorMap` over normalised disparity upscaled with `INTER_NEAREST` (or
   `cs_disparity_upsample`, a caller-invoked opt-in that is off by default upstream);
   `RECTIFIED_LEFT` exists so a detector can be bound downstream (§10.4) without rectifying twice.
   Either way `WebRTCSink` streams it for free — no new streaming work.
