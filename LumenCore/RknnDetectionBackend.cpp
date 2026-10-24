@@ -178,8 +178,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const Frame& frame)
 		prepared = m_Rga.Run(frame, m_Canvas.data, m_InputWidth, m_InputHeight, picture);
 		if (!prepared) {
 			m_RgaFailed = true;
-			std::fprintf(stderr, "RKNN: the RGA could not prepare the detector input for this frame, preparing it on the CPU from now on
-");
+			std::fprintf(stderr, "RKNN: the RGA could not prepare the detector input for this frame, preparing it on the CPU from now on\n");
 		}
 	}
 	if (prepared) lap("rknn-rga");
