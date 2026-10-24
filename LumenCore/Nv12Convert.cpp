@@ -1,53 +1,66 @@
 #if defined(LUMEN_WITH_WEBRTC) || defined(LUMEN_WITH_RECORD)
 #include "Nv12Convert.h"
 
-extern "C" {
-#include <libavutil/opt.h>
+namespace {
+
+// full range (0-255 luma, 0-255 chroma centred on 128) to video range (16-235 luma, 16-240 chroma)
+struct RangeTables {
+	cv::Mat luma, chroma;
+	RangeTables() : luma(1, 256, CV_8UC1), chroma(1, 256, CV_8UC1)
+	{
+		for (int v = 0; v < 256; v++) {
+			luma.at<uchar>(v) = cv::saturate_cast<uchar>(16.0 + v * 219.0 / 255.0);
+			chroma.at<uchar>(v) = cv::saturate_cast<uchar>(128.0 + (v - 128) * 224.0 / 255.0);
+		}
+	}
+};
+
+const RangeTables& Tables()
+{
+	static const RangeTables tables;
+	return tables;
 }
 
-Nv12ToAvFrame::~Nv12ToAvFrame()
-{
-	if (m_Sws) sws_freeContext(m_Sws);
 }
 
 bool Nv12ToAvFrame::Convert(const Frame& src, AVFrame* dst)
 {
 	if (!src.IsNv12() || !dst) return false;
+	const auto format = static_cast<AVPixelFormat>(dst->format);
+	if ((format != AV_PIX_FMT_NV12 && format != AV_PIX_FMT_YUV420P) || dst->width <= 0 || dst->height <= 0 || dst->width % 2 != 0 || dst->height % 2 != 0)
+		return false;
+
 	const cv::Mat& y = src.YPlane();
 	const cv::Mat& uv = src.UvPlane();
-	const auto dstFormat = static_cast<AVPixelFormat>(dst->format);
-	if (dstFormat != AV_PIX_FMT_NV12 && dstFormat != AV_PIX_FMT_YUV420P) return false;
+	const bool scaled = dst->width != y.cols || dst->height != y.rows;
+	const RangeTables& tables = Tables();
 
-	// area averaging when shrinking (the previews are usually scaled down)
-	const int flags = (dst->width < y.cols || dst->height < y.rows) ? SWS_AREA : SWS_BILINEAR;
-	// The ranges must be set before the context is initialised: libswscale picks a plain plane copy for same-size NV12 to NV12, which ignores
-	// them, and only the scaling path converts range. (sws_getCachedContext cannot take them, so the context is cached here.)
-	const Key key{ y.cols, y.rows, dst->width, dst->height, dstFormat };
-	if (!m_Sws || !(key == m_Key)) {
-		if (m_Sws) sws_freeContext(m_Sws);
-		m_Sws = sws_alloc_context();
-		if (!m_Sws) return false;
-		av_opt_set_int(m_Sws, "srcw", y.cols, 0);
-		av_opt_set_int(m_Sws, "srch", y.rows, 0);
-		av_opt_set_int(m_Sws, "src_format", AV_PIX_FMT_NV12, 0);
-		av_opt_set_int(m_Sws, "dstw", dst->width, 0);
-		av_opt_set_int(m_Sws, "dsth", dst->height, 0);
-		av_opt_set_int(m_Sws, "dst_format", dstFormat, 0);
-		av_opt_set_int(m_Sws, "sws_flags", flags, 0);
-		// full-range JPEG YUV in, limited-range video out
-		av_opt_set_int(m_Sws, "src_range", 1, 0);
-		av_opt_set_int(m_Sws, "dst_range", 0, 0);
-		if (sws_init_context(m_Sws, nullptr, nullptr) < 0) {
-			sws_freeContext(m_Sws);
-			m_Sws = nullptr;
-			return false;
-		}
-		m_Key = key;
+	// luma: shrink (area averaging) if the stream is smaller than the picture, then range-convert straight into the encoder's plane
+	const cv::Mat* lumaSource = &y;
+	if (scaled) {
+		cv::resize(y, m_ScaledY, cv::Size(dst->width, dst->height), 0, 0, cv::INTER_AREA);
+		lumaSource = &m_ScaledY;
 	}
+	cv::Mat dstY(dst->height, dst->width, CV_8UC1, dst->data[0], static_cast<size_t>(dst->linesize[0]));
+	cv::LUT(*lumaSource, tables.luma, dstY);
 
-	const uint8_t* srcData[4] = { y.data, uv.data, nullptr, nullptr };
-	const int srcStride[4] = { static_cast<int>(y.step), static_cast<int>(uv.step), 0, 0 };
-	return sws_scale(m_Sws, srcData, srcStride, 0, y.rows, dst->data, dst->linesize) == dst->height;
+	// chroma: the same, as interleaved UV pairs (one table serves both channels)
+	const cv::Mat* chromaSource = &uv;
+	if (scaled) {
+		cv::resize(uv, m_ScaledUv, cv::Size(dst->width / 2, dst->height / 2), 0, 0, cv::INTER_AREA);
+		chromaSource = &m_ScaledUv;
+	}
+	if (format == AV_PIX_FMT_NV12) {
+		cv::Mat dstUv(dst->height / 2, dst->width / 2, CV_8UC2, dst->data[1], static_cast<size_t>(dst->linesize[1]));
+		cv::LUT(*chromaSource, tables.chroma, dstUv);
+	} else {
+		cv::LUT(*chromaSource, tables.chroma, m_Chroma);
+		cv::Mat dstU(dst->height / 2, dst->width / 2, CV_8UC1, dst->data[1], static_cast<size_t>(dst->linesize[1]));
+		cv::Mat dstV(dst->height / 2, dst->width / 2, CV_8UC1, dst->data[2], static_cast<size_t>(dst->linesize[2]));
+		cv::extractChannel(m_Chroma, dstU, 0);
+		cv::extractChannel(m_Chroma, dstV, 1);
+	}
+	return true;
 }
 
 #endif

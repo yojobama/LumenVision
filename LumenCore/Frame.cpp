@@ -83,10 +83,12 @@ const cv::Mat& Frame::AsGray() const
 {
 	if (!m_Storage) throw std::runtime_error("Frame::AsGray called on an empty (default-constructed) Frame");
 
-	std::lock_guard<std::mutex> guard(m_Storage->viewMutex);
+	// the format and the picture never change after construction, so a frame that already is grey needs no lock (another thread may be in the
+	// middle of converting the same frame to BGR under it)
 	if (m_Storage->format == FrameFormat::GRAY8 || m_Storage->format == FrameFormat::NV12) {
 		return m_Storage->mat; // for NV12 the luma plane is the grey picture
 	}
+	std::lock_guard<std::mutex> guard(m_Storage->viewMutex);
 	if (!m_Storage->grayView.has_value()) {
 		cv::Mat gray;
 		std::shared_ptr<void> owner;
@@ -125,10 +127,10 @@ const cv::Mat& Frame::AsBgr() const
 {
 	if (!m_Storage) throw std::runtime_error("Frame::AsBgr called on an empty (default-constructed) Frame");
 
-	std::lock_guard<std::mutex> guard(m_Storage->viewMutex);
 	if (m_Storage->format == FrameFormat::BGR24) {
 		return m_Storage->mat;
 	}
+	std::lock_guard<std::mutex> guard(m_Storage->viewMutex);
 	if (!m_Storage->bgrView.has_value()) {
 		cv::Mat bgr;
 		std::shared_ptr<void> owner;
