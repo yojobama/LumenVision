@@ -29,6 +29,36 @@ public class AcceleratorMonitorTests : IDisposable
 
     private AcceleratorMonitor Monitor() => new(root, "/sys/kernel/debug/rknpu/load", () => runner);
 
+    [Fact]
+    public void EachCpuClusterIsReportedWithItsFrequencyInMegahertz()
+    {
+        string cpufreq = Path.Combine(root, "cpufreq");
+        foreach (var (policy, cpus, cur, max) in new[] { ("policy0", "0 1 2 3", 1800000, 1800000), ("policy4", "4 5", 1608000, 2352000), ("policy6", "6 7", 2352000, 2352000) })
+        {
+            string directory = Path.Combine(cpufreq, policy);
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(Path.Combine(directory, "scaling_cur_freq"), cur.ToString());
+            File.WriteAllText(Path.Combine(directory, "cpuinfo_max_freq"), max.ToString());
+            File.WriteAllText(Path.Combine(directory, "scaling_governor"), "schedutil\n");
+            File.WriteAllText(Path.Combine(directory, "related_cpus"), cpus + "\n");
+        }
+        var monitor = new AcceleratorMonitor(Path.Combine(root, "missing"), "x", () => runner, cpufreqRoot: cpufreq);
+
+        AcceleratorInfo[] clusters = monitor.Read();
+
+        Assert.Equal(new[] { "CPU cores 0-3", "CPU cores 4-5", "CPU cores 6-7" }, clusters.Select(c => c.Name));
+        Assert.All(clusters, c => Assert.Equal("CPU", c.Kind));
+        Assert.Equal(1608.0, clusters[1].FreqMhz);
+        Assert.Equal(2352.0, clusters[1].MaxFreqMhz);
+        Assert.Equal("schedutil", clusters[1].Governor);
+    }
+
+    [Theory]
+    [InlineData("4 5 6 7", "4-7")]
+    [InlineData("0", "0")]
+    [InlineData("0 2", "0,2")]
+    public void CpuListsAreDescribedAsRanges(string related, string expected) => Assert.Equal(expected, AcceleratorMonitor.DescribeCpus(related));
+
     [Theory]
     [InlineData("fb000000.gpu", "GPU")]
     [InlineData("ff400000.gpu-mali", "GPU")]

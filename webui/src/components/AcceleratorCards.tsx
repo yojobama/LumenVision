@@ -2,7 +2,7 @@ import React from 'react';
 import { Cpu } from 'lucide-react';
 import type { AcceleratorInfo } from '../types';
 
-const LABELS: Record<string, string> = { GPU: 'GPU', Memory: 'Memory bus', NPU: 'NPU' };
+const LABELS: Record<string, string> = { GPU: 'GPU', Memory: 'Memory bus', NPU: 'NPU', CPU: 'CPU' };
 
 // Frequency, load and governor of the GPU, memory controller and NPU. Renders nothing on a machine that reports none.
 export const AcceleratorCards: React.FC<{ accelerators: AcceleratorInfo[]; compact?: boolean }> = ({ accelerators, compact }) => {
