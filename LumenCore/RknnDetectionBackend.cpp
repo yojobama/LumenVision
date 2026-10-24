@@ -132,6 +132,11 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 		m_ClassScoresAreProbabilities = YoloPostProcess::QuantisedClassScoresAreProbabilities(m_Scales[0].clsScale, m_Scales[0].clsZeroPoint);
 	}
 	m_Canvas = cv::Mat(m_InputHeight, m_InputWidth, CV_8UC3);
+#ifdef LUMEN_WITH_RGA
+	// LUMEN_RGA_DISABLE=1 keeps the input preparation on the CPU (for comparing the two paths)
+	const char* noRga = std::getenv("LUMEN_RGA_DISABLE");
+	m_RgaFailed = noRga && noRga[0] != '\0' && noRga[0] != '0';
+#endif
 
 	m_Labels.clear();
 	if (!config.labelsPath.empty()) {
