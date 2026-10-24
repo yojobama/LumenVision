@@ -453,3 +453,79 @@ TEST_CASE("the Vulkan backend detects every tag family too, and reports no blur 
 	REQUIRE(detection->id == 3);
 }
 #endif
+
+// ---- tag poses against libapriltag's own estimate ----
+
+#include <apriltag/apriltag_pose.h>
+#include <apriltag/common/homography.h>
+
+TEST_CASE("a tag's pose matches libapriltag's own estimate, with and without lens distortion", "[apriltag][pose]") {
+	// the tag seen at an angle: a flat render warped by a homography
+	cv::Mat flat = RenderTag(APRILTAG_FAMILY_36H11, 3);
+	const std::vector<cv::Point2f> from = { { 0, 0 }, { (float)flat.cols, 0 }, { (float)flat.cols, (float)flat.rows }, { 0, (float)flat.rows } };
+	const std::vector<cv::Point2f> to = { { 150, 120 }, { 470, 90 }, { 450, 400 }, { 170, 360 } };
+	cv::Mat gray;
+	cv::warpPerspective(flat, gray, cv::getPerspectiveTransform(from, to), cv::Size(640, 480), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255));
+
+	const double tagSize = 0.1651, focal = 600.0;
+	for (const std::vector<double>& distortion : { std::vector<double>{}, std::vector<double>{ -0.18, 0.04, 0.0, 0.0, 0.0 } }) {
+		CameraCalibrationResult calibration(focal, focal, 320.0, 240.0, 0.2, distortion, 640, 480);
+
+		// what the detector publishes
+		auto logger = std::make_shared<Logger>("LumenCoreTests-apriltag-pose.log");
+		auto source = std::make_shared<StillFrameSource>(logger, "pose-source", gray);
+		ApriltagDetector detector(logger, "pose-detector", calibration, tagSize, APRILTAG_BACKEND_CPU);
+		REQUIRE(detector.BindSource(source));
+		source->Toggle(true);
+		static_cast<ISink&>(detector).Toggle(true);
+		std::this_thread::sleep_for(std::chrono::milliseconds(300));
+		source->Toggle(false);
+		static_cast<ISink&>(detector).Toggle(false);
+		nlohmann::json result = *detector.GetLatestResult().json;
+		REQUIRE(result["tags"].size() == 1);
+		const nlohmann::json& pose = result["tags"][0]["pose"];
+
+		// libapriltag's estimate from the same detection, on corners undistorted the way the detector does it
+		CpuApriltagBackend backend{ ApriltagTuning() };
+		zarray_t* detections = backend.Detect(gray);
+		REQUIRE(zarray_size(detections) == 1);
+		apriltag_detection_t* detection;
+		zarray_get(detections, 0, &detection);
+		apriltag_detection_t undistorted = *detection;
+		matd_t* homography = nullptr;
+		if (!distortion.empty()) {
+			std::vector<cv::Point2d> corners, flatCorners;
+			for (int i = 0; i < 4; i++) corners.emplace_back(detection->p[i][0], detection->p[i][1]);
+			cv::Mat K = (cv::Mat_<double>(3, 3) << focal, 0, 320, 0, focal, 240, 0, 0, 1);
+			cv::undistortPoints(corners, flatCorners, K, distortion, cv::noArray(), K);
+			float correspondences[4][4];
+			const float tagCorners[4][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } };
+			for (int i = 0; i < 4; i++) {
+				undistorted.p[i][0] = flatCorners[i].x;
+				undistorted.p[i][1] = flatCorners[i].y;
+				correspondences[i][0] = tagCorners[i][0];
+				correspondences[i][1] = tagCorners[i][1];
+				correspondences[i][2] = static_cast<float>(flatCorners[i].x);
+				correspondences[i][3] = static_cast<float>(flatCorners[i].y);
+			}
+			zarray_t* list = zarray_create(sizeof(float[4]));
+			for (auto& c : correspondences) zarray_add(list, c);
+			homography = homography_compute(list, HOMOGRAPHY_COMPUTE_FLAG_SVD);
+			zarray_destroy(list);
+			undistorted.H = homography;
+		}
+		apriltag_detection_info_t info{ &undistorted, tagSize, focal, focal, 320.0, 240.0 };
+		apriltag_pose_t reference;
+		estimate_tag_pose(&info, &reference);
+
+		REQUIRE(pose["x"].get<double>() == Catch::Approx(reference.t->data[0]).margin(1e-4));
+		REQUIRE(pose["y"].get<double>() == Catch::Approx(reference.t->data[1]).margin(1e-4));
+		REQUIRE(pose["z"].get<double>() == Catch::Approx(reference.t->data[2]).margin(1e-4));
+		for (int k = 0; k < 9; k++) REQUIRE(pose["R"][k / 3][k % 3].get<double>() == Catch::Approx(reference.R->data[k]).margin(1e-4));
+
+		matd_destroy(reference.R);
+		matd_destroy(reference.t);
+		if (homography) matd_destroy(homography);
+		backend.ReleaseResult(detections);
+	}
+}
