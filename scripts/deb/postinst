@@ -18,6 +18,8 @@ case "$1" in
         udevadm trigger --sysname-match=rga 2>/dev/null || true
         # devfreq governor rule (GPU/memory/NPU): applies at boot on a real system; the trigger covers an install onto a running one
         udevadm trigger --subsystem-match=devfreq --action=add 2>/dev/null || true
+        # and the big-core governor rule
+        udevadm trigger --subsystem-match=cpu --action=add 2>/dev/null || true
 
         # The lumen user gets passwordless sudo: the device settings page (network, hostname, reboot, updates) runs privileged commands through
         # it. The API is unauthenticated, so anyone who can reach the server can trigger those. The rule is written to a temporary file and only
