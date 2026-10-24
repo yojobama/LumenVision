@@ -167,7 +167,10 @@ a Vulkan AprilTag sink (decimation 1, ultra-fast refine, 8 threads), a CPU April
   It costs detection range (a tag needs about twice the pixels), so it was left at the user's setting.
 - **Worker threads matter a little for the Vulkan sink's CPU tail.** Quad fitting takes 6.8 ms with 2 threads, 4.9 with 4, 4.5 with 6 and
   4.2 with 8 (frame age 32.5, 30.6, 29.2 and 30.3 ms; measured with `Nice=-19`, so the rebuilds are comparable). More than 4 gains under 1 ms.
-- **CPU governor `performance` vs `ondemand`**: no difference once the cores are busy (they sit at their maximum frequency under this load).
+- **CPU governor `performance` vs `ondemand`**: no difference once the cores are busy (they sit at their maximum frequency under this load) - but a
+  graph with a single detector leaves the big cores lightly loaded, and then `ondemand` clocks them down between frames: with only the Vulkan
+  detector bound, `detect` took 9.7 ms (p95 11.0) and the camera decode 2.5 ms, against 4.3 ms (p95 4.5) and 1.3 ms with the big cores on
+  `performance` (Orange Pi 5 Plus, 1280x720 at 30 fps). The package's udev rule now sets `performance` on cpu4-7.
 - **NPU core masks** (`rknn_set_core_mask`, three cores) gave no gain for the deployed YOLO11 model (25.6 vs 25.2 ms per frame with the system
   loaded) and 20% for a YOLOv8n; not adopted.
 - The remaining frame age is the camera: exposure is already 2 ms, the 12 ms before decode is the USB transfer.
