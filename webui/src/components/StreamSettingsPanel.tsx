@@ -48,6 +48,12 @@ export const StreamSettingsPanel: React.FC<{
           <label className="block text-gray-500 dark:text-gray-400">Size {scaleSelect(webrtcScale, setWebrtcScale)}</label>
           <button onClick={() => run(() => api.setWebRTCSettings(webrtc.Id, bitrate, fps, webrtcScale))}
             className="w-full px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700">Apply</button>
+          <button
+            onClick={() => { setBitrate(1000); setFps(15); setWebrtcScale(2); run(() => api.setWebRTCSettings(webrtc.Id, 1000, 15, 2)); }}
+            title="The robot radio shares 4 Mbit/s between every stream on the field; this takes about a quarter of the bandwidth and encoding work of the default"
+            className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">
+            Field preset (1 Mbit/s, 15 fps, half size)
+          </button>
         </div>
       )}
       {mjpeg && (
