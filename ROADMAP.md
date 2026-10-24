@@ -173,6 +173,12 @@ Why this matters concretely, in code that exists today:
 Note this is a *return* to something the project deleted (`Frame`/`FramePool`, blocker B10) —
 but with a defined purpose this time: format and ownership, not object pooling.
 
+**Status:** done for the camera path. `Frame` carries NV12 as two plane views over the hardware JPEG decoder's own buffer (`Frame::FromNv12`), nothing
+is copied or converted until a consumer asks (`AsGray()` is the luma plane, `AsBgr()` converts once), the WebRTC and record sinks encode straight from the
+planes (`Nv12Convert.h`), and the detector input is scaled and converted on the RGA (`RgaLetterbox.h`). Not done: a dma-buf fd on the `Frame`
+(the RGA reads the buffer by address; the Vulkan upload it would replace is 0.1 to 0.2 ms) and MIPI cameras, which need multi-planar V4L2.
+Measurements are in `docs/research/hw-accel/IMPLEMENTATION_STATUS.md`.
+
 ### B3. Resolution / format control, end to end *(item 5)*
 
 - `Manager`: `vector<CameraMode> GetCameraModes(int sourceId)` and

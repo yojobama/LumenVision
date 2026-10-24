@@ -45,17 +45,51 @@ the server runs workstation GC (it ran Server GC with a thread per core).
   restores the last mode when the device opens again. The `LenovoCamera0` source on the test board still points at the old port.
 - `ServerGarbageCollection` (not `ServerGarbageCollector`) is the MSBuild property for the GC mode.
 
+## Second round: zero-copy frames, the RGA, and the smaller items
+
+Measured on the same board with a graph of one camera, a Vulkan AprilTag detector and a YOLO11 detector (no viewers). "ondemand" and "performance" are
+the CPU governor of the big cores.
+
+| | first round (dev66, ondemand) | now (performance governor) |
+|---|---|---|
+| Camera decode | 2.3 ms (1.4 in the decoder, 0.9 copying out as BGR for the detector that needs colour) | 1.5 ms (nothing is copied; the frame stays in the decoder's buffer) |
+| AprilTag `detect` | 6.2 ms mean, 6.9 p95 | 4.4 ms mean, 4.7 p95 |
+| AprilTag frame age at publish | 22.4 ms | 17.9 ms |
+| YOLO11 frame age at publish | 31.4 ms | 30.9 ms (the NPU run itself is 15.4 ms either way) |
+| Camera preview, WebRTC convert + encode | 2.0 (RGA from BGR) + 2.3, after a 0.9 ms BGR conversion | 1.35 + 3.0 straight from the NV12 planes |
+| Camera recording, convert | 0.9 ms after a 0.9 ms BGR conversion | 1.6 ms from the NV12 planes |
+
+- **Zero-copy NV12 frames.** The hardware JPEG decoder's output stays in its buffer as an NV12 `Frame` (two plane views plus an owner that returns the buffer
+  when the last copy goes). The detector reads the luma plane as it is, `Frame::AsBgr()` converts once and only for a consumer that needs it, the encoders
+  convert the planes straight to NV12 or YUV420P with lookup tables that squeeze the JPEG range into the video range (swscale took 5 ms for the same job),
+  and a detector draws its overlay on one conversion of the picture. NV12 regions are cut from both planes when their edges are even. A reading of the
+  luma plane no longer waits for another thread's BGR conversion of the same frame.
+- **RGA.** The detector input (NV12 or BGR to RGB, scaled into the letterbox) is prepared in one RGA pass. It matches the CPU path to within about a pixel
+  (the 14 and 10 detections of a test photo come out in the same places, confidences within 0.05) and takes 1.5 ms of hardware time against 1.0 ms of CPU
+  time, so the NPU frame is about 0.35 ms later but the CPU is free (total load 2.9% against 4.2% of the board, AprilTag frame age 0.4 ms lower). The border is
+  painted by the CPU, because a hardware fill can only run on the RGA2 core, which cannot reach memory above 4 GB on a 16 GB board. Frames whose scaled picture
+  has an odd edge, and planes that do not sit in one buffer, are prepared on the CPU. `LUMEN_RGA_DISABLE=1` keeps everything on the CPU.
+- **int8 outputs.** An int8 export is fetched as the NPU wrote it and decoded from the raw values: `get-outputs` 0.8 ms to 0.3 ms, and the detections are
+  identical to the float path's (`LUMEN_RKNN_FLOAT_OUTPUT=1` brings that back).
+- **Big-core governor.** With only a Vulkan detector bound, `ondemand` clocked the big cores down between frames: `detect` 9.7 ms (p95 11.0) and decode 2.5 ms,
+  against 4.3 ms (p95 4.5) and 1.3 ms on `performance`. The package's udev rule now sets `performance` on cpu4-7 (the cost is a little idle power).
+- **Blob filters** (edge contrast, smallest blob, smallest tag side) are tuning options of a Vulkan AprilTag sink: saved with it and set from the Inspector.
+  Their effect depends on the scene (clutter makes the CPU quad fit slow), so the defaults are unchanged.
+- **WebRTC** streams stay within constrained baseline at the smallest H.264 level that holds the macroblock rate, matching the SDP.
+- **A camera that is gone** is retried every 2 s, backing off to 10 s.
+
+Measured and not adopted: pinning the whole service to the A55 cores (`CPUAffinity=0-3`) changed nothing (AprilTag `detect` 4.38 ms against 4.45 ms, NPU
+frame age 31.0 against 30.8 ms), and the .NET threads are idle enough not to matter.
+
 ## Left out on purpose
 
 | Item | Why |
 |---|---|
-| `CPUAffinity` for the .NET process | Only safe once every native worker pool is pinned explicitly; with workstation GC the server no longer starts a thread per core, so the gain is small |
 | NPU load from devfreq instead of `sudo cat` | the devfreq load file reads 100% on an idle NPU on this board |
-| Rate-limiting the logger | the logger's contract (and a test) is that every call reaches the file; the actual flood was the camera loop above |
-| SDP profile/level matching the bitstream | no evidence of a decoder rejecting the stream; revisit if one does |
-| Pinning libdatachannel (v0.24.6) and the RKNN runtime (v2.5.0) in `install-deps.sh` | editing that script invalidates the CI dependency cache and forces a full rebuild of OpenCV, ffmpeg-rockchip and MPP; do it when a full rebuild is acceptable |
-| MJPEG raw bytes instead of base64 | the string crosses the SWIG boundary |
-| RKNN zero-copy input and int8 decoding | at most about 1 ms of an 17 ms frame, and not testable without the board loop |
-| Blob-filter thresholds as tuning options | `LUMEN_VK_MIN_WHITE_BLACK_DIFF`, `LUMEN_VK_MIN_CLUSTER_PIXELS` and `LUMEN_VK_MIN_TAG_PIXELS` read the three values for experiments; a sweep needs a real field scene and the detection range judged by eye |
+| Rate-limiting the logger | the logger's contract (and a test) is that every call reaches the file; the actual flood was the camera loop |
+| MJPEG raw bytes instead of base64 | base64 costs 0.6 ms per encoded frame at about 10 a second (0.6% of a core), and the string crosses the SWIG boundary |
+| RKNN `rknn_create_mem` zero-copy input | the copy it saves is 0.16 ms (`set-input`) |
 | Rectangular model input (640x384) | needs the team's model converted again; `scripts/convert-yolo-rknn.py` is written for it but has not been run (rknn-toolkit2 is x86-64 only) |
-| Phase 6: zero-copy NV12 DMA-BUF frames, RGA for the recording and WebRTC paths, MIPI cameras, predicted-region tag search | the measured pipeline is already at 1.6 ms decode and 6 ms detect, and the camera's own 14 ms age (USB transfer and exposure) dominates latency; each is its own design step if CPU load or latency needs it |
+| MIPI cameras (multi-planar V4L2, `VIDIOC_EXPBUF`) | no MIPI camera to test with, and a rewrite of the capture backend's buffer handling is not something to ship untested |
+| Predicted-region tag search, browser-side overlay | both need tags in view to validate, and the browser overlay changes what every detector preview shows |
+| Direct dma-buf import of the luma plane into Vulkan | the upload it would replace is 0.1 to 0.2 ms |
