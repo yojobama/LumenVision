@@ -36,6 +36,7 @@ set(LUMEN_CORE_SOURCES
     OpenCvCameraBackend.cpp
     PixelUnpack.cpp
     RecordSink.cpp
+    Nv12Convert.cpp
     ResultPacket.cpp
     CoordinateFrames.cpp
     ConstrainedPnp.cpp

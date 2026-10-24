@@ -483,15 +483,9 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 			std::shared_ptr<void> colourOwner;
 			cv::Mat colouredFrame;
 			if (wantsFrame) {
-				if (result.frame->format() == FrameFormat::GRAY8) {
-					// a grey source goes straight into the annotated buffer: AsBgr() would convert into a cached frame that is then copied again
-					colouredFrame = FramePool::Instance().Acquire(gray.rows, gray.cols, CV_8UC3, colourOwner);
-					cv::cvtColor(gray, colouredFrame, cv::COLOR_GRAY2BGR);
-				} else {
-					const cv::Mat& sourceBgr = result.frame->AsBgr();
-					colouredFrame = FramePool::Instance().Acquire(sourceBgr.rows, sourceBgr.cols, sourceBgr.type(), colourOwner);
-					sourceBgr.copyTo(colouredFrame);
-				}
+				// the picture goes straight into the annotated buffer in one conversion or copy, without a cached BGR frame in between
+				colouredFrame = FramePool::Instance().Acquire(gray.rows, gray.cols, CV_8UC3, colourOwner);
+				result.frame->CopyBgrTo(colouredFrame);
 				lap.Mark("annotate-copy");
 			}
 

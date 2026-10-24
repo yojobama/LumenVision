@@ -34,6 +34,7 @@ add_executable(LumenCoreTests
     test_mjpeg_settings.cpp
     test_stereo_calibrator.cpp
     test_stereo_depth_crop.cpp
+    test_frame_nv12.cpp
     test_camera_closed.cpp
 )
 
@@ -58,6 +59,14 @@ if(LUMEN_WITH_VULKAN_APRILTAG)
     target_sources(LumenCoreTests PRIVATE test_apriltag_backend_agreement_hitl.cpp)
     target_compile_definitions(LumenCoreTests PRIVATE LUMEN_WITH_VULKAN_APRILTAG)
     target_link_libraries(LumenCoreTests PRIVATE apriltag vkapriltag::vkapriltag Vulkan::Vulkan)
+endif()
+
+if(LUMEN_WITH_WEBRTC OR LUMEN_WITH_RECORD)
+    # Nv12Convert.h exposes ffmpeg types, so the test needs its headers and libraries too (the target is directory-scoped)
+    include(LumenFFmpeg)
+    target_sources(LumenCoreTests PRIVATE test_nv12_convert.cpp)
+    target_compile_definitions(LumenCoreTests PRIVATE LUMEN_WITH_RECORD)
+    target_link_libraries(LumenCoreTests PRIVATE Lumen::ffmpeg)
 endif()
 
 if(LUMEN_WITH_RECORD)

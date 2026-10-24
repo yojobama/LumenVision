@@ -273,7 +273,7 @@ void WebRTCSink::ShutdownEncoder()
 	m_EncoderWidth = m_EncoderHeight = 0;
 }
 
-void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame, uint64_t captureTimeUs)
+void WebRTCSink::EncodeAndSend(const Frame& frame, uint64_t captureTimeUs)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_SettingsMutex);
@@ -296,22 +296,37 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame, uint64_t captureTimeU
 	if (openPeers.empty()) return;
 
 	StageLap lap(SinkProfile());
+	// A camera's hardware-decoded NV12 picture is encoded straight from its planes; anything else (a detector's annotated BGR frame) is
+	// converted from BGR, scaled first if the stream is smaller than the picture.
+	const bool nv12 = frame.IsNv12();
 	cv::Mat scaled;
-	if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
-	const cv::Mat& bgrFrame = m_ScaleDivisor > 1 ? scaled : sourceFrame;
-	if (m_ScaleDivisor > 1) lap.Mark("scale");
+	cv::Size encodedSize;
+	if (nv12) {
+		// even, as NV12 and YUV420P need
+		encodedSize = cv::Size((frame.size().width / m_ScaleDivisor) & ~1, (frame.size().height / m_ScaleDivisor) & ~1);
+	} else {
+		const cv::Mat& sourceFrame = frame.AsBgr();
+		if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
+		encodedSize = (m_ScaleDivisor > 1 ? scaled : sourceFrame).size();
+		if (m_ScaleDivisor > 1) lap.Mark("scale");
+	}
+	const cv::Mat& bgrFrame = nv12 ? scaled : (m_ScaleDivisor > 1 ? scaled : frame.AsBgr());
 	// a viewer that has just opened its track can only start decoding at a keyframe: the next frame is encoded as one, which the
 	// viewers already watching take in their stride (a restart of the encoder would reset the frame counter under them)
 	for (const auto& peer : openPeers) {
 		if (!peer->streaming) { peer->streaming = true; m_KeyframeRequested->store(true); }
 	}
-	if (!EnsureEncoderInitialized(bgrFrame.cols, bgrFrame.rows)) return;
+	if (!EnsureEncoderInitialized(encodedSize.width, encodedSize.height)) return;
 
 	// RGA first (hardware); sws_scale is the fallback when RGA is not compiled in or the hardware call fails at
 	// runtime (busy/absent RGA, unsupported size)
 	bool converted = false;
+	if (nv12) {
+		converted = m_Nv12Converter.Convert(frame, m_YuvFrame);
+		if (!converted) return;
+	}
 #ifdef LUMEN_WITH_RGA
-	converted = m_RgaConverter.ConvertBgrToNv12(bgrFrame, m_YuvFrame);
+	if (!converted) converted = m_RgaConverter.ConvertBgrToNv12(bgrFrame, m_YuvFrame);
 	if (!converted && m_Logger && !m_RgaConversionFailureLogged) {
 		m_Logger->EnterLog(::LogLevel::Warning, "WebRTCSink: RGA colour conversion failed, falling back to sws_scale (logged once)");
 		m_RgaConversionFailureLogged = true;
@@ -357,7 +372,7 @@ void WebRTCSink::Process(const std::vector<SourceResult>& results)
 	for (const SourceResult& result : results) {
 		// the BGR conversion below is wasted work with nobody watching
 		if (result.frame.has_value() && !result.frame.value().empty() && IsConsumingFrames()) {
-			EncodeAndSend(result.frame->AsBgr(), result.captureTimeUs);
+			EncodeAndSend(*result.frame, result.captureTimeUs);
 		}
 	}
 }

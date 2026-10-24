@@ -1,5 +1,6 @@
 #include "CameraSource.h"
 #include "Frame.h"
+#include "FramePool.h"
 #include <chrono>
 #include <thread>
 #include "OpenCvCameraBackend.h"
@@ -145,15 +146,32 @@ void CameraFrameSource::CaptureFrame()
             // could be recycled while sinks still use it (see CameraGrabResult::poolOwner).
             cv::Mat image = grab.frame;
             std::shared_ptr<void> owner = grab.poolOwner;
+            FrameFormat format = grab.format;
             const FrameTransform transform = GetTransform();
             if (!transform.IsIdentity()) {
+                if (format == FrameFormat::NV12) {
+                    // a transform works on whole pixels: take the picture out of the NV12 buffer first, in the form the consumers asked for
+                    const Frame decoded = Frame::FromNv12(grab.frame, grab.nv12Uv, grab.poolOwner);
+                    std::shared_ptr<void> convertedOwner;
+                    if (!HasActiveColorFrameConsumer()) {
+                        image = FramePool::Instance().Acquire(grab.frame.rows, grab.frame.cols, CV_8UC1, convertedOwner);
+                        decoded.AsGray().copyTo(image);
+                        format = FrameFormat::GRAY8;
+                    } else {
+                        image = FramePool::Instance().Acquire(grab.frame.rows, grab.frame.cols, CV_8UC3, convertedOwner);
+                        decoded.CopyBgrTo(image);
+                        format = FrameFormat::BGR24;
+                    }
+                    owner = convertedOwner;
+                }
                 bool viewOfInput = true;
                 image = transform.Apply(image, viewOfInput);
                 // a transformed image is a fresh copy, so it no longer needs the pooled buffer
                 if (!viewOfInput) owner.reset();
             }
             if (!transform.IsIdentity()) lap.Mark("transform");
-            SetLatestResult(SourceResult(std::nullopt, Frame(image, grab.format, owner), grab.captureTimeUs));
+            Frame published = format == FrameFormat::NV12 ? Frame::FromNv12(image, grab.nv12Uv, owner) : Frame(image, format, owner);
+            SetLatestResult(SourceResult(std::nullopt, published, grab.captureTimeUs));
             lap.Mark("publish");
         } else {
             m_Logger->EnterLog(LogLevel::Error, "camera grab failed for " + m_DevicePath);

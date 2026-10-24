@@ -2,6 +2,7 @@
 #ifdef LUMEN_WITH_RECORD
 
 #include "ISink.h"
+#include "Nv12Convert.h"
 #include <opencv2/opencv.hpp>
 #include <fstream>
 #include <mutex>
@@ -58,7 +59,7 @@ private:
 
 	bool EnsureEncoderInitialized(int width, int height); // caller must already hold m_Mutex
 	void ShutdownEncoder();                                // caller must already hold m_Mutex
-	void EncodeAndWrite(const cv::Mat& bgrFrame, const SourceResult& result); // caller must already hold m_Mutex
+	void EncodeAndWrite(const Frame& frame, const SourceResult& result); // caller must already hold m_Mutex
 
 	std::shared_ptr<Logger> m_Logger;
 	RecordSinkConfig m_Config;
@@ -71,6 +72,7 @@ private:
 	AVStream* m_VideoStream = nullptr;
 	AVCodecContext* m_CodecContext = nullptr;
 	SwsContext* m_SwsContext = nullptr;
+	Nv12ToAvFrame m_Nv12Converter;
 	AVFrame* m_YuvFrame = nullptr;
 	int m_EncoderWidth = 0;
 	int m_EncoderHeight = 0;

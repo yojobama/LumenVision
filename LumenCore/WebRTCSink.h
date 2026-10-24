@@ -2,6 +2,7 @@
 #ifdef LUMEN_WITH_WEBRTC
 
 #include "ISink.h"
+#include "Nv12Convert.h"
 #include <rtc/rtc.hpp>
 #include <opencv2/opencv.hpp>
 #include <atomic>
@@ -73,7 +74,7 @@ private:
 	void PruneClosedPeers(); // caller must already hold m_ConnectionMutex
 
 	bool EnsureEncoderInitialized(int width, int height);
-	void EncodeAndSend(const cv::Mat& bgrFrame, uint64_t captureTimeUs);
+	void EncodeAndSend(const Frame& frame, uint64_t captureTimeUs);
 	void ShutdownEncoder();
 
 	std::shared_ptr<Logger> m_Logger;
@@ -97,6 +98,8 @@ private:
 	// Guards every Peer::gatheringComplete; one condition variable serves all viewers' CreateOffer() waits.
 	mutable std::mutex m_GatheringMutex;
 	std::condition_variable m_GatheringCv;
+
+	Nv12ToAvFrame m_Nv12Converter;
 
 	AVCodecContext* m_CodecContext = nullptr;
 	SwsContext* m_SwsContext = nullptr;

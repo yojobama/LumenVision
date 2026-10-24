@@ -11,11 +11,13 @@ struct CameraGrabResult
 {
 	bool success = false;
 	cv::Mat frame;
+	// NV12 only (format == NV12): `frame` is the luma plane and this the interleaved chroma plane, both views into a buffer `poolOwner` holds
+	cv::Mat nv12Uv;
 	uint64_t captureTimeUs = 0;
 	// non-null when `frame` is backed by a FramePool buffer (V4l2CameraBackend sets it; null means `frame` owns its memory).
 	// CameraFrameSource::CaptureFrame must carry it into the Frame it builds, or the buffer can be recycled while still in use.
 	std::shared_ptr<void> poolOwner;
-	// what `frame` holds: BGR24 (CV_8UC3) or GRAY8 (CV_8UC1). Mono frames stay single-channel to the AprilTag detector;
+	// what `frame` holds: BGR24 (CV_8UC3), GRAY8 (CV_8UC1) or NV12 (the luma plane, see nv12Uv). Mono frames stay single-channel to the AprilTag detector;
 	// sinks needing colour convert lazily via Frame::AsBgr().
 	FrameFormat format = FrameFormat::BGR24;
 	// where Grab() spent its time, for the node's stage profile (0 = the backend does not measure it): waiting for the driver to hand over

@@ -120,6 +120,17 @@ bool MppJpegDecoder::EnsureInitialized()
 
 bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width, int height, bool asGray, cv::Mat& dst)
 {
+	Nv12Planes planes;
+	if (!DecodeNv12(jpegData, jpegSize, width, height, planes)) return false;
+	const auto copyStart = std::chrono::steady_clock::now();
+	if (asGray) planes.y.copyTo(dst); // the Y plane is the greyscale image (no conversion)
+	else cv::cvtColorTwoPlane(planes.y, planes.uv, dst, cv::COLOR_YUV2BGR_NV12);
+	m_LastCopyOutUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - copyStart).count();
+	return true;
+}
+
+bool MppJpegDecoder::DecodeNv12(const uint8_t* jpegData, size_t jpegSize, int width, int height, Nv12Planes& out)
+{
 	m_LastHwUs = m_LastCopyOutUs = 0;
 	if (width <= 0 || height <= 0 || !jpegData || jpegSize == 0) return false;
 	if (!EnsureInitialized()) return false;
@@ -177,28 +188,25 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 							int frameWidth = static_cast<int>(mpp_frame_get_width(frameOut));
 							int frameHeight = static_cast<int>(mpp_frame_get_height(frameOut));
 							int frameHorStride = static_cast<int>(mpp_frame_get_hor_stride(frameOut));
+							int frameVerStride = static_cast<int>(mpp_frame_get_ver_stride(frameOut));
 							MppBuffer frameBuffer = mpp_frame_get_buffer(frameOut);
-							const uint8_t* base = frameBuffer ? static_cast<const uint8_t*>(mpp_buffer_get_ptr(frameBuffer)) : nullptr;
+							uint8_t* base = frameBuffer ? static_cast<uint8_t*>(mpp_buffer_get_ptr(frameBuffer)) : nullptr;
 
 							// a size mismatch falls back rather than reading a mis-sized view (as the software MJPEG path does)
-							if (base && frameWidth >= width && frameHeight >= height && frameHorStride >= width) {
-								const auto hwDone = std::chrono::steady_clock::now();
-								m_LastHwUs = std::chrono::duration<double, std::micro>(hwDone - start).count();
-								// the CPU reads the whole frame below: invalidate its cache lines first (the buffer is cacheable)
+							if (base && frameWidth >= width && frameHeight >= height && frameHorStride >= width && frameVerStride >= height &&
+								width % 2 == 0 && height % 2 == 0) {
+								m_LastHwUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
+								// the CPU will read the buffer: invalidate its cache lines once, now that the decoder has written it
+								// (the buffer is cacheable); the planes are then read-only for everyone
 								mpp_buffer_sync_ro_begin(frameBuffer);
-								// `dst` is the caller's FramePool-acquired buffer, sized/typed for asGray; this class never touches FramePool.
-								if (asGray) {
-									// the Y plane is the greyscale image (no conversion)
-									cv::Mat yView(height, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(frameHorStride));
-									yView.copyTo(dst);
-								} else {
-									// strided view as in V4l2CameraBackend's NV12 branch: Y plane (height rows) followed by interleaved UV at
-									// half resolution, all at frameHorStride.
-									cv::Mat nv12View(height * 3 / 2, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(frameHorStride));
-									cv::cvtColor(nv12View, dst, cv::COLOR_YUV2BGR_NV12);
-								}
 								mpp_buffer_sync_ro_end(frameBuffer);
-								m_LastCopyOutUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - hwDone).count();
+								// the chroma plane starts after verStride luma rows, which can be more than the picture's height
+								out.y = cv::Mat(height, width, CV_8UC1, base, static_cast<size_t>(frameHorStride));
+								out.uv = cv::Mat(height / 2, width / 2, CV_8UC2, base + static_cast<size_t>(frameHorStride) * frameVerStride,
+									static_cast<size_t>(frameHorStride));
+								// our own reference to the buffer, dropped when the last copy of `owner` is: it outlives the decoder's frame below
+								mpp_buffer_inc_ref(frameBuffer);
+								out.owner = std::shared_ptr<void>(frameBuffer, [](void* buffer) { mpp_buffer_put(static_cast<MppBuffer>(buffer)); });
 								ok = true;
 							}
 						}

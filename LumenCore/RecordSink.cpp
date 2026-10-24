@@ -253,20 +253,28 @@ void RecordSink::CloseCurrentSegment()
 	ShutdownEncoder();
 }
 
-void RecordSink::EncodeAndWrite(const cv::Mat& bgrFrame, const SourceResult& result)
+void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 {
 	StageLap lap(SinkProfile());
+	// a camera's hardware-decoded NV12 picture is converted straight from its planes; anything else goes through BGR
+	const bool nv12 = frame.IsNv12();
+	const cv::Size size = nv12 ? cv::Size(frame.size().width & ~1, frame.size().height & ~1) : frame.AsBgr().size();
 	bool segmentExpired = m_FormatContext &&
 		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - m_SegmentStartedAt).count() >= m_Config.segmentSeconds;
-	if (!m_FormatContext || m_EncoderWidth != bgrFrame.cols || m_EncoderHeight != bgrFrame.rows || segmentExpired) {
-		StartNewSegment(bgrFrame.cols, bgrFrame.rows);
+	if (!m_FormatContext || m_EncoderWidth != size.width || m_EncoderHeight != size.height || segmentExpired) {
+		StartNewSegment(size.width, size.height);
 		lap.Mark("segment-start");
 	}
 	if (!m_FormatContext || !m_CodecContext) return;
 
-	const uint8_t* srcSlices[1] = { bgrFrame.data };
-	int srcStride[1] = { static_cast<int>(bgrFrame.step) };
-	sws_scale(m_SwsContext, srcSlices, srcStride, 0, bgrFrame.rows, m_YuvFrame->data, m_YuvFrame->linesize);
+	if (nv12) {
+		if (!m_Nv12Converter.Convert(frame, m_YuvFrame)) return;
+	} else {
+		const cv::Mat& bgrFrame = frame.AsBgr();
+		const uint8_t* srcSlices[1] = { bgrFrame.data };
+		int srcStride[1] = { static_cast<int>(bgrFrame.step) };
+		sws_scale(m_SwsContext, srcSlices, srcStride, 0, bgrFrame.rows, m_YuvFrame->data, m_YuvFrame->linesize);
+	}
 	m_YuvFrame->pts = m_FrameCounter++;
 	lap.Mark("convert");
 
@@ -306,7 +314,7 @@ void RecordSink::Process(const std::vector<SourceResult>& results)
 	std::lock_guard<std::mutex> lock(m_Mutex);
 	for (const SourceResult& result : results) {
 		if (result.frame.has_value() && !result.frame.value().empty()) {
-			EncodeAndWrite(result.frame->AsBgr(), result);
+			EncodeAndWrite(*result.frame, result);
 		}
 	}
 }

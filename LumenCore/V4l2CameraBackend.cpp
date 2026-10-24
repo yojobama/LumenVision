@@ -333,25 +333,27 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		// preferGray decodes straight to greyscale (IMREAD_GRAYSCALE skips chroma upsampling and colour conversion in
 		// libjpeg-turbo) when nothing downstream needs colour (see ICameraBackend::Grab).
 		//
-		// Acquire happens before either decode path: MppJpegDecoder never touches FramePool, so the software fallback
-		// reuses the same pool-owned buffer if hardware decode fails.
-		if (preferGray) {
-			result.frame = FramePool::Instance().Acquire(height, width, CV_8UC1, result.poolOwner);
-			result.format = FrameFormat::GRAY8;
-		} else {
-			result.frame = FramePool::Instance().Acquire(height, width, CV_8UC3, result.poolOwner);
-		}
-
 #ifdef LUMEN_WITH_MPP_JPEG
-		// hardware decode via the RK3588's JPEG VPU first; falls through to the software path below on any failure
-		// (see MppJpegDecoder's contract)
-		if (m_MppJpegDecoder.Decode(data, bytesUsed, width, height, preferGray, result.frame)) {
+		// Hardware decode via the RK3588's JPEG VPU first. The result stays in the decoder's buffer as an NV12 frame that consumers
+		// convert only if they need to (a detector reads the luma plane as it is); a failure falls through to the software path below.
+		MppJpegDecoder::Nv12Planes planes;
+		if (m_MppJpegDecoder.DecodeNv12(data, bytesUsed, width, height, planes)) {
+			result.frame = planes.y;
+			result.nv12Uv = planes.uv;
+			result.poolOwner = planes.owner;
+			result.format = FrameFormat::NV12;
 			result.success = true;
 			result.hwDecodeUs = m_MppJpegDecoder.LastHwUs();
-			result.copyOutUs = m_MppJpegDecoder.LastCopyOutUs();
 		} else
 #endif
 		{
+			// the software decode writes into a pooled buffer of the shape the consumers asked for
+			if (preferGray) {
+				result.frame = FramePool::Instance().Acquire(height, width, CV_8UC1, result.poolOwner);
+				result.format = FrameFormat::GRAY8;
+			} else {
+				result.frame = FramePool::Instance().Acquire(height, width, CV_8UC3, result.poolOwner);
+			}
 			result.frame = cv::imdecode(jpegView, preferGray ? cv::IMREAD_GRAYSCALE : cv::IMREAD_COLOR, &result.frame);
 			result.success = !result.frame.empty();
 		}
