@@ -240,6 +240,15 @@ bool WebRTCSink::EnsureEncoderInitialized(int width, int height)
 	m_CodecContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
 	av_opt_set(m_CodecContext->priv_data, "preset", "ultrafast", 0);
 	av_opt_set(m_CodecContext->priv_data, "tune", "zerolatency", 0);
+	// The SDP offers constrained baseline (42e01f), so that is what the stream is kept within; h264_rkmpp would otherwise default to High
+	// profile and some hardware decoders refuse a stream that does not match the profile negotiated for it. The level is the smallest H.264 level
+	// that holds the macroblock rate (3.1 is 720p30, 4.0 is 1080p30, 4.2 is 1080p60).
+	m_CodecContext->profile = AV_PROFILE_H264_BASELINE;
+	{
+		const long macroblocksPerSecond = static_cast<long>((width + 15) / 16) * ((height + 15) / 16) * m_Config.fps;
+		m_CodecContext->level = macroblocksPerSecond <= 108000 ? 31 : macroblocksPerSecond <= 245760 ? 40 : macroblocksPerSecond <= 522240 ? 42 : 50;
+	}
+	av_opt_set(m_CodecContext->priv_data, "profile", "baseline", 0);
 	// libx264 turns a requested I frame into an IDR (one a viewer can start decoding from) only with this
 	av_opt_set(m_CodecContext->priv_data, "forced-idr", "1", 0);
 
