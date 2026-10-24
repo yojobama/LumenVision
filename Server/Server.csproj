@@ -14,7 +14,7 @@
 
     <!-- Workstation, non-concurrent GC: Server GC starts a heap and a GC thread per core, pinned across all of them (the A76 cores the vision threads use);
          this process allocates little, so short blocking collections on the calling thread cost less than that interference. -->
-    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
 
     <!--
