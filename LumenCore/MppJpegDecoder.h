@@ -53,6 +53,9 @@ private:
 	double m_LastCopyOutUs = 0;
 
 	void* m_BufGroup = nullptr; // MppBufferGroup, owns the OUTPUT frame buffer MPP decodes into
+	// Puts that group when the last reference to it goes: this decoder's, and one per frame still alive that was decoded into it, so a frame that
+	// outlives the decoder (a camera deleted while its last picture is still held) hands its buffer back to a group that still exists
+	std::shared_ptr<void> m_OutGroupHolder;
 	size_t m_BufGroupSize = 0;
 
 	void* m_InputBufGroup = nullptr; // MppBufferGroup, owns the INPUT packet buffer

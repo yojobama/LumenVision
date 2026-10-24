@@ -40,7 +40,7 @@ MppJpegDecoder::~MppJpegDecoder()
 {
 	// context first, then the buffer groups: freeing a group first could free memory the decoder still touches
 	if (m_Ctx) mpp_destroy(static_cast<MppCtx>(m_Ctx));
-	if (m_BufGroup) mpp_buffer_group_put(static_cast<MppBufferGroup>(m_BufGroup));
+	m_OutGroupHolder.reset(); // puts the output group once the frames still in flight have gone too
 	if (m_InputBufGroup) mpp_buffer_group_put(static_cast<MppBufferGroup>(m_InputBufGroup));
 }
 
@@ -63,7 +63,7 @@ bool MppJpegDecoder::EnsureOutputBufferGroup(size_t bufSize)
 {
 	if (m_BufGroup && m_BufGroupSize >= bufSize) return true;
 	if (m_BufGroup) {
-		mpp_buffer_group_put(static_cast<MppBufferGroup>(m_BufGroup));
+		m_OutGroupHolder.reset();
 		m_BufGroup = nullptr;
 		m_BufGroupSize = 0;
 	}
@@ -71,6 +71,7 @@ bool MppJpegDecoder::EnsureOutputBufferGroup(size_t bufSize)
 	if (!group) return false;
 	m_BufGroup = group;
 	m_BufGroupSize = bufSize;
+	m_OutGroupHolder = std::shared_ptr<void>(group, [](void* g) { mpp_buffer_group_put(static_cast<MppBufferGroup>(g)); });
 	return true;
 }
 
@@ -206,7 +207,7 @@ bool MppJpegDecoder::DecodeNv12(const uint8_t* jpegData, size_t jpegSize, int wi
 									static_cast<size_t>(frameHorStride));
 								// our own reference to the buffer, dropped when the last copy of `owner` is: it outlives the decoder's frame below
 								mpp_buffer_inc_ref(frameBuffer);
-								out.owner = std::shared_ptr<void>(frameBuffer, [](void* buffer) { mpp_buffer_put(static_cast<MppBuffer>(buffer)); });
+								out.owner = std::shared_ptr<void>(frameBuffer, [group = m_OutGroupHolder](void* buffer) { mpp_buffer_put(static_cast<MppBuffer>(buffer)); });
 								ok = true;
 							}
 						}
