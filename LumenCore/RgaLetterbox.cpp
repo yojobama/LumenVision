@@ -3,6 +3,7 @@
 
 // librga's headers need NULL defined before inclusion (they do not include <cstddef>); keep this include first.
 #include <cstddef>
+#include <cstring>
 #include <im2d.h>
 
 bool RgaLetterbox::Run(const Frame& frame, uint8_t* canvas, int canvasWidth, int canvasHeight, const cv::Rect& picture)
@@ -33,8 +34,9 @@ bool RgaLetterbox::Run(const Frame& frame, uint8_t* canvas, int canvasWidth, int
 	rga_buffer_t dst = wrapbuffer_virtualaddr_t(canvas, canvasWidth, canvasHeight, canvasWidth, canvasHeight, RK_FORMAT_RGB_888);
 
 	if (m_PaintedCanvas != canvas || m_PaintedWidth != canvasWidth || m_PaintedHeight != canvasHeight || m_PaintedPicture != picture) {
-		const im_rect whole = { 0, 0, canvasWidth, canvasHeight };
-		if (imfill(dst, whole, 0xff727272) != IM_STATUS_SUCCESS) return false; // YOLO's 114 grey
+		// painted by the CPU: a hardware fill can only run on the RGA2 core, which cannot address the memory above 4 GB that a plain heap buffer may
+		// sit in on a 16 GB board, while the scaling and conversion below can be scheduled on either core
+		std::memset(canvas, 114, static_cast<size_t>(canvasWidth) * canvasHeight * 3); // YOLO's 114 grey
 		m_PaintedCanvas = canvas;
 		m_PaintedWidth = canvasWidth;
 		m_PaintedHeight = canvasHeight;
