@@ -196,3 +196,28 @@ TEST_CASE("class scores are recognised as probabilities or logits from their ran
 	REQUIRE(YoloPostProcess::ClassScoresAreProbabilities(scale(probabilities), 2));
 	REQUIRE_FALSE(YoloPostProcess::ClassScoresAreProbabilities(scale(logits), 2));
 }
+
+TEST_CASE("LetterboxInto produces the same picture as Letterbox and keeps its canvas between frames", "[YoloPostProcess]") {
+	cv::Mat wide(360, 640, CV_8UC3);
+	cv::randu(wide, 0, 255);
+	cv::Mat tall(640, 360, CV_8UC3);
+	cv::randu(tall, 0, 255);
+
+	cv::Mat canvas;
+	for (const cv::Mat* frame : { &wide, &tall, &wide, &wide }) {
+		YoloPostProcess::LetterboxInfo expectedInfo, info;
+		cv::Mat expected = YoloPostProcess::Letterbox(*frame, 640, 384, expectedInfo);
+		YoloPostProcess::LetterboxInto(*frame, 640, 384, info, canvas);
+		REQUIRE(canvas.size() == expected.size());
+		REQUIRE(cv::norm(canvas, expected, cv::NORM_INF) == 0.0);
+		REQUIRE(info.padLeft == expectedInfo.padLeft);
+		REQUIRE(info.padTop == expectedInfo.padTop);
+		REQUIRE(info.scale == expectedInfo.scale);
+	}
+
+	// the same layout again reuses the allocation
+	const uchar* before = canvas.data;
+	YoloPostProcess::LetterboxInfo info;
+	YoloPostProcess::LetterboxInto(wide, 640, 384, info, canvas);
+	REQUIRE(canvas.data == before);
+}

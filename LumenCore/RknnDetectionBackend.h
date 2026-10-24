@@ -48,6 +48,9 @@ private:
 
 	std::vector<ScaleMeta> m_Scales;
 
+	// the letterboxed picture and its RGB copy, kept between frames so nothing is allocated per frame
+	cv::Mat m_Letterboxed, m_Rgb;
+
 	// whether the class tensors hold probabilities or logits, decided from the first frame and kept (it is a property of the model)
 	std::optional<bool> m_ClassScoresAreProbabilities;
 };

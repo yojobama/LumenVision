@@ -20,6 +20,10 @@ namespace YoloPostProcess {
 	// fill), preserving aspect ratio, and returns the bookkeeping needed to undo it afterwards
 	cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo);
 
+	// The same picture as Letterbox, written into a canvas the caller keeps between frames: the frame is resized straight into its place in the
+	// canvas and the grey border is only repainted when the layout changes, so a steady stream does no allocation and no extra copy.
+	void LetterboxInto(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo, cv::Mat& canvas);
+
 	// Rearranges a [numAnchors, channels] (anchor-major) head output, as some exporters produce, into the channel-major
 	// [channels, numAnchors] layout DecodeAndNms reads.
 	std::vector<float> ToChannelMajor(const float* anchorMajor, int numAnchors, int channels);

@@ -33,6 +33,36 @@ cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, Le
 	return padded;
 }
 
+void LetterboxInto(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo, cv::Mat& canvas)
+{
+	outInfo.originalWidth = bgrFrame.cols;
+	outInfo.originalHeight = bgrFrame.rows;
+
+	float scale = std::min(
+		static_cast<float>(targetWidth) / bgrFrame.cols,
+		static_cast<float>(targetHeight) / bgrFrame.rows);
+	outInfo.scale = scale;
+
+	int unpaddedWidth = static_cast<int>(std::round(bgrFrame.cols * scale));
+	int unpaddedHeight = static_cast<int>(std::round(bgrFrame.rows * scale));
+	outInfo.padLeft = (targetWidth - unpaddedWidth) / 2;
+	outInfo.padTop = (targetHeight - unpaddedHeight) / 2;
+
+	// the border only needs painting when the canvas is new or the picture's place in it has moved: the previous picture is then
+	// not guaranteed to cover the same pixels
+	const cv::Rect picture(outInfo.padLeft, outInfo.padTop, unpaddedWidth, unpaddedHeight);
+	const bool newLayout = canvas.empty() || canvas.cols != targetWidth || canvas.rows != targetHeight ||
+		canvas.type() != bgrFrame.type() || !canvas.isContinuous() || canvas.u == nullptr;
+	static thread_local cv::Rect lastPicture; // per thread: each backend runs on its own sink thread
+	if (newLayout || picture != lastPicture) {
+		canvas.create(targetHeight, targetWidth, bgrFrame.type());
+		canvas.setTo(cv::Scalar(114, 114, 114));
+		lastPicture = picture;
+	}
+	cv::Mat target = canvas(picture);
+	cv::resize(bgrFrame, target, cv::Size(unpaddedWidth, unpaddedHeight));
+}
+
 std::vector<float> ToChannelMajor(const float* anchorMajor, int numAnchors, int channels)
 {
 	std::vector<float> channelMajor(static_cast<size_t>(numAnchors) * channels);

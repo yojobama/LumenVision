@@ -143,12 +143,12 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 	};
 
 	YoloPostProcess::LetterboxInfo letterboxInfo;
-	cv::Mat letterboxed = YoloPostProcess::Letterbox(bgrFrame, m_InputWidth, m_InputHeight, letterboxInfo);
+	YoloPostProcess::LetterboxInto(bgrFrame, m_InputWidth, m_InputHeight, letterboxInfo, m_Letterboxed);
 
 	// RGB uint8, NHWC, no normalisation: the quantised graph has mean/std baked in (the ONNX path normalises itself)
 	lap("rknn-letterbox");
-	cv::Mat rgb;
-	cv::cvtColor(letterboxed, rgb, cv::COLOR_BGR2RGB);
+	cv::cvtColor(m_Letterboxed, m_Rgb, cv::COLOR_BGR2RGB);
+	const cv::Mat& rgb = m_Rgb;
 	lap("rknn-convert");
 
 	rknn_input input{};
