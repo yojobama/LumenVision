@@ -561,6 +561,9 @@ build_codec_stereo() {
 # ---------------------------------------------------------------------------
 # 6. WebRTC — libdatachannel, opt-in via --with-webrtc
 # ---------------------------------------------------------------------------
+# pinned to the version the boards run (WebRTCSink uses its multi-viewer, PliHandler and RTCP APIs)
+LIBDATACHANNEL_REF="${LIBDATACHANNEL_REF:-v0.24.6}"
+
 build_webrtc() {
     [[ "$WITH_WEBRTC" -eq 1 ]] || return 0
     log "libdatachannel (WebRTC)"
@@ -578,7 +581,7 @@ build_webrtc() {
 
     local src="$BUILD_ROOT/libdatachannel"
     if [[ ! -d "$src" ]]; then
-        git clone --recursive --depth 1 https://github.com/paullouisageneau/libdatachannel.git "$src"
+        git clone --recursive --depth 1 --branch "$LIBDATACHANNEL_REF" https://github.com/paullouisageneau/libdatachannel.git "$src"
     fi
     mkdir -p "$src/build"
     (
@@ -679,7 +682,8 @@ fetch_onnxruntime() {
 # 9. aarch64-only: RKNN runtime (RK3588 NPU)
 # ---------------------------------------------------------------------------
 # librknnrt.so must match the kernel's rknpu driver version, so the driver version is reported below
-RKNN_TOOLKIT2_REF="${RKNN_TOOLKIT2_REF:-master}"
+# pinned to the release the boards run (driver v0.9.8 with runtime 2.5.0), so a rebuild cannot move the runtime out from under the kernel driver
+RKNN_TOOLKIT2_REF="${RKNN_TOOLKIT2_REF:-v2.5.0}"
 
 fetch_rknn() {
     [[ "$WITH_RKNN" -eq 1 ]] || return 0
@@ -809,13 +813,16 @@ KERNEL=="mpp_service", GROUP="video", MODE="0660"
 SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
 KERNEL=="rga", GROUP="video", MODE="0660"
 # RK3588 GPU (fb000000.gpu), memory controller (dmc) and NPU (fdab0000.npu): hold the top clock instead of the on-demand governors
-SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu|dmc|fdab0000.npu", ATTR{governor}="performance"
+SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu*|dmc|fdab0000.npu", ATTR{governor}="performance"
+# RK3588 big cores (the four Cortex-A76): the on-demand governor clocks them down between frames of a lightly loaded graph and roughly doubles frame times
+SUBSYSTEM=="cpu", KERNEL=="cpu[4-7]", ACTION=="add", ATTR{cpufreq/scaling_governor}="performance"
 EOF
         sudo udevadm control --reload-rules
         sudo udevadm trigger --subsystem-match=dma_heap 2>/dev/null || true
         sudo udevadm trigger --sysname-match=mpp_service 2>/dev/null || true
         sudo udevadm trigger --sysname-match=rga 2>/dev/null || true
         sudo udevadm trigger --subsystem-match=devfreq --action=add 2>/dev/null || true
+        sudo udevadm trigger --subsystem-match=cpu --action=add 2>/dev/null || true
         for node in /dev/mpp_service /dev/rga /dev/dma_heap/system /dev/dma_heap/system-uncached /dev/dma_heap/reserved; do
             [[ -e "$node" ]] || continue
             sudo chgrp video "$node" 2>/dev/null || true
