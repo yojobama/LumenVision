@@ -16,11 +16,16 @@ namespace Server
         public int? GpuDevice { get; set; }
         // Vulkan backend only: quads whose decision margin before edge refinement is below this many grey levels skip refinement; null or 0 refines every quad
         public float? ProbeMargin { get; set; }
+        // Vulkan backend only: the quad search's blob filters (grey levels for an edge, pixels for a cluster, smallest tag side in pixels); null or 0 keeps the library's defaults
+        public int? MinWhiteBlackDiff { get; set; }
+        public int? MinClusterPixels { get; set; }
+        public int? MinTagPixels { get; set; }
 
         // true when every member is the default
         [System.Text.Json.Serialization.JsonIgnore]
         public bool IsDefault => !Family.HasValue && !QuadSigma.HasValue && !MaxHamming.HasValue && !DecisionMargin.HasValue
-            && !PoseIterations.HasValue && !MultiTag.HasValue && !SingleTagPose.HasValue && !GpuDevice.HasValue && !ProbeMargin.HasValue;
+            && !PoseIterations.HasValue && !MultiTag.HasValue && !SingleTagPose.HasValue && !GpuDevice.HasValue && !ProbeMargin.HasValue
+            && !MinWhiteBlackDiff.HasValue && !MinClusterPixels.HasValue && !MinTagPixels.HasValue;
 
         // the members set here carried onto a native tuning
         public void ApplyTo(ApriltagTuning tuning)
@@ -34,6 +39,9 @@ namespace Server
             if (SingleTagPose.HasValue) tuning.singleTagPose = SingleTagPose.Value;
             if (GpuDevice.HasValue) tuning.gpuDevice = GpuDevice.Value;
             if (ProbeMargin.HasValue) tuning.probeMargin = ProbeMargin.Value;
+            if (MinWhiteBlackDiff.HasValue) tuning.minWhiteBlackDiff = MinWhiteBlackDiff.Value;
+            if (MinClusterPixels.HasValue) tuning.minClusterPixels = MinClusterPixels.Value;
+            if (MinTagPixels.HasValue) tuning.minTagPixels = MinTagPixels.Value;
         }
 
         // these members where set, otherwise `other`'s
@@ -48,18 +56,23 @@ namespace Server
             SingleTagPose = SingleTagPose ?? other?.SingleTagPose,
             GpuDevice = GpuDevice ?? other?.GpuDevice,
             ProbeMargin = ProbeMargin ?? other?.ProbeMargin,
+            MinWhiteBlackDiff = MinWhiteBlackDiff ?? other?.MinWhiteBlackDiff,
+            MinClusterPixels = MinClusterPixels ?? other?.MinClusterPixels,
+            MinTagPixels = MinTagPixels ?? other?.MinTagPixels,
         };
 
         public ApriltagAdvancedTuning Clone() => (ApriltagAdvancedTuning)MemberwiseClone();
 
         // from optional query parameters; null when none was given
         public static ApriltagAdvancedTuning? FromQuery(ApriltagFamilyKind? family, float? quadSigma, int? maxHamming, float? decisionMargin,
-            int? poseIterations, bool? multiTag, bool? singleTagPose, int? gpuDevice = null, float? probeMargin = null)
+            int? poseIterations, bool? multiTag, bool? singleTagPose, int? gpuDevice = null, float? probeMargin = null,
+            int? minWhiteBlackDiff = null, int? minClusterPixels = null, int? minTagPixels = null)
         {
             var tuning = new ApriltagAdvancedTuning
             {
                 Family = family, QuadSigma = quadSigma, MaxHamming = maxHamming, DecisionMargin = decisionMargin,
                 PoseIterations = poseIterations, MultiTag = multiTag, SingleTagPose = singleTagPose, GpuDevice = gpuDevice, ProbeMargin = probeMargin,
+                MinWhiteBlackDiff = minWhiteBlackDiff, MinClusterPixels = minClusterPixels, MinTagPixels = minTagPixels,
             };
             return tuning.IsDefault ? null : tuning;
         }

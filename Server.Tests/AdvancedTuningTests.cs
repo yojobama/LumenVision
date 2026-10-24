@@ -28,6 +28,26 @@ public class AdvancedTuningTests
     }
 
     [Fact]
+    public void TheBlobFiltersArePartOfTheAdvancedTuning()
+    {
+        Assert.Null(ApriltagAdvancedTuning.FromQuery(null, null, null, null, null, null, null));
+        Assert.NotNull(ApriltagAdvancedTuning.FromQuery(null, null, null, null, null, null, null, minClusterPixels: 40));
+
+        var saved = new ApriltagAdvancedTuning { MinWhiteBlackDiff = 8, MinClusterPixels = 60, MinTagPixels = 30 };
+        var merged = new ApriltagAdvancedTuning { MinClusterPixels = 90 }.MergedOver(saved);
+        Assert.Equal(8, merged.MinWhiteBlackDiff);
+        Assert.Equal(90, merged.MinClusterPixels);
+        Assert.Equal(30, merged.MinTagPixels);
+
+        var tuning = new ApriltagTuning();
+        merged.ApplyTo(tuning);
+        Assert.Equal(8, tuning.minWhiteBlackDiff);
+        Assert.Equal(90, tuning.minClusterPixels);
+        Assert.Equal(30, tuning.minTagPixels);
+        Assert.Equal(0, new ApriltagTuning().minClusterPixels);
+    }
+
+    [Fact]
     public void TheProbeMarginIsPartOfTheAdvancedTuning()
     {
         Assert.NotNull(ApriltagAdvancedTuning.FromQuery(null, null, null, null, null, null, null, probeMargin: 8f));

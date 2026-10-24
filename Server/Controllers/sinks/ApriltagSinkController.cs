@@ -38,11 +38,13 @@ namespace Server.Controllers.sinks
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
             [FromQuery] RefineEdgesMode? refineMode = null, [FromQuery] ApriltagFamilyKind? family = null, [FromQuery] float? quadSigma = null,
             [FromQuery] int? maxHamming = null, [FromQuery] float? decisionMargin = null, [FromQuery] int? poseIterations = null,
-            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null, [FromQuery] int? gpuDevice = null, [FromQuery] float? probeMargin = null)
+            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null, [FromQuery] int? gpuDevice = null, [FromQuery] float? probeMargin = null,
+            [FromQuery] int? minWhiteBlackDiff = null, [FromQuery] int? minClusterPixels = null, [FromQuery] int? minTagPixels = null)
         {
             int sinkId = SinkManager.Instance.AddApriltagSinkWithBackend(name, tagSize, backend, frameWidth, frameHeight,
                 nthreads ?? 0, quadDecimate ?? 0.0f, refineEdges ?? true, refineMode ?? RefineEdgesMode.REFINE_EXACT,
-                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose, gpuDevice, probeMargin));
+                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose, gpuDevice, probeMargin,
+                    minWhiteBlackDiff, minClusterPixels, minTagPixels));
             return Task.FromResult(sinkId);
         }
 
@@ -84,6 +86,9 @@ namespace Server.Controllers.sinks
                 SingleTagPose = effective.singleTagPose,
                 GpuDevice = effective.gpuDevice,
                 ProbeMargin = effective.probeMargin,
+                MinWhiteBlackDiff = effective.minWhiteBlackDiff,
+                MinClusterPixels = effective.minClusterPixels,
+                MinTagPixels = effective.minTagPixels,
                 IngestMode = ManagerWrapper.Instance.GetApriltagDetectorIngestMode(sinkId),
                 HasCalibration = ManagerWrapper.Instance.GetApriltagDetectorHasCalibration(sinkId),
                 GpuDeviceName = ManagerWrapper.Instance.GetApriltagDetectorGpuDeviceName(sinkId),
@@ -104,10 +109,12 @@ namespace Server.Controllers.sinks
             [FromQuery] int? nthreads = null, [FromQuery] float? quadDecimate = null, [FromQuery] bool? refineEdges = null,
             [FromQuery] RefineEdgesMode? refineMode = null, [FromQuery] ApriltagFamilyKind? family = null, [FromQuery] float? quadSigma = null,
             [FromQuery] int? maxHamming = null, [FromQuery] float? decisionMargin = null, [FromQuery] int? poseIterations = null,
-            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null, [FromQuery] int? gpuDevice = null, [FromQuery] float? probeMargin = null)
+            [FromQuery] bool? multiTag = null, [FromQuery] bool? singleTagPose = null, [FromQuery] int? gpuDevice = null, [FromQuery] float? probeMargin = null,
+            [FromQuery] int? minWhiteBlackDiff = null, [FromQuery] int? minClusterPixels = null, [FromQuery] int? minTagPixels = null)
         {
             SinkManager.Instance.SetApriltagBackend(sinkId, backend, nthreads, quadDecimate, refineEdges, refineMode,
-                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose, gpuDevice, probeMargin));
+                ApriltagAdvancedTuning.FromQuery(family, quadSigma, maxHamming, decisionMargin, poseIterations, multiTag, singleTagPose, gpuDevice, probeMargin,
+                    minWhiteBlackDiff, minClusterPixels, minTagPixels));
             return Task.CompletedTask;
         }
 

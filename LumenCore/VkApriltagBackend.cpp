@@ -151,18 +151,19 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	// fixed at construction, so changing this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
 	config.cpu_threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
 
-	// Experiment knobs for the blob filters (default: the library's own values); the live quad fit costs more than the library's benchmark,
-	// which clutter in the scene probably explains. Not plumbed through ApriltagTuning unless a sweep on real scenes shows a win.
-	auto envUint = [](const char* name, uint32_t fallback) {
-		const char* text = std::getenv(name);
+	// The blob filters of the quad search: the sink's tuning when set, else the LUMEN_VK_MIN_* environment variables (for experiments), else the
+	// library's own values.
+	auto blobFilter = [](int tuned, const char* variable, uint32_t fallback) {
+		if (tuned > 0) return static_cast<uint32_t>(tuned);
+		const char* text = std::getenv(variable);
 		if (!text || !*text) return fallback;
 		char* end = nullptr;
 		const unsigned long value = std::strtoul(text, &end, 10);
 		return end && *end == '\0' ? static_cast<uint32_t>(value) : fallback;
 	};
-	config.min_white_black_diff = envUint("LUMEN_VK_MIN_WHITE_BLACK_DIFF", config.min_white_black_diff);
-	config.min_cluster_pixels = envUint("LUMEN_VK_MIN_CLUSTER_PIXELS", config.min_cluster_pixels);
-	config.min_tag_pixels = envUint("LUMEN_VK_MIN_TAG_PIXELS", config.min_tag_pixels);
+	config.min_white_black_diff = blobFilter(tuning.minWhiteBlackDiff, "LUMEN_VK_MIN_WHITE_BLACK_DIFF", config.min_white_black_diff);
+	config.min_cluster_pixels = blobFilter(tuning.minClusterPixels, "LUMEN_VK_MIN_CLUSTER_PIXELS", config.min_cluster_pixels);
+	config.min_tag_pixels = blobFilter(tuning.minTagPixels, "LUMEN_VK_MIN_TAG_PIXELS", config.min_tag_pixels);
 
 	// the worker pools below start their threads here, so they take this thread's affinity: pin them to the performance cores
 	// whichever thread (the sink's, or an API call's) is building the backend

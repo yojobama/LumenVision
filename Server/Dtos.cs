@@ -180,7 +180,8 @@ namespace Server
     // Family .. SingleTagPose are the settings in effect (see ApriltagAdvancedTuning); GpuDevice is the requested Vulkan device index (-1 automatic) and GpuDeviceName the GPU actually in use (empty on CPU); ProbeMargin the Vulkan margin gate in effect (0 = off); IngestMode how the last frame reached the GPU ("host-import" or "copy", empty on CPU); QuadSigmaSupported is false on the Vulkan backend (no blur stage).
     public record struct ApriltagTuningDto(int Threads, float QuadDecimate, bool QuadDecimateSupported, bool RefineEdges,
         RefineEdgesMode RefineMode, bool RefineModeSupported, ApriltagFamilyKind Family, float QuadSigma, bool QuadSigmaSupported,
-        int MaxHamming, float DecisionMargin, int PoseIterations, bool MultiTag, bool SingleTagPose, int GpuDevice = -1, string GpuDeviceName = "", float ProbeMargin = 0f, string IngestMode = "", bool HasCalibration = false);
+        int MaxHamming, float DecisionMargin, int PoseIterations, bool MultiTag, bool SingleTagPose, int GpuDevice = -1, string GpuDeviceName = "", float ProbeMargin = 0f, string IngestMode = "", bool HasCalibration = false,
+        int MinWhiteBlackDiff = 0, int MinClusterPixels = 0, int MinTagPixels = 0);
 
     // Every saved snapshot/pair's detected corners for the calibration coverage heatmap;
     // each Snapshots entry is one snapshot flattened as [x0,y0,x1,y1,...].

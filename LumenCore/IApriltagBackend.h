@@ -49,6 +49,10 @@ enum ApriltagFamilyKind {
 //   probeMargin:       Vulkan backend only (needs refineEdges): a quad whose decision margin before edge refinement is below this many grey levels
 //                      skips refinement, since it cannot be a tag. 0 (the default) refines every quad. APRILTAG_VK_PROBE_MARGIN overrides it.
 //   maxHamming:        how many corrupted bits a tag may have and still decode (0 to 2; more makes the decode tables huge). Default 2.
+//   minWhiteBlackDiff, minClusterPixels, minTagPixels: Vulkan backend only, the blob filters of the quad search. A pixel pair must differ by at
+//                      least minWhiteBlackDiff grey levels to count as an edge, a connected cluster needs minClusterPixels pixels, and minTagPixels
+//                      (0 = off) is the smallest tag side in full-resolution pixels (it raises the cluster minimum to match). 0 keeps the library's
+//                      default for the first two. Raising them discards clutter before the CPU quad fit, which costs more the more blobs there are.
 // The next three are applied by ApriltagDetector after detection, on either backend:
 //   decisionMargin:    detections with a lower decision margin are dropped (0 keeps every detection).
 //   poseIterations:    orthogonal-iteration steps of the per-tag pose solve.
@@ -64,6 +68,9 @@ struct ApriltagTuning {
 	int maxHamming = 2;
 	int gpuDevice = -1;
 	float probeMargin = 0.0f;
+	int minWhiteBlackDiff = 0;
+	int minClusterPixels = 0;
+	int minTagPixels = 0;
 	float decisionMargin = 0.0f;
 	int poseIterations = 50;
 	bool multiTag = true;

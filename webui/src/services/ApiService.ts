@@ -389,6 +389,7 @@ export class ApiService {
       advanced: {
         family: dto.Family, quadSigma: dto.QuadSigma, maxHamming: dto.MaxHamming, decisionMargin: dto.DecisionMargin,
         poseIterations: dto.PoseIterations, multiTag: dto.MultiTag, singleTagPose: dto.SingleTagPose, gpuDevice: dto.GpuDevice ?? -1, probeMargin: dto.ProbeMargin ?? 0,
+        minWhiteBlackDiff: dto.MinWhiteBlackDiff ?? 0, minClusterPixels: dto.MinClusterPixels ?? 0, minTagPixels: dto.MinTagPixels ?? 0,
       },
     };
   }

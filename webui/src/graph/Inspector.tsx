@@ -584,6 +584,23 @@ export const Inspector: React.FC<{
               </div>
             )}
 
+            {isApriltagSink && sinkBackend === 1 && (
+              <div className="space-y-2">
+                {([
+                  ['minWhiteBlackDiff', 'Edge contrast (grey levels, 0 = default)', 'How much two neighbouring pixels must differ to count as an edge. Raising it drops faint edges before the quad fit.'],
+                  ['minClusterPixels', 'Smallest blob (pixels, 0 = default)', 'A connected group of edge pixels needs at least this many pixels to be fitted as a quad. Raising it drops clutter, which is what makes the CPU quad fit slow.'],
+                  ['minTagPixels', 'Smallest tag side (pixels, 0 = off)', 'The smallest tag side, in full-resolution pixels, you need to detect; it raises the blob minimum to match.'],
+                ] as const).map(([key, label, hint]) => (
+                  <div key={key}>
+                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">{label}</label>
+                    <input type="number" min={0} step={1} value={advanced[key]} title={hint}
+                      onChange={e => setAdvanced({ ...advanced, [key]: Math.max(0, parseInt(e.target.value) || 0) })}
+                      className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Threads maps to libapriltag nthreads / vkapriltag cpu_threads; Vulkan decimation is integer-only
                 and must divide the frame size; the refine method is chosen on Vulkan only (the CPU backend always runs upstream's). */}
             {isApriltagSink && (
