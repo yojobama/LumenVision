@@ -34,6 +34,7 @@ add_executable(LumenCoreTests
     test_mjpeg_settings.cpp
     test_stereo_calibrator.cpp
     test_stereo_depth_crop.cpp
+    test_camera_closed.cpp
 )
 
 if(LUMEN_WITH_ONNX)

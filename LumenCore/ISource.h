@@ -64,6 +64,8 @@ protected:
 	// override them for state that must live on the capture thread (e.g. V4L2 STREAMON/STREAMOFF).
 	virtual void OnCaptureThreadStart() {}
 	virtual void OnCaptureThreadStop() {}
+	// whether the capture thread has been asked to stop; a CaptureFrame() that waits should check it often
+	bool ShouldTerminate() const { return m_ShouldTerminate; }
 	std::shared_ptr<Logger> m_Logger;
 	bool m_DoNotLoadCaptureThread = false;
 private:

@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include "ISource.h"
 #include "CameraMode.h"
 #include "FrameTransform.h"
@@ -44,4 +45,10 @@ private:
 	std::string m_DeviceName;
 	std::mutex m_TransformMutex;
 	FrameTransform m_Transform;
+
+	// The camera could not be opened (or went away): the capture thread then retries every couple of seconds instead of spinning, and
+	// puts the last mode that was applied back once the device is open again.
+	bool m_ClosedLogged = false;
+	std::mutex m_ModeMutex;
+	std::optional<CameraMode> m_LastMode;
 };
