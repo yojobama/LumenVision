@@ -91,7 +91,7 @@ void DepthFusionNode::Process(const std::vector<SourceResult>& results)
 
 	std::vector<float> depth;
 	int cols, rows, blockW, blockH;
-	if (!m_DepthNode->GetLastDepthGrid(depth, cols, rows, blockW, blockH)) return;
+	if (!m_DepthNode->GetDepthGridFor(results[0].captureTimeUs, depth, cols, rows, blockW, blockH)) return;
 
 	StereoCalibrationResult calibration = m_DepthNode->GetCalibration();
 	// detections are in the cropped output frame, so the principal point moves by the crop's origin

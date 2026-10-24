@@ -9,6 +9,7 @@
 #include "StereoFrameOutput.h"
 #include "StereoPairer.h"
 
+#include <deque>
 #include <memory>
 #include <optional>
 #include <mutex>
@@ -38,6 +39,9 @@ public:
 	// pair has been processed. outDepth is cols*rows metres, 0.0f for invalid cells
 	// the crop's top-left in the rectified image; subtract it from the rectified principal point to project output pixels
 	void GetCropOrigin(int& x, int& y) const { x = m_CropX; y = m_CropY; }
+	// The depth grid computed for the pair captured nearest to `captureTimeUs` (the last few are kept), so a detection made on the output frame of
+	// one pair is fused with that pair's depth and not a newer one's; 0 asks for the newest. Same outputs as GetLastDepthGrid.
+	bool GetDepthGridFor(uint64_t captureTimeUs, std::vector<float>& outDepth, int& cols, int& rows, int& blockW, int& blockH) const;
 	bool GetLastDepthGrid(std::vector<float>& outDepth, int& cols, int& rows, int& blockW, int& blockH) const;
 	// calibration this node is using (DepthFusionNode needs rectifiedFx/Cx/Cy)
 	StereoCalibrationResult GetCalibration() const { return m_Calibration; }
@@ -75,6 +79,12 @@ private:
 	mutable std::mutex m_StatsMutex;
 	double m_LastValidFraction = 0.0;
 	double m_LastMedianDepthMeters = 0.0;
+	struct DepthSnapshot {
+		uint64_t captureTimeUs = 0;
+		std::vector<float> depth;
+		int cols = 0, rows = 0;
+	};
+	std::deque<DepthSnapshot> m_RecentGrids; // guarded by m_StatsMutex, oldest first
 	std::vector<float> m_LastDepthGrid;
 	int m_LastCols = 0, m_LastRows = 0;
 	bool m_HasDepthGrid = false;

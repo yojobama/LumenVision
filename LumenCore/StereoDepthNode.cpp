@@ -98,6 +98,26 @@ double StereoDepthNode::GetLastMedianDepthMeters() const
 	return m_LastMedianDepthMeters;
 }
 
+bool StereoDepthNode::GetDepthGridFor(uint64_t captureTimeUs, std::vector<float>& outDepth, int& cols, int& rows, int& blockW, int& blockH) const
+{
+	std::lock_guard<std::mutex> lock(m_StatsMutex);
+	if (m_RecentGrids.empty()) return false;
+	const DepthSnapshot* best = &m_RecentGrids.back();
+	if (captureTimeUs != 0) {
+		uint64_t bestGap = UINT64_MAX;
+		for (const DepthSnapshot& snapshot : m_RecentGrids) {
+			const uint64_t gap = snapshot.captureTimeUs > captureTimeUs ? snapshot.captureTimeUs - captureTimeUs : captureTimeUs - snapshot.captureTimeUs;
+			if (gap < bestGap) { bestGap = gap; best = &snapshot; }
+		}
+	}
+	outDepth = best->depth;
+	cols = best->cols;
+	rows = best->rows;
+	blockW = m_Backend->BlockW();
+	blockH = m_Backend->BlockH();
+	return true;
+}
+
 bool StereoDepthNode::GetLastDepthGrid(std::vector<float>& outDepth, int& cols, int& rows, int& blockW, int& blockH) const
 {
 	std::lock_guard<std::mutex> lock(m_StatsMutex);
@@ -275,6 +295,8 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		std::lock_guard<std::mutex> lock(m_StatsMutex);
 		m_LastValidFraction = validFraction;
 		m_LastMedianDepthMeters = medianDepth;
+		m_RecentGrids.push_back(DepthSnapshot{ left.captureTimeUs, depth, cols, rows });
+		if (m_RecentGrids.size() > 8) m_RecentGrids.pop_front();
 		m_LastDepthGrid = depth;
 		m_LastCols = cols;
 		m_LastRows = rows;
@@ -318,5 +340,7 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		{"rectifyMs", rectifyMs}, {"extractMs", extractMs}, {"skewUs", skewUs},
 	};
 
-	SetLatestResult(SourceResult(json, outFrame));
+	// stamped with the pair's capture time, which a detector bound to this node's frame carries into its own result: depth fusion matches on it
+	SetLatestResult(SourceResult(json, outFrame.empty() ? std::optional<Frame>() : std::optional<Frame>(Frame(outFrame, FrameFormat::BGR24)),
+		left.captureTimeUs != 0 ? left.captureTimeUs : SourceResult::NowUs()));
 }
