@@ -20,6 +20,10 @@ namespace YoloPostProcess {
 	// fill), preserving aspect ratio, and returns the bookkeeping needed to undo it afterwards
 	cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo);
 
+	// Where a frame of srcWidth x srcHeight lands in a targetWidth x targetHeight letterbox canvas: fills `outInfo` as Letterbox does and returns the
+	// rectangle the scaled picture occupies (the rest is border).
+	cv::Rect LetterboxLayout(int srcWidth, int srcHeight, int targetWidth, int targetHeight, LetterboxInfo& outInfo);
+
 	// The same picture as Letterbox, written into a canvas the caller keeps between frames: the frame is resized straight into its place in the
 	// canvas and the grey border is only repainted when the layout changes, so a steady stream does no allocation and no extra copy.
 	void LetterboxInto(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo, cv::Mat& canvas);
@@ -58,6 +62,35 @@ namespace YoloPostProcess {
 		int gridH, gridW;
 		int stride; // input pixels per grid cell at this scale (e.g. 8/16/32 for a 640 input)
 	};
+
+	// The same head as an int8 export leaves it in the NPU's output (rknn_outputs_get with want_float = 0): the raw quantised values and each
+	// tensor's affine parameters (real = (raw - zeroPoint) * scale). Decoding them directly skips the runtime's conversion of every value to float.
+	struct DflScaleOutputInt8 {
+		const int8_t* boxData;
+		float boxScale;
+		int boxZeroPoint;
+		const int8_t* clsData;
+		float clsScale;
+		int clsZeroPoint;
+		int gridH, gridW;
+		int stride;
+	};
+
+	// Whether a quantised class tensor holds probabilities, from the range its parameters can represent: a probability tensor is quantised
+	// over about [0,1], while logits need a range that reaches well below zero.
+	bool QuantisedClassScoresAreProbabilities(float scale, int zeroPoint);
+
+	// DecodeDflMultiScaleAndNms for int8 outputs. Cells are filtered on the raw class values, so only a cell that passes the confidence
+	// threshold has its box distribution dequantised.
+	std::vector<ObjectDetection> DecodeDflMultiScaleInt8AndNms(
+		const std::vector<DflScaleOutputInt8>& scales,
+		int regMax,
+		int numClasses,
+		const std::vector<std::string>& labels,
+		const LetterboxInfo& letterbox,
+		float confThreshold,
+		float nmsThreshold,
+		bool classScoresAreProbabilities);
 
 	// Whether the class tensors hold probabilities (the rknn_model_zoo export applies the sigmoid in the graph) rather than raw logits.
 	// Probabilities stay within [0,1] while the logits of a real model go well below 0, so one frame's range tells them apart; it is a

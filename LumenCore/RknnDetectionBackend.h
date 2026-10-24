@@ -2,6 +2,7 @@
 #ifdef LUMEN_WITH_RKNN
 
 #include "IDetectionBackend.h"
+#include "RgaLetterbox.h"
 #include <rknn_api.h>
 #include <optional>
 #include <string>
@@ -17,6 +18,7 @@ public:
 
 	bool Load(const DetectionBackendConfig& config) override;
 	std::vector<ObjectDetection> Infer(const cv::Mat& bgrFrame) override;
+	std::vector<ObjectDetection> Infer(const Frame& frame) override;
 	void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const override { out = m_LastStageUs; }
 	std::string Name() const override { return "RKNN (NPU)"; }
 
@@ -26,6 +28,9 @@ private:
 	struct ScaleMeta {
 		uint32_t boxOutputIndex, clsOutputIndex;
 		int gridH, gridW, stride, regMax;
+		// the tensors' affine quantisation (real = (raw - zeroPoint) * scale), used when the outputs are decoded as int8
+		float boxScale, clsScale;
+		int boxZeroPoint, clsZeroPoint;
 	};
 
 	rknn_context m_Context = 0;
@@ -48,8 +53,17 @@ private:
 
 	std::vector<ScaleMeta> m_Scales;
 
-	// the letterboxed picture and its RGB copy, kept between frames so nothing is allocated per frame
-	cv::Mat m_Letterboxed, m_Rgb;
+	// the model's RGB input (tightly packed, input width x height x 3) and the CPU path's letterboxed BGR picture, kept between frames so
+	// nothing is allocated per frame
+	cv::Mat m_Canvas, m_Letterboxed;
+	// every output is int8 with usable quantisation parameters: they are fetched as they are and decoded directly, instead of the runtime
+	// converting each value to float (LUMEN_RKNN_FLOAT_OUTPUT=1 forces the float path)
+	bool m_QuantisedOutputs = false;
+#ifdef LUMEN_WITH_RGA
+	// scales and converts the frame into the canvas on the RGA; after a failure the CPU path takes over for good
+	RgaLetterbox m_Rga;
+	bool m_RgaFailed = false;
+#endif
 
 	// whether the class tensors hold probabilities or logits, decided from the first frame and kept (it is a property of the model)
 	std::optional<bool> m_ClassScoresAreProbabilities;

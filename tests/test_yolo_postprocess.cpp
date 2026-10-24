@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "YoloPostProcess.h"
+#include <algorithm>
+#include <random>
 
 TEST_CASE("Letterbox scales and centres padding correctly for a wider-than-tall image", "[YoloPostProcess]") {
     cv::Mat input(480, 640, CV_8UC3, cv::Scalar(0, 0, 0));
@@ -220,4 +222,85 @@ TEST_CASE("LetterboxInto produces the same picture as Letterbox and keeps its ca
 	YoloPostProcess::LetterboxInfo info;
 	YoloPostProcess::LetterboxInto(wide, 640, 384, info, canvas);
 	REQUIRE(canvas.data == before);
+}
+
+// ---- int8 outputs decode to the same detections as the runtime's float conversion of them ----
+
+namespace {
+
+struct QuantisedTensor {
+	std::vector<int8_t> raw;
+	std::vector<float> real; // what the runtime's want_float conversion would hand over
+	float scale;
+	int zeroPoint;
+};
+
+QuantisedTensor Quantise(const std::vector<float>& values, float scale, int zeroPoint)
+{
+	QuantisedTensor tensor{ {}, {}, scale, zeroPoint };
+	for (float value : values) {
+		const int raw = std::clamp(static_cast<int>(std::lround(value / scale)) + zeroPoint, -128, 127);
+		tensor.raw.push_back(static_cast<int8_t>(raw));
+		tensor.real.push_back((raw - zeroPoint) * scale);
+	}
+	return tensor;
+}
+
+}
+
+TEST_CASE("int8 DFL outputs decode to the same detections as their float conversion", "[YoloPostProcess]") {
+	const int regMax = 16, numClasses = 5, gridH = 12, gridW = 20, stride = 32, cells = gridH * gridW;
+	std::mt19937 random(7);
+	std::uniform_real_distribution<float> unit(0.0f, 1.0f);
+	std::normal_distribution<float> logit(0.0f, 2.0f);
+
+	// class probabilities: mostly background, a few cells with a confident class
+	std::vector<float> classValues(static_cast<size_t>(numClasses) * cells);
+	for (float& v : classValues) v = unit(random) * 0.15f;
+	for (int k = 0; k < 14; k++) {
+		const int cell = static_cast<int>(unit(random) * cells) % cells, c = static_cast<int>(unit(random) * numClasses) % numClasses;
+		classValues[static_cast<size_t>(c) * cells + cell] = 0.6f + 0.39f * unit(random);
+	}
+	std::vector<float> boxValues(static_cast<size_t>(4) * regMax * cells);
+	for (float& v : boxValues) v = logit(random);
+
+	const QuantisedTensor cls = Quantise(classValues, 1.0f / 255.0f, -128);
+	const QuantisedTensor box = Quantise(boxValues, 0.12f, 3);
+	std::vector<std::string> labels = { "a", "b", "c", "d", "e" };
+	const YoloPostProcess::LetterboxInfo letterbox = IdentityLetterbox(640, 640);
+
+	YoloPostProcess::DflScaleOutput floatScale{ box.real.data(), cls.real.data(), gridH, gridW, stride };
+	YoloPostProcess::DflScaleOutputInt8 intScale{ box.raw.data(), box.scale, box.zeroPoint, cls.raw.data(), cls.scale, cls.zeroPoint, gridH, gridW, stride };
+	REQUIRE(YoloPostProcess::QuantisedClassScoresAreProbabilities(cls.scale, cls.zeroPoint));
+	REQUIRE(YoloPostProcess::ClassScoresAreProbabilities({ floatScale }, numClasses));
+
+	auto expected = YoloPostProcess::DecodeDflMultiScaleAndNms({ floatScale }, regMax, numClasses, labels, letterbox, 0.5f, 0.45f, true);
+	auto actual = YoloPostProcess::DecodeDflMultiScaleInt8AndNms({ intScale }, regMax, numClasses, labels, letterbox, 0.5f, 0.45f, true);
+	REQUIRE(expected.size() >= 5);
+	REQUIRE(actual.size() == expected.size());
+	for (size_t i = 0; i < expected.size(); i++) {
+		REQUIRE(actual[i].GetClassId() == expected[i].GetClassId());
+		REQUIRE(actual[i].GetConfidence() == Catch::Approx(expected[i].GetConfidence()).margin(1e-5));
+		REQUIRE(actual[i].GetBoundingBox().x == Catch::Approx(expected[i].GetBoundingBox().x).margin(1e-3));
+		REQUIRE(actual[i].GetBoundingBox().width == Catch::Approx(expected[i].GetBoundingBox().width).margin(1e-3));
+	}
+}
+
+TEST_CASE("int8 logits get the sigmoid and a quantised range tells logits from probabilities", "[YoloPostProcess]") {
+	REQUIRE(YoloPostProcess::QuantisedClassScoresAreProbabilities(1.0f / 255.0f, -128));
+	REQUIRE_FALSE(YoloPostProcess::QuantisedClassScoresAreProbabilities(0.1f, 40)); // reaches about -16.8: a logit range
+
+	const int regMax = 2;
+	const int8_t box[8] = { 0, 100, 0, 100, 0, 100, 0, 100 }; // scale 0.2: bin 1 outweighs bin 0 by 20 on every side
+	std::vector<std::string> labels = { "a", "b" };
+	auto run = [&](int8_t cls0, int8_t cls1, float conf) {
+		const int8_t cls[2] = { cls0, cls1 };
+		YoloPostProcess::DflScaleOutputInt8 scale{ box, 0.2f, 0, cls, 0.1f, 0, 1, 1, 32 };
+		return YoloPostProcess::DecodeDflMultiScaleInt8AndNms({ scale }, regMax, 2, labels, IdentityLetterbox(640, 640), conf, 0.45f, false);
+	};
+	// raw 22 * 0.1 = 2.2 -> sigmoid 0.9; raw -40 * 0.1 = -4 -> 0.02
+	auto hit = run(22, -40, 0.5f);
+	REQUIRE(hit.size() == 1);
+	REQUIRE(hit[0].GetConfidence() == Catch::Approx(0.9).margin(0.01));
+	REQUIRE(run(-40, -50, 0.25f).empty());
 }

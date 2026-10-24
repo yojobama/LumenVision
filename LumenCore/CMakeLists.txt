@@ -94,7 +94,7 @@ endif()
 
 if(LUMEN_WITH_RGA)
     # <im2d.h> only exists on the Pi image.
-    list(APPEND LUMEN_CORE_SOURCES RgaColorConverter.cpp)
+    list(APPEND LUMEN_CORE_SOURCES RgaColorConverter.cpp RgaLetterbox.cpp)
 endif()
 
 # --- SWIG source properties -------------------------------------------------------------------

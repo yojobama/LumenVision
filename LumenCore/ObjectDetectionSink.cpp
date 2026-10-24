@@ -35,10 +35,9 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 
 		if (result.frame->empty() || !m_Backend) continue;
 		StageLap lap(SinkProfile());
-		const cv::Mat& sourceFrame = result.frame->AsBgr();
-		lap.Mark("bgr");
-
-		std::vector<ObjectDetection> detections = m_Backend->Infer(sourceFrame);
+		// the backend takes the frame as it is (a camera's NV12 picture goes to the RGA without a BGR conversion on the way)
+		const cv::Size frameSize = result.frame->size();
+		std::vector<ObjectDetection> detections = m_Backend->Infer(*result.frame);
 		lap.Mark("infer");
 		{
 			// the backend's own split of "infer"; detail, not extra time
@@ -54,8 +53,8 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 		std::shared_ptr<void> annotOwner;
 		cv::Mat annotatedFrame;
 		if (wantsFrame) {
-			annotatedFrame = FramePool::Instance().Acquire(sourceFrame.rows, sourceFrame.cols, sourceFrame.type(), annotOwner);
-			sourceFrame.copyTo(annotatedFrame);
+			annotatedFrame = FramePool::Instance().Acquire(frameSize.height, frameSize.width, CV_8UC3, annotOwner);
+			result.frame->CopyBgrTo(annotatedFrame);
 		}
 		std::vector<nlohmann::json> jsonVector;
 
@@ -78,8 +77,8 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 				{"className", detection.GetClassName()},
 				{"confidence", detection.GetConfidence()},
 				{"box", {box.x, box.y, box.width, box.height}},
-				{"frameWidth", sourceFrame.cols},
-				{"frameHeight", sourceFrame.rows}
+				{"frameWidth", frameSize.width},
+				{"frameHeight", frameSize.height}
 			};
 			if (hasCalibration) {
 				// normalised image coordinates of the box centre (lens distortion removed): yaw = atan(-x) (positive left), pitch = atan(-y), as for tags

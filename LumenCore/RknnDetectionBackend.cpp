@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -29,6 +30,8 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 	if (m_Loaded) { rknn_destroy(m_Context); m_Loaded = false; }
 	m_NumClasses = 0;
 	m_ClassScoresAreProbabilities.reset();
+	m_QuantisedOutputs = false;
+	bool allQuantised = true;
 	m_Config = config;
 	m_ConfThreshold = config.confThreshold;
 	m_NmsThreshold = config.nmsThreshold;
@@ -111,11 +114,24 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 			if (m_NumClasses != 0 && m_NumClasses != numClasses) return false; // every scale must agree
 			m_NumClasses = numClasses;
 
-			m_Scales.push_back(ScaleMeta{ boxAttr.index, clsAttr.index, gridH, gridW, stride, regMax });
+			m_Scales.push_back(ScaleMeta{ boxAttr.index, clsAttr.index, gridH, gridW, stride, regMax,
+				boxAttr.scale, clsAttr.scale, boxAttr.zp, clsAttr.zp });
+			const auto usable = [](const rknn_tensor_attr& attr) {
+				return attr.type == RKNN_TENSOR_INT8 && attr.qnt_type == RKNN_TENSOR_QNT_AFFINE_ASYMMETRIC && attr.scale > 0.0f;
+			};
+			if (!usable(boxAttr) || !usable(clsAttr)) allQuantised = false;
 		}
 	} else {
 		return false; // neither the fused single-head layout nor a recognised multi-scale one
 	}
+
+	// int8 outputs are decoded as they are; the float path stays for fp16 exports and for LUMEN_RKNN_FLOAT_OUTPUT=1
+	const char* forceFloat = std::getenv("LUMEN_RKNN_FLOAT_OUTPUT");
+	m_QuantisedOutputs = m_IsMultiScaleDfl && allQuantised && !m_Scales.empty() && !(forceFloat && forceFloat[0] != '\0' && forceFloat[0] != '0');
+	if (m_QuantisedOutputs) {
+		m_ClassScoresAreProbabilities = YoloPostProcess::QuantisedClassScoresAreProbabilities(m_Scales[0].clsScale, m_Scales[0].clsZeroPoint);
+	}
+	m_Canvas = cv::Mat(m_InputHeight, m_InputWidth, CV_8UC3);
 
 	m_Labels.clear();
 	if (!config.labelsPath.empty()) {
@@ -132,7 +148,12 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 
 std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame)
 {
-	if (!m_Loaded) return {};
+	return Infer(Frame(bgrFrame));
+}
+
+std::vector<ObjectDetection> RknnDetectionBackend::Infer(const Frame& frame)
+{
+	if (!m_Loaded || frame.empty()) return {};
 
 	m_LastStageUs.clear();
 	auto lapStart = std::chrono::steady_clock::now();
@@ -142,19 +163,33 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 		lapStart = now;
 	};
 
-	YoloPostProcess::LetterboxInfo letterboxInfo;
-	YoloPostProcess::LetterboxInto(bgrFrame, m_InputWidth, m_InputHeight, letterboxInfo, m_Letterboxed);
-
 	// RGB uint8, NHWC, no normalisation: the quantised graph has mean/std baked in (the ONNX path normalises itself)
-	lap("rknn-letterbox");
-	cv::cvtColor(m_Letterboxed, m_Rgb, cv::COLOR_BGR2RGB);
-	const cv::Mat& rgb = m_Rgb;
-	lap("rknn-convert");
+	YoloPostProcess::LetterboxInfo letterboxInfo;
+	const cv::Rect picture = YoloPostProcess::LetterboxLayout(frame.size().width, frame.size().height, m_InputWidth, m_InputHeight, letterboxInfo);
+	bool prepared = false;
+#ifdef LUMEN_WITH_RGA
+	// the RGA scales and converts the frame (NV12 or BGR) into its place in the canvas in one pass
+	if (!m_RgaFailed) {
+		prepared = m_Rga.Run(frame, m_Canvas.data, m_InputWidth, m_InputHeight, picture);
+		if (!prepared) {
+			m_RgaFailed = true;
+			std::fprintf(stderr, "RKNN: the RGA could not prepare the detector input for this frame, preparing it on the CPU from now on
+");
+		}
+	}
+	if (prepared) lap("rknn-rga");
+#endif
+	if (!prepared) {
+		YoloPostProcess::LetterboxInto(frame.AsBgr(), m_InputWidth, m_InputHeight, letterboxInfo, m_Letterboxed);
+		lap("rknn-letterbox");
+		cv::cvtColor(m_Letterboxed, m_Canvas, cv::COLOR_BGR2RGB);
+		lap("rknn-convert");
+	}
 
 	rknn_input input{};
 	input.index = 0;
-	input.buf = rgb.data;
-	input.size = static_cast<uint32_t>(rgb.total() * rgb.elemSize());
+	input.buf = m_Canvas.data;
+	input.size = static_cast<uint32_t>(m_Canvas.total() * m_Canvas.elemSize());
 	input.pass_through = 0;
 	input.type = RKNN_TENSOR_UINT8;
 	input.fmt = RKNN_TENSOR_NHWC;
@@ -167,7 +202,7 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 	std::vector<rknn_output> outputs(static_cast<size_t>(m_NumOutputs));
 	for (int i = 0; i < m_NumOutputs; i++) {
 		outputs[i] = rknn_output{};
-		outputs[i].want_float = 1; // dequantise int8/fp16 to float32
+		outputs[i].want_float = m_QuantisedOutputs ? 0 : 1; // float: the runtime dequantises every value; int8: as the NPU wrote it
 		outputs[i].index = static_cast<uint32_t>(i);
 	}
 	if (rknn_outputs_get(m_Context, static_cast<uint32_t>(m_NumOutputs), outputs.data(), nullptr) != RKNN_SUCC) return {};
@@ -189,23 +224,35 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 			}
 		}
 	} else {
-		std::vector<YoloPostProcess::DflScaleOutput> scaleOutputs;
-		scaleOutputs.reserve(m_Scales.size());
-		for (const ScaleMeta& scale : m_Scales) {
-			YoloPostProcess::DflScaleOutput s;
-			s.boxData = static_cast<const float*>(outputs[scale.boxOutputIndex].buf);
-			s.clsData = static_cast<const float*>(outputs[scale.clsOutputIndex].buf);
-			s.gridH = scale.gridH;
-			s.gridW = scale.gridW;
-			s.stride = scale.stride;
-			scaleOutputs.push_back(s);
+		if (m_QuantisedOutputs) {
+			std::vector<YoloPostProcess::DflScaleOutputInt8> scaleOutputs;
+			scaleOutputs.reserve(m_Scales.size());
+			for (const ScaleMeta& scale : m_Scales) {
+				scaleOutputs.push_back({ static_cast<const int8_t*>(outputs[scale.boxOutputIndex].buf), scale.boxScale, scale.boxZeroPoint,
+					static_cast<const int8_t*>(outputs[scale.clsOutputIndex].buf), scale.clsScale, scale.clsZeroPoint,
+					scale.gridH, scale.gridW, scale.stride });
+			}
+			detections = YoloPostProcess::DecodeDflMultiScaleInt8AndNms(scaleOutputs, m_Scales[0].regMax, m_NumClasses, m_Labels, letterboxInfo,
+				m_ConfThreshold.load(), m_NmsThreshold.load(), m_ClassScoresAreProbabilities.value_or(true));
+		} else {
+			std::vector<YoloPostProcess::DflScaleOutput> scaleOutputs;
+			scaleOutputs.reserve(m_Scales.size());
+			for (const ScaleMeta& scale : m_Scales) {
+				YoloPostProcess::DflScaleOutput s;
+				s.boxData = static_cast<const float*>(outputs[scale.boxOutputIndex].buf);
+				s.clsData = static_cast<const float*>(outputs[scale.clsOutputIndex].buf);
+				s.gridH = scale.gridH;
+				s.gridW = scale.gridW;
+				s.stride = scale.stride;
+				scaleOutputs.push_back(s);
+			}
+			int regMax = m_Scales.empty() ? 0 : m_Scales[0].regMax;
+			if (!m_ClassScoresAreProbabilities.has_value())
+				m_ClassScoresAreProbabilities = YoloPostProcess::ClassScoresAreProbabilities(scaleOutputs, m_NumClasses);
+			detections = YoloPostProcess::DecodeDflMultiScaleAndNms(
+				scaleOutputs, regMax, m_NumClasses, m_Labels, letterboxInfo,
+				m_ConfThreshold.load(), m_NmsThreshold.load(), m_ClassScoresAreProbabilities);
 		}
-		int regMax = m_Scales.empty() ? 0 : m_Scales[0].regMax;
-		if (!m_ClassScoresAreProbabilities.has_value())
-			m_ClassScoresAreProbabilities = YoloPostProcess::ClassScoresAreProbabilities(scaleOutputs, m_NumClasses);
-		detections = YoloPostProcess::DecodeDflMultiScaleAndNms(
-			scaleOutputs, regMax, m_NumClasses, m_Labels, letterboxInfo,
-			m_ConfThreshold.load(), m_NmsThreshold.load(), m_ClassScoresAreProbabilities);
 	}
 
 	lap("rknn-decode+nms");

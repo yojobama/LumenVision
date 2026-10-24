@@ -1,4 +1,5 @@
 #pragma once
+#include "Frame.h"
 #include "ObjectDetection.h"
 #include <opencv2/opencv.hpp>
 #include <atomic>
@@ -31,6 +32,9 @@ public:
 	virtual ~IDetectionBackend() = default;
 	virtual bool Load(const DetectionBackendConfig& config) = 0;
 	virtual std::vector<ObjectDetection> Infer(const cv::Mat& bgrFrame) = 0;
+	// The same for a Frame, which a backend can read in the form it already has (a camera's NV12 picture needs no BGR conversion on the way to
+	// a hardware preprocessor). The default converts to BGR and calls the overload above.
+	virtual std::vector<ObjectDetection> Infer(const Frame& frame) { return Infer(frame.AsBgr()); }
 	virtual std::string Name() const = 0;
 
 	// where the last Infer() spent its time, as (stage, microseconds), for the node's stage profile; empty when not measured

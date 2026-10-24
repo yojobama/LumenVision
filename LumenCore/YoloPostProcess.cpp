@@ -33,24 +33,30 @@ cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, Le
 	return padded;
 }
 
-void LetterboxInto(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo, cv::Mat& canvas)
+cv::Rect LetterboxLayout(int srcWidth, int srcHeight, int targetWidth, int targetHeight, LetterboxInfo& outInfo)
 {
-	outInfo.originalWidth = bgrFrame.cols;
-	outInfo.originalHeight = bgrFrame.rows;
+	outInfo.originalWidth = srcWidth;
+	outInfo.originalHeight = srcHeight;
 
 	float scale = std::min(
-		static_cast<float>(targetWidth) / bgrFrame.cols,
-		static_cast<float>(targetHeight) / bgrFrame.rows);
+		static_cast<float>(targetWidth) / srcWidth,
+		static_cast<float>(targetHeight) / srcHeight);
 	outInfo.scale = scale;
 
-	int unpaddedWidth = static_cast<int>(std::round(bgrFrame.cols * scale));
-	int unpaddedHeight = static_cast<int>(std::round(bgrFrame.rows * scale));
+	int unpaddedWidth = static_cast<int>(std::round(srcWidth * scale));
+	int unpaddedHeight = static_cast<int>(std::round(srcHeight * scale));
 	outInfo.padLeft = (targetWidth - unpaddedWidth) / 2;
 	outInfo.padTop = (targetHeight - unpaddedHeight) / 2;
+	return cv::Rect(outInfo.padLeft, outInfo.padTop, unpaddedWidth, unpaddedHeight);
+}
+
+void LetterboxInto(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo, cv::Mat& canvas)
+{
+	const cv::Rect picture = LetterboxLayout(bgrFrame.cols, bgrFrame.rows, targetWidth, targetHeight, outInfo);
+	const int unpaddedWidth = picture.width, unpaddedHeight = picture.height;
 
 	// the border only needs painting when the canvas is new or the picture's place in it has moved: the previous picture is then
 	// not guaranteed to cover the same pixels
-	const cv::Rect picture(outInfo.padLeft, outInfo.padTop, unpaddedWidth, unpaddedHeight);
 	const bool newLayout = canvas.empty() || canvas.cols != targetWidth || canvas.rows != targetHeight ||
 		canvas.type() != bgrFrame.type() || !canvas.isContinuous() || canvas.u == nullptr;
 	static thread_local cv::Rect lastPicture; // per thread: each backend runs on its own sink thread
@@ -172,6 +178,96 @@ bool ClassScoresAreProbabilities(const std::vector<DflScaleOutput>& scales, int 
 			if (scale.clsData[i] < -0.05f || scale.clsData[i] > 1.05f) return false; // a little slack for dequantisation noise
 	}
 	return true;
+}
+
+bool QuantisedClassScoresAreProbabilities(float scale, int zeroPoint)
+{
+	// the real values an int8 tensor can hold; a little slack as in ClassScoresAreProbabilities
+	const float lowest = (-128 - zeroPoint) * scale;
+	const float highest = (127 - zeroPoint) * scale;
+	return lowest >= -0.05f && highest <= 1.05f;
+}
+
+std::vector<ObjectDetection> DecodeDflMultiScaleInt8AndNms(
+	const std::vector<DflScaleOutputInt8>& scales,
+	int regMax,
+	int numClasses,
+	const std::vector<std::string>& labels,
+	const LetterboxInfo& letterbox,
+	float confThreshold,
+	float nmsThreshold,
+	bool classScoresAreProbabilities)
+{
+	std::vector<cv::Rect2d> boxesForNms;
+	std::vector<float> scores;
+	std::vector<int> classIds;
+	std::vector<float> expVals(static_cast<size_t>(std::max(regMax, 1)));
+	std::vector<int8_t> bestRaw;
+	std::vector<int> bestClass;
+
+	for (const DflScaleOutputInt8& scale : scales) {
+		const int gridW = scale.gridW, stride = scale.stride;
+		const int cellCount = scale.gridH * scale.gridW;
+
+		// best class per cell: one pass per class over contiguous cells (the tensor is [classes, cells])
+		bestRaw.assign(static_cast<size_t>(cellCount), std::numeric_limits<int8_t>::min());
+		bestClass.assign(static_cast<size_t>(cellCount), 0);
+		for (int c = 0; c < numClasses; c++) {
+			const int8_t* classRow = scale.clsData + static_cast<size_t>(c) * cellCount;
+			for (int cell = 0; cell < cellCount; cell++) {
+				if (classRow[cell] > bestRaw[cell]) {
+					bestRaw[cell] = classRow[cell];
+					bestClass[cell] = c;
+				}
+			}
+		}
+
+		// a cell can only pass if its raw class value reaches the threshold: probabilities directly, logits through the sigmoid's inverse
+		const float realThreshold = classScoresAreProbabilities ? confThreshold : std::log(confThreshold / (1.0f - confThreshold));
+		const float rawThresholdReal = realThreshold / scale.clsScale + scale.clsZeroPoint;
+		const int rawThreshold = static_cast<int>(std::floor(std::min(std::max(rawThresholdReal, -129.0f), 128.0f)));
+
+		for (int cell = 0; cell < cellCount; cell++) {
+			if (static_cast<int>(bestRaw[cell]) < rawThreshold) continue;
+			const float logit = (static_cast<int>(bestRaw[cell]) - scale.clsZeroPoint) * scale.clsScale;
+			const float bestScore = classScoresAreProbabilities ? logit : Sigmoid(logit);
+			if (bestScore < confThreshold) continue;
+
+			float distance[4];
+			for (int side = 0; side < 4; side++) {
+				const int8_t* binLogits = scale.boxData + static_cast<size_t>(side) * regMax * cellCount;
+
+				float maxLogit = -std::numeric_limits<float>::infinity();
+				for (int b = 0; b < regMax; b++) {
+					const float value = (static_cast<int>(binLogits[b * cellCount + cell]) - scale.boxZeroPoint) * scale.boxScale;
+					expVals[b] = value;
+					maxLogit = std::max(maxLogit, value);
+				}
+				float sumExp = 0.0f;
+				for (int b = 0; b < regMax; b++) {
+					expVals[b] = std::exp(expVals[b] - maxLogit);
+					sumExp += expVals[b];
+				}
+				float expected = 0.0f;
+				for (int b = 0; b < regMax; b++) expected += b * (expVals[b] / sumExp);
+				distance[side] = expected;
+			}
+
+			const int gx = cell % gridW, gy = cell / gridW;
+			const float cx = (gx + 0.5f) * stride;
+			const float cy = (gy + 0.5f) * stride;
+			const float x1 = cx - distance[0] * stride;
+			const float y1 = cy - distance[1] * stride;
+			const float x2 = cx + distance[2] * stride;
+			const float y2 = cy + distance[3] * stride;
+
+			boxesForNms.emplace_back(x1, y1, x2 - x1, y2 - y1);
+			scores.push_back(bestScore);
+			classIds.push_back(bestClass[cell]);
+		}
+	}
+
+	return NmsAndBuildDetections(boxesForNms, scores, classIds, labels, letterbox, confThreshold, nmsThreshold);
 }
 
 std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
