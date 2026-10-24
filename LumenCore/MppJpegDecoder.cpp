@@ -61,7 +61,9 @@ bool MppJpegDecoder::EnsureInputBufferGroup(size_t jpegSize)
 
 bool MppJpegDecoder::EnsureOutputBufferGroup(size_t bufSize)
 {
-	if (m_BufGroup && m_BufGroupSize >= bufSize) return true;
+	// big enough is kept, but a group more than twice what is needed (the camera went back to a much smaller mode) is replaced so the memory
+	// it holds is released
+	if (m_BufGroup && m_BufGroupSize >= bufSize && m_BufGroupSize <= bufSize * 2) return true;
 	if (m_BufGroup) {
 		m_OutGroupHolder.reset();
 		m_BufGroup = nullptr;
