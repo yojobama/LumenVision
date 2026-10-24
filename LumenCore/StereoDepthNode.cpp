@@ -161,6 +161,8 @@ void StereoDepthNode::EnsureRectifyMaps(const cv::Size& sourceSize)
 	int blockW = m_Backend->BlockW(), blockH = m_Backend->BlockH();
 	m_CropW = (roi.width / blockW) * blockW;
 	m_CropH = (roi.height / blockH) * blockH;
+	m_CropX = roi.x;
+	m_CropY = roi.y;
 	if (m_CropW <= 0 || m_CropH <= 0) {
 		throw std::runtime_error("StereoDepthNode: valid rectified ROI is smaller than one backend block - check calibration quality");
 	}
@@ -225,12 +227,11 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 	// GRAY8/NV12-tagged
 	const cv::Mat& grayLeft = left.frame->AsGray();
 	const cv::Mat& grayRight = right.frame->AsGray();
-	cv::Mat rectLeft, rectRight;
-	cv::remap(grayLeft, rectLeft, m_MapLx, m_MapLy, cv::INTER_LINEAR);
-	cv::remap(grayRight, rectRight, m_MapRx, m_MapRy, cv::INTER_LINEAR);
-
-	cv::Mat cropLeft = rectLeft(cv::Rect(0, 0, m_CropW, m_CropH));
-	cv::Mat cropRight = rectRight(cv::Rect(0, 0, m_CropW, m_CropH));
+	// only the crop is rectified: the maps are sliced to it, so nothing outside the valid region is remapped
+	const cv::Rect crop(m_CropX, m_CropY, m_CropW, m_CropH);
+	cv::Mat cropLeft, cropRight;
+	cv::remap(grayLeft, cropLeft, m_MapLx(crop), m_MapLy(crop), cv::INTER_LINEAR);
+	cv::remap(grayRight, cropRight, m_MapRx(crop), m_MapRy(crop), cv::INTER_LINEAR);
 
 	auto t1 = std::chrono::steady_clock::now();
 
@@ -280,12 +281,12 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		m_HasDepthGrid = true;
 	}
 
-	// output frame - see StereoFrameOutput.h
+	// output frame - see StereoFrameOutput.h; nothing is drawn while no bound node wants a frame
 	cv::Mat outFrame;
-	if (m_FrameOutput == STEREO_FRAME_RECTIFIED_LEFT) {
-		cv::Mat colorRectLeft;
-		cv::remap(left.frame->AsBgr(), colorRectLeft, m_MapLx, m_MapLy, cv::INTER_LINEAR);
-		outFrame = colorRectLeft(cv::Rect(0, 0, m_CropW, m_CropH)).clone();
+	if (!HasActiveFrameConsumer()) {
+		// the depth grid and JSON below are all a consumer without a frame needs
+	} else if (m_FrameOutput == STEREO_FRAME_RECTIFIED_LEFT) {
+		cv::remap(left.frame->AsBgr(), outFrame, m_MapLx(crop), m_MapLy(crop), cv::INTER_LINEAR);
 	} else {
 		cv::Mat depthGrid(rows, cols, CV_32F, depth.data());
 		cv::Mat normalized;
@@ -302,9 +303,8 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		cv::resize(colormap, upscaled, cv::Size(m_CropW, m_CropH), 0, 0, cv::INTER_NEAREST);
 
 		if (m_FrameOutput == STEREO_FRAME_DEPTH_OVERLAY) {
-			cv::Mat colorRectLeft;
-			cv::remap(left.frame->AsBgr(), colorRectLeft, m_MapLx, m_MapLy, cv::INTER_LINEAR);
-			cv::Mat cropped = colorRectLeft(cv::Rect(0, 0, m_CropW, m_CropH));
+			cv::Mat cropped;
+			cv::remap(left.frame->AsBgr(), cropped, m_MapLx(crop), m_MapLy(crop), cv::INTER_LINEAR);
 			cv::addWeighted(cropped, 0.5, upscaled, 0.5, 0.0, outFrame);
 		} else {
 			outFrame = upscaled;

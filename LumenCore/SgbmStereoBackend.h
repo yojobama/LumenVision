@@ -6,7 +6,9 @@
 class SgbmStereoBackend : public IStereoDepthBackend {
 public:
 	// numDisparities must be a positive multiple of 16 (cv::StereoSGBM's own requirement).
-	SgbmStereoBackend(int blockW, int blockH, int minDisparity, int numDisparities);
+	// downscale 2 matches at half resolution (about 8x less work; the result is averaged onto blocks of 16x16 or so anyway) and scales the
+	// disparities back up; it needs an even block size and otherwise falls back to full resolution (1).
+	SgbmStereoBackend(int blockW, int blockH, int minDisparity, int numDisparities, int downscale = 2);
 
 	bool Compute(const cv::Mat& rectLeft, const cv::Mat& rectRight,
 		std::vector<float>& disparityOut, int& cols, int& rows) override;
@@ -17,6 +19,8 @@ public:
 
 private:
 	int m_BlockW, m_BlockH;
-	int m_MinDisparity, m_NumDisparities;
+	int m_MinDisparity, m_NumDisparities; // as given, in full-resolution pixels
+	int m_Downscale;
+	int m_SearchMinDisparity;             // what SGBM actually searches: the above divided by m_Downscale
 	cv::Ptr<cv::StereoSGBM> m_Sgbm;
 };

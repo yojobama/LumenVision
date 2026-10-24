@@ -94,7 +94,10 @@ void DepthFusionNode::Process(const std::vector<SourceResult>& results)
 	if (!m_DepthNode->GetLastDepthGrid(depth, cols, rows, blockW, blockH)) return;
 
 	StereoCalibrationResult calibration = m_DepthNode->GetCalibration();
-	double fx = calibration.rectifiedFx, cx = calibration.rectifiedCx, cy = calibration.rectifiedCy;
+	// detections are in the cropped output frame, so the principal point moves by the crop's origin
+	int cropX = 0, cropY = 0;
+	m_DepthNode->GetCropOrigin(cropX, cropY);
+	double fx = calibration.rectifiedFx, cx = calibration.rectifiedCx - cropX, cy = calibration.rectifiedCy - cropY;
 
 	// annotate-on-demand: skips the clone and distance labels when nothing bound wants the frame
 	// (see ApriltagDetector::Process).

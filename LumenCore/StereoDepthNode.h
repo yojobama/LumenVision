@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include "ISource.h"
 #include "ISink.h"
 #include "IStereoRoleReceiver.h"
@@ -35,6 +36,8 @@ public:
 
 	// in-process access to the full block-grid depth map (not serialised via SourceResult/JSON); returns false if no
 	// pair has been processed. outDepth is cols*rows metres, 0.0f for invalid cells
+	// the crop's top-left in the rectified image; subtract it from the rectified principal point to project output pixels
+	void GetCropOrigin(int& x, int& y) const { x = m_CropX; y = m_CropY; }
 	bool GetLastDepthGrid(std::vector<float>& outDepth, int& cols, int& rows, int& blockW, int& blockH) const;
 	// calibration this node is using (DepthFusionNode needs rectifiedFx/Cx/Cy)
 	StereoCalibrationResult GetCalibration() const { return m_Calibration; }
@@ -61,6 +64,9 @@ private:
 	cv::Mat m_MapLx, m_MapLy, m_MapRx, m_MapRy;
 	cv::Size m_RectifiedSourceSize;
 	int m_CropW = 0, m_CropH = 0;
+	// where the crop sits in the rectified image: the top-left of the intersection of both eyes' valid regions (the output frame and the depth grid
+	// start there, so a pixel of the output is at (x + cropX, y + cropY) in the rectified image)
+	std::atomic<int> m_CropX{ 0 }, m_CropY{ 0 };
 
 	std::unique_ptr<IStereoDepthBackend> m_Backend;
 	bool m_SignCheckDone = false;

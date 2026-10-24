@@ -37,3 +37,35 @@ TEST_CASE("SgbmStereoBackend recovers a known synthetic disparity", "[stereo][sg
 	REQUIRE(medianDisparity > SHIFT - 5);
 	REQUIRE(medianDisparity < SHIFT + 5);
 }
+
+// The half-resolution default must find the same disparity as full resolution, in full-resolution pixels.
+TEST_CASE("SgbmStereoBackend at half resolution agrees with full resolution", "[stereo][sgbm]") {
+	const int W = 640, H = 384;
+	const int SHIFT = 32;
+	const int texelSize = 8;
+	cv::Mat coarse((H + texelSize - 1) / texelSize, (W + SHIFT + texelSize - 1) / texelSize, CV_8UC1);
+	cv::randu(coarse, 0, 255);
+	cv::Mat base;
+	cv::resize(coarse, base, cv::Size(W + SHIFT, H), 0, 0, cv::INTER_NEAREST);
+	cv::Mat left = base(cv::Rect(SHIFT, 0, W, H)).clone();
+	cv::Mat right = base(cv::Rect(0, 0, W, H)).clone();
+
+	auto median = [&](int downscale) {
+		SgbmStereoBackend backend(16, 16, 16, 32, downscale);
+		std::vector<float> disparity;
+		int cols = 0, rows = 0;
+		REQUIRE(backend.Compute(left, right, disparity, cols, rows));
+		REQUIRE(cols == W / 16);
+		REQUIRE(rows == H / 16);
+		std::vector<float> valid;
+		for (float d : disparity) if (d != STEREO_DISPARITY_INVALID) valid.push_back(d);
+		REQUIRE(valid.size() > disparity.size() / 2);
+		std::nth_element(valid.begin(), valid.begin() + valid.size() / 2, valid.end());
+		return valid[valid.size() / 2];
+	};
+	const float full = median(1);
+	const float half = median(2);
+	REQUIRE(half > SHIFT - 5);
+	REQUIRE(half < SHIFT + 5);
+	REQUIRE(std::abs(half - full) < 2.0f);
+}
