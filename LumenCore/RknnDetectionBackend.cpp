@@ -1,7 +1,9 @@
 #ifdef LUMEN_WITH_RKNN
 #include "RknnDetectionBackend.h"
 #include "YoloPostProcess.h"
+#include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -26,6 +28,7 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 {
 	if (m_Loaded) { rknn_destroy(m_Context); m_Loaded = false; }
 	m_NumClasses = 0;
+	m_ClassScoresAreProbabilities.reset();
 	m_Config = config;
 	m_ConfThreshold = config.confThreshold;
 	m_NmsThreshold = config.nmsThreshold;
@@ -40,6 +43,19 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 	int ret = rknn_init(&m_Context, modelBuffer.data(), static_cast<uint32_t>(modelSize), 0, nullptr);
 	if (ret != RKNN_SUCC) return false;
 	m_Loaded = true;
+
+	// Each detector gets its own NPU core in turn (the default, AUTO, can queue two detectors behind one another); a failure here just
+	// leaves the model on AUTO. The runtime and driver versions go to stderr (the journal) because a mismatch between them is the
+	// first thing to rule out when a model misbehaves.
+	static std::atomic<int> s_NextCore{ 0 };
+	static const rknn_core_mask kCores[] = { RKNN_NPU_CORE_0, RKNN_NPU_CORE_1, RKNN_NPU_CORE_2 };
+	const int coreIndex = s_NextCore++ % 3;
+	const bool pinned = rknn_set_core_mask(m_Context, kCores[coreIndex]) == RKNN_SUCC;
+	rknn_sdk_version version{};
+	if (rknn_query(m_Context, RKNN_QUERY_SDK_VERSION, &version, sizeof(version)) == RKNN_SUCC) {
+		std::fprintf(stderr, "RKNN runtime %s, driver %s, model %s on %s\n", version.api_version, version.drv_version,
+			config.modelPath.c_str(), pinned ? ("NPU core " + std::to_string(coreIndex)).c_str() : "any NPU core");
+	}
 
 	rknn_input_output_num ioNum{};
 	if (rknn_query(m_Context, RKNN_QUERY_IN_OUT_NUM, &ioNum, sizeof(ioNum)) != RKNN_SUCC) return false;
@@ -185,9 +201,11 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const cv::Mat& bgrFrame
 			scaleOutputs.push_back(s);
 		}
 		int regMax = m_Scales.empty() ? 0 : m_Scales[0].regMax;
+		if (!m_ClassScoresAreProbabilities.has_value())
+			m_ClassScoresAreProbabilities = YoloPostProcess::ClassScoresAreProbabilities(scaleOutputs, m_NumClasses);
 		detections = YoloPostProcess::DecodeDflMultiScaleAndNms(
 			scaleOutputs, regMax, m_NumClasses, m_Labels, letterboxInfo,
-			m_ConfThreshold.load(), m_NmsThreshold.load());
+			m_ConfThreshold.load(), m_NmsThreshold.load(), m_ClassScoresAreProbabilities);
 	}
 
 	lap("rknn-decode+nms");

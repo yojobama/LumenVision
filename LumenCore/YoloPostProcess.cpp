@@ -132,6 +132,18 @@ namespace {
 	}
 }
 
+bool ClassScoresAreProbabilities(const std::vector<DflScaleOutput>& scales, int numClasses)
+{
+	// The rknn_model_zoo export applies the class sigmoid inside the graph; other recipes leave raw logits. Probabilities
+	// stay within [0,1] while logits of a real model go well below 0 (background cells sit around -5 to -10), so the range tells them apart.
+	for (const DflScaleOutput& scale : scales) {
+		const size_t count = static_cast<size_t>(scale.gridH) * scale.gridW * numClasses;
+		for (size_t i = 0; i < count; i++)
+			if (scale.clsData[i] < -0.05f || scale.clsData[i] > 1.05f) return false; // a little slack for dequantisation noise
+	}
+	return true;
+}
+
 std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 	const std::vector<DflScaleOutput>& scales,
 	int regMax,
@@ -139,20 +151,16 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 	const std::vector<std::string>& labels,
 	const LetterboxInfo& letterbox,
 	float confThreshold,
-	float nmsThreshold)
+	float nmsThreshold,
+	std::optional<bool> knownClassScoresAreProbabilities)
 {
 	std::vector<cv::Rect2d> boxesForNms;
 	std::vector<float> scores;
 	std::vector<int> classIds;
 
-	// The rknn_model_zoo export applies the class sigmoid inside the graph; other recipes leave raw logits. Probabilities
-	// stay within [0,1] while logits of a real model go well below 0 (background cells sit around -5 to -10), so the range tells them apart.
-	bool classScoresAreProbabilities = true;
-	for (const DflScaleOutput& scale : scales) {
-		const size_t count = static_cast<size_t>(scale.gridH) * scale.gridW * numClasses;
-		for (size_t i = 0; i < count && classScoresAreProbabilities; i++)
-			if (scale.clsData[i] < -0.05f || scale.clsData[i] > 1.05f) classScoresAreProbabilities = false; // a little slack for dequantisation noise
-	}
+	const bool classScoresAreProbabilities = knownClassScoresAreProbabilities.has_value()
+		? *knownClassScoresAreProbabilities
+		: ClassScoresAreProbabilities(scales, numClasses);
 
 	std::vector<float> expVals(static_cast<size_t>(std::max(regMax, 1)));
 

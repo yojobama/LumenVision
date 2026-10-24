@@ -3,6 +3,7 @@
 
 #include "IDetectionBackend.h"
 #include <rknn_api.h>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -46,6 +47,9 @@ private:
 	rknn_tensor_attr m_FusedOutputAttr{};
 
 	std::vector<ScaleMeta> m_Scales;
+
+	// whether the class tensors hold probabilities or logits, decided from the first frame and kept (it is a property of the model)
+	std::optional<bool> m_ClassScoresAreProbabilities;
 };
 
 #endif // LUMEN_WITH_RKNN

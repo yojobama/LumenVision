@@ -1,4 +1,5 @@
 #pragma once
+#include <optional>
 #include "IDetectionBackend.h"
 #include <opencv2/opencv.hpp>
 #include <vector>
@@ -54,6 +55,11 @@ namespace YoloPostProcess {
 		int stride; // input pixels per grid cell at this scale (e.g. 8/16/32 for a 640 input)
 	};
 
+	// Whether the class tensors hold probabilities (the rknn_model_zoo export applies the sigmoid in the graph) rather than raw logits.
+	// Probabilities stay within [0,1] while the logits of a real model go well below 0, so one frame's range tells them apart; it is a
+	// property of the model, so callers can ask once and hand the answer to DecodeDflMultiScaleAndNms.
+	bool ClassScoresAreProbabilities(const std::vector<DflScaleOutput>& scales, int numClasses);
+
 	// Decodes YOLOv8's DFL box regression (a per-side distribution over regMax bins, integrated to a distance) plus per-class
 	// sigmoid scores across every FPN scale, then runs NMS. Differs from DecodeAndNms, whose boxes are regressed to cx/cy/w/h by the export graph.
 	std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
@@ -63,6 +69,7 @@ namespace YoloPostProcess {
 		const std::vector<std::string>& labels,
 		const LetterboxInfo& letterbox,
 		float confThreshold,
-		float nmsThreshold);
+		float nmsThreshold,
+		std::optional<bool> classScoresAreProbabilities = std::nullopt); // nullopt = scan the class tensors for it on this call
 
 }

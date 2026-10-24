@@ -183,3 +183,16 @@ TEST_CASE("DFL decoding takes class scores that are already probabilities as the
     REQUIRE(logits[0].GetConfidence() == Catch::Approx(0.9).margin(0.01));
     REQUIRE(run(-4.0f, -5.0f, 0.25f).empty());
 }
+
+TEST_CASE("class scores are recognised as probabilities or logits from their range", "[YoloPostProcess]") {
+	std::vector<float> box(4 * 16 * 4, 0.0f);
+	std::vector<float> probabilities(2 * 4, 0.0f);
+	std::vector<float> logits(2 * 4, -6.0f);
+	probabilities[3] = 0.9f;
+	logits[3] = 2.5f;
+	auto scale = [&](const std::vector<float>& cls) {
+		return std::vector<YoloPostProcess::DflScaleOutput>{ { box.data(), cls.data(), 2, 2, 32 } };
+	};
+	REQUIRE(YoloPostProcess::ClassScoresAreProbabilities(scale(probabilities), 2));
+	REQUIRE_FALSE(YoloPostProcess::ClassScoresAreProbabilities(scale(logits), 2));
+}
