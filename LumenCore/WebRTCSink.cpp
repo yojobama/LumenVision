@@ -223,6 +223,8 @@ bool WebRTCSink::EnsureEncoderInitialized(int width, int height)
 	m_CodecContext->bit_rate = static_cast<int64_t>(m_Config.bitrateKbps) * 1000;
 	m_CodecContext->gop_size = m_Config.fps * 2;
 	m_CodecContext->max_b_frames = 0; // zero-latency streaming, not file encoding
+	// h264_rkmpp otherwise keeps up to four frames in flight and hands each packet back a frame late
+	m_CodecContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
 	av_opt_set(m_CodecContext->priv_data, "preset", "ultrafast", 0);
 	av_opt_set(m_CodecContext->priv_data, "tune", "zerolatency", 0);
 
@@ -268,9 +270,11 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 			ShutdownEncoder(); // rebuilt below with the new bitrate and frame rate
 		}
 	}
+	StageLap lap(SinkProfile());
 	cv::Mat scaled;
 	if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
 	const cv::Mat& bgrFrame = m_ScaleDivisor > 1 ? scaled : sourceFrame;
+	if (m_ScaleDivisor > 1) lap.Mark("scale");
 
 	std::vector<std::shared_ptr<Peer>> openPeers;
 	{
@@ -305,11 +309,13 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 		sws_scale(m_SwsContext, srcSlices, srcStride, 0, bgrFrame.rows, m_YuvFrame->data, m_YuvFrame->linesize);
 	}
 	m_YuvFrame->pts = m_FrameCounter++;
+	lap.Mark("convert");
 
 	if (avcodec_send_frame(m_CodecContext, m_YuvFrame) < 0) return;
 
 	AVPacket* packet = av_packet_alloc();
 	while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
+		lap.Mark("encode");
 		binary sample(reinterpret_cast<byte*>(packet->data), reinterpret_cast<byte*>(packet->data) + packet->size);
 		double elapsedSeconds = static_cast<double>(m_FrameCounter) / m_Config.fps;
 		for (const auto& peer : openPeers) {
@@ -320,6 +326,7 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 			}
 		}
 		av_packet_unref(packet);
+		lap.Mark("send");
 	}
 	av_packet_free(&packet);
 }

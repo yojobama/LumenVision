@@ -12,6 +12,11 @@
     <!-- The Pi deploy image has no libicu and a self-contained publish does not bundle it; invariant mode avoids the dependency. -->
     <InvariantGlobalization>true</InvariantGlobalization>
 
+    <!-- Workstation, non-concurrent GC: Server GC starts a heap and a GC thread per core, pinned across all of them (the A76 cores the vision threads use);
+         this process allocates little, so short blocking collections on the calling thread cost less than that interference. -->
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+
     <!--
       LumenCore is built by CMake, so it is consumed as a prebuilt native library rather than a <ProjectReference>.
       Override LumenCorePreset (e.g. -p:LumenCorePreset=pi-arm64-release) to select a different build.

@@ -63,6 +63,7 @@ void MjpegSink::Process(const std::vector<SourceResult>& results)
 	for (const SourceResult& result : results) {
 		if (!result.frame.has_value() || result.frame->empty()) continue;
 
+		StageLap lap(SinkProfile());
 		std::vector<uint8_t> encoded;
 		std::vector<int> params{ cv::IMWRITE_JPEG_QUALITY, m_JpegQuality.load() };
 		const cv::Mat* image = &result.frame->AsBgr();
@@ -72,9 +73,12 @@ void MjpegSink::Process(const std::vector<SourceResult>& results)
 			cv::resize(*image, scaled, cv::Size(), 1.0 / divisor, 1.0 / divisor, cv::INTER_AREA);
 			image = &scaled;
 		}
+		lap.Mark("bgr+scale");
 		if (!cv::imencode(".jpg", *image, encoded, params)) continue;
+		lap.Mark("jpeg");
 
 		std::string base64 = Base64Encode(encoded);
+		lap.Mark("base64");
 		std::lock_guard<std::mutex> lock(m_Mutex);
 		m_LatestJpegBase64 = std::move(base64);
 	}

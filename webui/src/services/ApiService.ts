@@ -505,8 +505,10 @@ export class ApiService {
   }
 
   // WebRTC Sink Controller routes
-  async createWebRTCSink(name: string, bitrateKbps = 4000, fps = 30, encoderName = 'libx264'): Promise<number> {
-    const params = new URLSearchParams({ name, bitrateKbps: String(bitrateKbps), fps: String(fps), encoderName });
+  // encoderName undefined = the server's preferred encoder for this board (h264_rkmpp on the Orange Pi)
+  async createWebRTCSink(name: string, bitrateKbps = 4000, fps = 30, encoderName?: string): Promise<number> {
+    const params = new URLSearchParams({ name, bitrateKbps: String(bitrateKbps), fps: String(fps) });
+    if (encoderName) params.set('encoderName', encoderName);
     const response = await fetch(`${this.baseUrl}/webrtcSink/create?${params.toString()}`, { method: 'POST' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return response.json();

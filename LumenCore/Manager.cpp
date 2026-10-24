@@ -48,6 +48,7 @@
 // std::byte. WindowsCameraEnumerator.cpp is a `using namespace std`-free translation unit for this.
 #include "WindowsCameraEnumerator.h"
 #endif
+#include "CpuAffinity.h"
 #include <cstring>
 #include <iostream>
 #include <opencv2/opencv.hpp>
@@ -56,6 +57,7 @@ Manager::Manager(string logFile)
 {
     m_Logger = std::make_shared<Logger>(logFile);
     m_Logger->EnterLog("Manager constructed");
+	CpuAffinity::InitialiseOpenCvThreads();
 	m_SystemMonitor = new SystemMonitor(1000); // 1 second interval
 	m_SystemMonitor->StartMonitoring();
 }
@@ -64,6 +66,7 @@ Manager::Manager()
 {
     m_Logger = std::make_shared<Logger>("LumenVision.log");
     m_Logger->EnterLog("Manager constructed");
+	CpuAffinity::InitialiseOpenCvThreads();
 	m_SystemMonitor = new SystemMonitor(1000); // 1 second interval
     m_SystemMonitor->StartMonitoring();
 }

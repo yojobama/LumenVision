@@ -55,7 +55,7 @@ Set as MSBuild preprocessor defines in `LumenCore.vcxproj` (`LumenCommonDefines`
 | `LUMEN_WITH_NT4` | on, all platforms | Needs `ntcore`/`wpiutil`/`wpinet` (install-deps.sh `--with-nt4`) |
 | `LUMEN_WITH_WEBRTC` | on, all platforms | Needs `libdatachannel` (install-deps.sh `--with-webrtc`) |
 | `LUMEN_WITH_VULKAN_APRILTAG` | on, all platforms | Needs the `vkapriltag` submodule + a Vulkan compute device; falls back to CPU automatically if none is found |
-| `LUMEN_WITH_RKNN` | ARM64 only | The Orange Pi's NPU; `RknnDetectionBackend` runs object detection on it (native NV12 input and per-NPU-core pinning are still open, see ROADMAP.md C1) |
+| `LUMEN_WITH_RKNN` | ARM64 only | The Orange Pi's NPU; `RknnDetectionBackend` runs object detection on it (zero-copy input prepared by RGA and per-NPU-core pinning are still open, see ROADMAP.md C1) |
 | `LUMEN_WITH_CODEC_STEREO` | on, all platforms | Needs the `codec-stereo` submodule (install-deps.sh builds it by default, unconditionally); `STEREO_BACKEND_SGBM` remains available without this flag |
 
 ## Deploying to the Orange Pi
@@ -338,7 +338,7 @@ robot network or put it behind something that authenticates.
 
 See `docs/history/IMPLEMENTATION_PLAN.md`'s phase status lines for the authoritative historical
 record, and `ROADMAP.md` for what's planned next. Currently: RKNN object detection runs but still
-takes ONNX-style BGR input rather than the NPU's native NV12 (ROADMAP.md C1); a stored calibration
+takes BGR input prepared on the CPU rather than a buffer prepared by RGA (ROADMAP.md C1); a stored calibration
 is applied to an AprilTag detector bound to the camera; and WebRTC has been verified by
 compiling/linking against the real libraries, not
 against an actual browser ICE handshake in this environment.

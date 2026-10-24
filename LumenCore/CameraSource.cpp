@@ -131,6 +131,8 @@ void CameraFrameSource::CaptureFrame()
             // "wait-frame" is the driver's frame interval, not a cost; "decode" is JPEG/colour work
             if (grab.waitFrameUs > 0) SourceProfile()->Record("wait-frame", grab.waitFrameUs);
             if (grab.decodeUs > 0) SourceProfile()->Record("decode", grab.decodeUs);
+            if (grab.hwDecodeUs > 0) SourceProfile()->Record("decode-hw", grab.hwDecodeUs);
+            if (grab.copyOutUs > 0) SourceProfile()->Record("decode-copy", grab.copyOutUs);
             StageLap lap(SourceProfile());
             // Carries grab.poolOwner explicitly: the bare-cv::Mat overload has no pool owner, so the buffer
             // could be recycled while sinks still use it (see CameraGrabResult::poolOwner).

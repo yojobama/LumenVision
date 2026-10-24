@@ -22,6 +22,10 @@ struct CameraGrabResult
 	// the next frame (about one frame interval, so not a cost), and turning that frame into pixels
 	double waitFrameUs = 0;
 	double decodeUs = 0;
+	// of decodeUs, for a hardware JPEG decode: the decoder block itself and the CPU copy/convert out of its buffer; both stay 0 when
+	// the software decoder ran
+	double hwDecodeUs = 0;
+	double copyOutUs = 0;
 };
 
 // Implemented per platform: OpenCvCameraBackend (always available) and V4l2CameraBackend (Linux).

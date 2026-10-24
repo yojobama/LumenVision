@@ -19,6 +19,10 @@ public:
 	// Not thread-safe: call only from the capture thread.
 	bool Decode(const uint8_t* jpegData, size_t jpegSize, int width, int height, bool asGray, cv::Mat& dst);
 
+	// where the last successful Decode() spent its time: in the decoder block, then copying/converting the frame out on the CPU
+	double LastHwUs() const { return m_LastHwUs; }
+	double LastCopyOutUs() const { return m_LastCopyOutUs; }
+
 private:
 	bool EnsureInitialized();
 	// (Re)creates m_BufGroup, sized for at least bufSize: it backs the OUTPUT frame buffer this class pre-allocates for MPP
@@ -32,6 +36,8 @@ private:
 	void* m_Api = nullptr;   // MppApi*
 	bool m_InitAttempted = false;
 	bool m_InitOk = false;
+	double m_LastHwUs = 0;
+	double m_LastCopyOutUs = 0;
 
 	void* m_BufGroup = nullptr; // MppBufferGroup, owns the OUTPUT frame buffer MPP decodes into
 	size_t m_BufGroupSize = 0;

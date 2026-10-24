@@ -75,7 +75,7 @@ KERNEL=="mpp_service", GROUP="video", MODE="0660"
 SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
 KERNEL=="rga", GROUP="video", MODE="0660"
 # RK3588 GPU (fb000000.gpu), memory controller (dmc) and NPU (fdab0000.npu): hold the top clock instead of the on-demand governors
-SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu|dmc|fdab0000.npu", ATTR{governor}="performance"
+SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu*|dmc|fdab0000.npu", ATTR{governor}="performance"
 EOF
 
 echo "==> Writing DEBIAN control files"

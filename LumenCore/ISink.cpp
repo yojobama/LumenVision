@@ -69,6 +69,7 @@ void ISink::ProcessingThreadLoop()
 {
     // heavy and latency-sensitive: keep off the efficiency cores on big.LITTLE (see CpuAffinity)
     CpuAffinity::PinCurrentThreadToPerformanceCores();
+    CpuAffinity::NameCurrentThread("snk", m_ID);
 
     // safety-net poll interval: if a bound source stalls or a notification is missed,
     // the loop still re-checks frame counts periodically instead of hanging forever

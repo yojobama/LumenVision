@@ -248,10 +248,12 @@ void RecordSink::CloseCurrentSegment()
 
 void RecordSink::EncodeAndWrite(const cv::Mat& bgrFrame, const SourceResult& result)
 {
+	StageLap lap(SinkProfile());
 	bool segmentExpired = m_FormatContext &&
 		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - m_SegmentStartedAt).count() >= m_Config.segmentSeconds;
 	if (!m_FormatContext || m_EncoderWidth != bgrFrame.cols || m_EncoderHeight != bgrFrame.rows || segmentExpired) {
 		StartNewSegment(bgrFrame.cols, bgrFrame.rows);
+		lap.Mark("segment-start");
 	}
 	if (!m_FormatContext || !m_CodecContext) return;
 
@@ -259,15 +261,18 @@ void RecordSink::EncodeAndWrite(const cv::Mat& bgrFrame, const SourceResult& res
 	int srcStride[1] = { static_cast<int>(bgrFrame.step) };
 	sws_scale(m_SwsContext, srcSlices, srcStride, 0, bgrFrame.rows, m_YuvFrame->data, m_YuvFrame->linesize);
 	m_YuvFrame->pts = m_FrameCounter++;
+	lap.Mark("convert");
 
 	if (avcodec_send_frame(m_CodecContext, m_YuvFrame) < 0) return;
 
 	AVPacket* packet = av_packet_alloc();
 	while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
+		lap.Mark("encode");
 		packet->stream_index = m_VideoStream->index;
 		av_packet_rescale_ts(packet, m_CodecContext->time_base, m_VideoStream->time_base);
 		av_interleaved_write_frame(m_FormatContext, packet);
 		av_packet_unref(packet);
+		lap.Mark("mux");
 	}
 	av_packet_free(&packet);
 
@@ -281,6 +286,7 @@ void RecordSink::EncodeAndWrite(const cv::Mat& bgrFrame, const SourceResult& res
 		// flushed every line so the sidecar can be tailed while recording
 		m_TelemetrySidecar << record.dump() << "\n";
 		m_TelemetrySidecar.flush();
+		lap.Mark("sidecar");
 	}
 }
 

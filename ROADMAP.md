@@ -35,7 +35,7 @@ Two more structural facts worth stating up front, because the plan is ordered ar
   kind. Item 3 ("test all sinks") is therefore not an afternoon of manual poking — it is building
   the harness that makes "do the sinks work?" a question a machine can answer, repeatedly.
 - **RKNN was not implemented when this section was written; `RknnDetectionBackend` now is** (see
-  C1 below for what's still open - native NV12 input, per-core pinning). It is also the single
+  C1 below for what's still open - zero-copy input prepared by RGA, per-core pinning). It is also the single
   largest performance win available (6 TOPS of idle NPU vs. YOLO on the A76 cores), so C1 sits in
   the hardware-offload phase, not the testing one.
 
@@ -168,7 +168,7 @@ Why this matters concretely, in code that exists today:
 | `ApriltagDetector::Process` does `cvtColor(BGR2GRAY)` every frame | capture NV12/YUYV and the Y plane *is* the greyscale image — zero work, zero copy |
 | `ApriltagDetector` and `ObjectDetectionSink` both `clone()` the frame and draw overlays unconditionally | annotate only when a WebRTC/Record sink is actually bound downstream (C4) |
 | `WebRTCSink` colour-converts to YUV then encodes with `libx264` | hand the NV12 DMA-BUF straight to `h264_rkmpp` (C2) |
-| YOLO preprocessing letterboxes/resizes with `cv::resize` on the CPU | RGA does it in hardware (C3); RKNN also takes NV12 input directly |
+| YOLO preprocessing letterboxes/resizes with `cv::resize` on the CPU | RGA does it in hardware (C3); the RK3588 NPU has no NV12 input (the runtime only knows NCHW/NHWC), so RGA converts and letterboxes straight into an NPU buffer |
 
 Note this is a *return* to something the project deleted (`Frame`/`FramePool`, blocker B10) —
 but with a defined purpose this time: format and ownership, not object pooling.
@@ -242,9 +242,11 @@ for CPU.
 - **Still missing: a documented offline ONNX→RKNN converter script.** `rknn-toolkit2` (x86 host,
   Python) is the only way to produce a `.rknn` file today, and there's no script or doc walking
   through it anywhere in this repo.
-- RKNN takes **NV12 input natively**, but `RknnDetectionBackend` still takes the same BGR input
-  `OnnxDetectionBackend` does — with B2 in place the camera frame could reach the NPU with no CPU
-  colour conversion at all, but that wiring isn't done yet.
+- The RK3588 NPU does **not** take NV12 (`rknn_api.h` only knows NCHW, NHWC and NC1HWC2), and
+  `RknnDetectionBackend` takes the same BGR input `OnnxDetectionBackend` does. With B2 in place the
+  route is NV12 buffer → RGA (colour convert, scale and letterbox in one pass) → a buffer from
+  `rknn_create_mem` → `rknn_set_io_mem`; Rockchip ships a demo of exactly this
+  (`rknn_create_mem_with_rga_demo.cpp`). That wiring isn't done yet.
 - Three NPU cores: currently `RKNN_NPU_CORE_AUTO`; per-core pinning if you end up running two
   detectors is still open.
 - Risk already logged (`IMPLEMENTATION_PLAN.md` risk 2): driver `v0.9.7` vs `librknnrt 2.3.2`.
@@ -304,7 +306,7 @@ Status going in, so the work is honest about what "test" means for each:
 | `CpuApriltagBackend` (libapriltag) | verified on real hardware | golden-corpus regression test (A3) |
 | `VkApriltagBackend` (Vulkan) | verified on real hardware, tag 585 | agree-with-CPU test on the same corpus; plus the no-Vulkan-device fallback path, which is untested |
 | `OnnxDetectionBackend` | implemented, compiles and links; **no verified detection on real hardware** | golden test, then the first real end-to-end run |
-| `RknnDetectionBackend` (RKNN/NPU) | implemented; **no verified detection on real hardware** | golden test, then the first real end-to-end run - same as ONNX; C1's remaining items (NV12 input, core pinning) are separate follow-ups |
+| `RknnDetectionBackend` (RKNN/NPU) | implemented; **no verified detection on real hardware** | golden test, then the first real end-to-end run - same as ONNX; C1's remaining items (RGA-prepared zero-copy input, core pinning) are separate follow-ups |
 | `SgbmStereoBackend` | implemented | synthetic-disparity golden test |
 | `CodecStereoBackend` LAVC | implemented | synthetic-disparity golden test |
 | `CodecStereoBackend` RKMPP_HWENC | built when `rockchip_mpp` is present | **never run on the board** — needs real hardware |

@@ -155,6 +155,7 @@ void ISource::SourceThreadProc()
 {
 	// capture + colour conversion is CPU-heavy and latency-sensitive: keep off the efficiency cores on big.LITTLE (see CpuAffinity)
 	CpuAffinity::PinCurrentThreadToPerformanceCores();
+	CpuAffinity::NameCurrentThread("src", m_ID);
 	OnCaptureThreadStart();
 	while (!m_ShouldTerminate) {
 		CaptureFrame();

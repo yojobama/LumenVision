@@ -7,6 +7,7 @@
 #include <rockchip/mpp_buffer.h>
 #include <rockchip/mpp_meta.h>
 #include <rockchip/rk_vdec_cfg.h>
+#include <chrono>
 #include <cstring>
 
 // Uses MPP's advanced decode interface (decode_put_packet()+decode_get_frame()): JPEG decode does not work through the simple
@@ -18,9 +19,12 @@ namespace {
 
 	// shared by EnsureOutputBufferGroup and EnsureInputBufferGroup: tried in mpp_buffer.h priority order (DMA_HEAP > DRM > ION),
 	// falling back if the preferred allocator is unavailable.
-	MppBufferGroup CreateInternalGroup(const char* tag)
+	MppBufferGroup CreateInternalGroup(const char* tag, bool cpuReads)
 	{
-		static const MppBufferType kTypesInPriorityOrder[] = {
+		// cacheable first for a buffer the CPU reads back (a plain DMA_HEAP group is the write-combined "system-uncached" heap,
+		// so reading it is slow); callers wrap CPU reads in mpp_buffer_sync_ro_begin/end
+		const MppBufferType kTypesInPriorityOrder[] = {
+			static_cast<MppBufferType>(MPP_BUFFER_TYPE_DMA_HEAP | (cpuReads ? MPP_BUFFER_FLAGS_CACHABLE : 0)),
 			MPP_BUFFER_TYPE_DMA_HEAP, MPP_BUFFER_TYPE_DRM, MPP_BUFFER_TYPE_ION
 		};
 		MppBufferGroup group = nullptr;
@@ -48,7 +52,7 @@ bool MppJpegDecoder::EnsureInputBufferGroup(size_t jpegSize)
 		m_InputBufGroup = nullptr;
 		m_InputBufGroupSize = 0;
 	}
-	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg_in");
+	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg_in", false);
 	if (!group) return false;
 	m_InputBufGroup = group;
 	m_InputBufGroupSize = jpegSize;
@@ -63,7 +67,7 @@ bool MppJpegDecoder::EnsureOutputBufferGroup(size_t bufSize)
 		m_BufGroup = nullptr;
 		m_BufGroupSize = 0;
 	}
-	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg_out");
+	MppBufferGroup group = CreateInternalGroup("lumen_mpp_jpeg_out", true);
 	if (!group) return false;
 	m_BufGroup = group;
 	m_BufGroupSize = bufSize;
@@ -103,6 +107,11 @@ bool MppJpegDecoder::EnsureInitialized()
 	}
 	mpp_dec_cfg_deinit(cfg);
 
+	// 4:2:2 JPEGs are converted to NV12 by the decoder block instead of coming out as NV16 (which Decode() would reject and
+	// send to the software decoder); a failure here only means that fallback stays in place
+	MppFrameFormat outputFormat = MPP_FMT_YUV420SP;
+	api->control(ctx, MPP_DEC_SET_OUTPUT_FORMAT, &outputFormat);
+
 	m_Ctx = ctx;
 	m_Api = api;
 	m_InitOk = true;
@@ -111,8 +120,10 @@ bool MppJpegDecoder::EnsureInitialized()
 
 bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width, int height, bool asGray, cv::Mat& dst)
 {
+	m_LastHwUs = m_LastCopyOutUs = 0;
 	if (width <= 0 || height <= 0 || !jpegData || jpegSize == 0) return false;
 	if (!EnsureInitialized()) return false;
+	const auto start = std::chrono::steady_clock::now();
 
 	MppApi* api = static_cast<MppApi*>(m_Api);
 	MppCtx ctx = static_cast<MppCtx>(m_Ctx);
@@ -171,6 +182,10 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 
 							// a size mismatch falls back rather than reading a mis-sized view (as the software MJPEG path does)
 							if (base && frameWidth >= width && frameHeight >= height && frameHorStride >= width) {
+								const auto hwDone = std::chrono::steady_clock::now();
+								m_LastHwUs = std::chrono::duration<double, std::micro>(hwDone - start).count();
+								// the CPU reads the whole frame below: invalidate its cache lines first (the buffer is cacheable)
+								mpp_buffer_sync_ro_begin(frameBuffer);
 								// `dst` is the caller's FramePool-acquired buffer, sized/typed for asGray; this class never touches FramePool.
 								if (asGray) {
 									// the Y plane is the greyscale image (no conversion)
@@ -182,6 +197,8 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 									cv::Mat nv12View(height * 3 / 2, width, CV_8UC1, const_cast<uint8_t*>(base), static_cast<size_t>(frameHorStride));
 									cv::cvtColor(nv12View, dst, cv::COLOR_YUV2BGR_NV12);
 								}
+								mpp_buffer_sync_ro_end(frameBuffer);
+								m_LastCopyOutUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - hwDone).count();
 								ok = true;
 							}
 						}

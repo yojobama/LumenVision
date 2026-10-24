@@ -29,12 +29,10 @@ void SystemMonitor::StopMonitoring()
 
 void SystemMonitor::m_MonitorThreadLoop()
 {
+    // CPU usage is the busy share between two /proc/stat samples one interval apart
+    CPU_STATS previousCpu = m_ReadCPUData();
     while (m_ThreadWantedAlive)
     {
-        {
-            std::lock_guard<std::mutex> guard(m_CPUUsageMutex);
-            m_cpuUsage = m_GetCPUUsage(m_ReadCPUData(), m_ReadCPUData());
-        }
         {
             std::lock_guard<std::mutex> guard(m_CPUTemperatureMutex);
             m_cpu_Temperature = ReadCpuTemperatureMilliC("/sys/class/thermal");
@@ -48,6 +46,12 @@ void SystemMonitor::m_MonitorThreadLoop()
             m_ramUsage = m_ReadMemoryData().get_memory_usage();
         }
 		std::this_thread::sleep_for(std::chrono::milliseconds(m_TimeoutMilliseconds));
+        {
+            const CPU_STATS currentCpu = m_ReadCPUData();
+            std::lock_guard<std::mutex> guard(m_CPUUsageMutex);
+            m_cpuUsage = m_GetCPUUsage(previousCpu, currentCpu);
+            previousCpu = currentCpu;
+        }
     }
 }
 

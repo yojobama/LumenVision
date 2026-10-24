@@ -54,6 +54,14 @@ private:
 	std::string m_DevicePath;
 	bool m_Streaming = false;
 	std::vector<MappedBuffer> m_Buffers;
+	// the negotiated format, read once per streaming session (it cannot change while streaming) instead of with VIDIOC_G_FMT every frame
+	struct StreamFormat {
+		int width = 0;
+		int height = 0;
+		uint32_t fourcc = 0;
+		size_t bytesPerLine = 0;
+	};
+	std::optional<StreamFormat> m_StreamFormat;
 	// the last mode SetMode() applied; GetCurrentMode()'s isNative flag compares the device's read-back settings against it
 	std::optional<CameraMode> m_RequestedMode;
 	// converts a V4L2 buf.timestamp (CLOCK_MONOTONIC) to the SourceResult::NowUs() wall-clock epoch; computed once, lazily, on the first frame

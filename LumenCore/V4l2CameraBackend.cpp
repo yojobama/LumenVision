@@ -233,6 +233,7 @@ void V4l2CameraBackend::StopStreaming()
 	}
 	m_Buffers.clear();
 	m_Streaming = false;
+	m_StreamFormat.reset();
 
 	// REQBUFS(count=0) releases the kernel's buffer allocation: VIDIOC_S_FMT fails with EBUSY while any buffers are
 	// allocated, even with streaming off. Only meaningful if m_Fd is still open (also called from Close()).
@@ -294,10 +295,14 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		result.captureTimeUs = SourceResult::NowUs();
 	}
 
-	v4l2_format currentFmt{};
-	currentFmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-	XIoctl(m_Fd, VIDIOC_G_FMT, &currentFmt);
-	uint32_t fourcc = currentFmt.fmt.pix.pixelformat;
+	if (!m_StreamFormat.has_value()) {
+		v4l2_format currentFmt{};
+		currentFmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+		XIoctl(m_Fd, VIDIOC_G_FMT, &currentFmt);
+		m_StreamFormat = StreamFormat{ static_cast<int>(currentFmt.fmt.pix.width), static_cast<int>(currentFmt.fmt.pix.height),
+			currentFmt.fmt.pix.pixelformat, currentFmt.fmt.pix.bytesperline };
+	}
+	const uint32_t fourcc = m_StreamFormat->fourcc;
 
 	const uint8_t* data = static_cast<const uint8_t*>(m_Buffers[buf.index].start);
 	// bytesused is mandatory per spec, but a 0 from a sloppy driver falls back to the whole mapped buffer
@@ -305,10 +310,10 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 
 	// Every branch writes into a FramePool buffer sized to the negotiated mode (CV_8UC3 BGR, CV_8UC1 for mono), acquired before
 	// decoding so Mat::create() writes in place; a frame of a different size gets a one-off unpooled allocation.
-	int width = currentFmt.fmt.pix.width, height = currentFmt.fmt.pix.height;
+	int width = m_StreamFormat->width, height = m_StreamFormat->height;
 	// bytesperline can exceed width * bytes-per-pixel (row padding, common on MIPI/ISP drivers);
 	// 0 means "not reported", i.e. tightly packed
-	size_t stride = currentFmt.fmt.pix.bytesperline;
+	size_t stride = m_StreamFormat->bytesPerLine;
 	auto rawFits = [&](size_t minStride) {
 		if (stride == 0) stride = minStride;
 		return stride >= minStride && height > 0 && bytesUsed >= stride * (height - 1) + minStride;
@@ -342,6 +347,8 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		// (see MppJpegDecoder's contract)
 		if (m_MppJpegDecoder.Decode(data, bytesUsed, width, height, preferGray, result.frame)) {
 			result.success = true;
+			result.hwDecodeUs = m_MppJpegDecoder.LastHwUs();
+			result.copyOutUs = m_MppJpegDecoder.LastCopyOutUs();
 		} else
 #endif
 		{
@@ -375,8 +382,15 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		size_t rowStride = stride == 0 ? static_cast<size_t>(width) : stride;
 		if (height % 2 == 0 && rowStride >= static_cast<size_t>(width) && bytesUsed >= rowStride * (height * 3 / 2 - 1) + width) {
 			cv::Mat nv12(height * 3 / 2, width, CV_8UC1, const_cast<uint8_t*>(data), rowStride);
-			result.frame = FramePool::Instance().Acquire(height, width, CV_8UC3, result.poolOwner);
-			cv::cvtColor(nv12, result.frame, cv::COLOR_YUV2BGR_NV12);
+			if (preferGray) {
+				// the Y plane is the greyscale image
+				result.frame = FramePool::Instance().Acquire(height, width, CV_8UC1, result.poolOwner);
+				nv12.rowRange(0, height).copyTo(result.frame);
+				result.format = FrameFormat::GRAY8;
+			} else {
+				result.frame = FramePool::Instance().Acquire(height, width, CV_8UC3, result.poolOwner);
+				cv::cvtColor(nv12, result.frame, cv::COLOR_YUV2BGR_NV12);
+			}
 			result.success = true;
 		}
 	} else if (fourcc == V4L2_PIX_FMT_GREY) {
