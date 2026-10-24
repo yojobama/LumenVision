@@ -1,6 +1,7 @@
 #include "CameraSource.h"
 #include "Frame.h"
 #include "FramePool.h"
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include "OpenCvCameraBackend.h"
@@ -180,20 +181,23 @@ void CameraFrameSource::CaptureFrame()
         // Without this the capture thread would spin on a core and write an error line per iteration. Say it once, then retry the
         // device every two seconds so a camera that is plugged back in (or finally appears) starts producing frames again.
         if (!m_ClosedLogged) {
-            m_Logger->EnterLog(LogLevel::Error, "camera is closed, not capturing a frame (" + m_DevicePath + "); retrying every 2 s");
+            m_Logger->EnterLog(LogLevel::Error, "camera is closed, not capturing a frame (" + m_DevicePath + "); retrying every few seconds");
             m_ClosedLogged = true;
         }
-        for (int i = 0; i < 20 && !ShouldTerminate(); i++) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        for (int i = 0; i < m_RetrySeconds * 10 && !ShouldTerminate(); i++) std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (ShouldTerminate()) return;
         if (m_Backend->Open(m_DevicePath)) {
             m_Logger->EnterLog("camera reopened: " + m_DevicePath);
             m_ClosedLogged = false;
+            m_RetrySeconds = 2;
             std::optional<CameraMode> mode;
             {
                 std::lock_guard<std::mutex> lock(m_ModeMutex);
                 mode = m_LastMode;
             }
             if (mode.has_value()) m_Backend->SetMode(*mode);
+        } else {
+            m_RetrySeconds = std::min(10, m_RetrySeconds * 2);
         }
     }
 }

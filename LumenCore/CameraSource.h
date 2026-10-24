@@ -49,6 +49,7 @@ private:
 	// The camera could not be opened (or went away): the capture thread then retries every couple of seconds instead of spinning, and
 	// puts the last mode that was applied back once the device is open again.
 	bool m_ClosedLogged = false;
+	int m_RetrySeconds = 2; // grows to 10 while the device stays away
 	std::mutex m_ModeMutex;
 	std::optional<CameraMode> m_LastMode;
 };
