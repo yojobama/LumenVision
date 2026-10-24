@@ -99,6 +99,25 @@ private:
 
 	std::shared_ptr<Logger> m_Logger;
 	apriltag_detection_info_t m_DetectionInfo;
+
+	// A tag's pose in the camera frame: row-major 3x3 rotation and translation in metres, plus the object-space fit error.
+	struct TagPoseData {
+		double R[9] = {};
+		double t[3] = {};
+		double error = 0.0;
+	};
+	// Both solutions of the planar-pose ambiguity: `best` has the lower error; `alternate` only exists when a second minimum was found.
+	struct SolvedTagPose {
+		TagPoseData best;
+		TagPoseData alternate;
+		bool hasAlternate = false;
+	};
+	// Solves a tag's pose from its (undistorted) corners: vkapriltag's allocation-free PoseEstimator when that is built in,
+	// libapriltag's estimate_tag_pose_orthogonal_iteration otherwise. Caller must hold m_CalibrationMutex and have calibration.
+	bool SolveTagPose(const apriltag_detection_t& poseDetection, SolvedTagPose& out);
+	// apriltag_vulkan::PoseEstimator (type-erased to keep vkapriltag's headers out of this one), rebuilt when the intrinsics or tag size change
+	std::shared_ptr<void> m_PoseEstimator;
+	double m_PoseEstimatorKey[5] = {};
 	// the CameraCalibrationResult as constructed, kept verbatim (rms/imageWidth/imageHeight are lost in
 	// m_CameraMatrix/m_DistCoeffs) so GetCalibration() can return it unchanged
 	CameraCalibrationResult m_OriginalCalibration;

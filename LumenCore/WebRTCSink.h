@@ -47,6 +47,8 @@ public:
 	void AddIceCandidate(const std::string& candidate, const std::string& mid, const std::string& peerId = "");
 	// whether any viewer is connected
 	bool IsConnected() const;
+	// true while a viewer's track is open: with nobody watching, bound sources decode in grey and detectors skip their overlay
+	bool IsConsumingFrames() const override;
 	// {"connected": any viewer connected, "peers": viewer count, "iceState", "gatheringComplete"} (the last two of the newest viewer)
 	std::string GetConnectionStatus() const;
 
@@ -71,7 +73,7 @@ private:
 	void PruneClosedPeers(); // caller must already hold m_ConnectionMutex
 
 	bool EnsureEncoderInitialized(int width, int height);
-	void EncodeAndSend(const cv::Mat& bgrFrame);
+	void EncodeAndSend(const cv::Mat& bgrFrame, uint64_t captureTimeUs);
 	void ShutdownEncoder();
 
 	std::shared_ptr<Logger> m_Logger;
@@ -82,6 +84,10 @@ private:
 	int m_PendingScaleDivisor = 1;
 	bool m_SettingsChanged = false;
 	int m_ScaleDivisor = 1;
+
+	// Set when a viewer joins or asks for a new picture (PLI/FIR): the next frame is encoded as an IDR frame, which the viewer can start from.
+	// Shared with the viewers' RTCP handlers, which may run after Process() has moved on.
+	std::shared_ptr<std::atomic<bool>> m_KeyframeRequested = std::make_shared<std::atomic<bool>>(true);
 
 	// Guards m_Peers: signalling threads add and replace viewers while Process()'s thread reads their tracks in EncodeAndSend().
 	mutable std::mutex m_ConnectionMutex;
@@ -98,6 +104,10 @@ private:
 	int m_EncoderWidth = 0;
 	int m_EncoderHeight = 0;
 	int64_t m_FrameCounter = 0;
+	// RTP timestamps follow the camera's capture times (relative to the first frame sent), so they stay monotonic when the encoder is
+	// rebuilt and track the real frame spacing instead of the nominal frame rate
+	uint64_t m_FirstCaptureUs = 0;
+	double m_LastSentSeconds = 0.0;
 
 #ifdef LUMEN_WITH_RGA
 	RgaColorConverter m_RgaConverter;

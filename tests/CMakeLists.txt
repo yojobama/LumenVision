@@ -58,6 +58,10 @@ if(LUMEN_WITH_VULKAN_APRILTAG)
     target_link_libraries(LumenCoreTests PRIVATE apriltag vkapriltag::vkapriltag Vulkan::Vulkan)
 endif()
 
+if(LUMEN_WITH_RECORD)
+    target_sources(LumenCoreTests PRIVATE test_record_sink.cpp)
+endif()
+
 if(LUMEN_WITH_NT4)
     # NetworkTablesSink.h is guarded by LUMEN_WITH_NT4 and uses ntcore types directly.
     find_package(Ntcore REQUIRED)

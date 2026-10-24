@@ -1,5 +1,7 @@
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
+#include "CpuAffinity.h"
+#include <cstdlib>
 #include <chrono>
 #include <cmath>
 #include <map>
@@ -148,6 +150,23 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	// 4 threads by default rather than hardware_concurrency() (GPU-bound with a small CPU tail); QuadDecode's pool is
 	// fixed at construction, so changing this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
 	config.cpu_threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
+
+	// Experiment knobs for the blob filters (default: the library's own values); the live quad fit costs more than the library's benchmark,
+	// which clutter in the scene probably explains. Not plumbed through ApriltagTuning unless a sweep on real scenes shows a win.
+	auto envUint = [](const char* name, uint32_t fallback) {
+		const char* text = std::getenv(name);
+		if (!text || !*text) return fallback;
+		char* end = nullptr;
+		const unsigned long value = std::strtoul(text, &end, 10);
+		return end && *end == '\0' ? static_cast<uint32_t>(value) : fallback;
+	};
+	config.min_white_black_diff = envUint("LUMEN_VK_MIN_WHITE_BLACK_DIFF", config.min_white_black_diff);
+	config.min_cluster_pixels = envUint("LUMEN_VK_MIN_CLUSTER_PIXELS", config.min_cluster_pixels);
+	config.min_tag_pixels = envUint("LUMEN_VK_MIN_TAG_PIXELS", config.min_tag_pixels);
+
+	// the worker pools below start their threads here, so they take this thread's affinity: pin them to the performance cores
+	// whichever thread (the sink's, or an API call's) is building the backend
+	CpuAffinity::ScopedPerformanceAffinity performanceCores;
 
 	m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, *m_Lane, config);
 	m_QuadDecode = std::make_unique<QuadDecode>(config);

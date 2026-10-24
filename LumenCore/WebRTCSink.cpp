@@ -2,6 +2,7 @@
 #include "WebRTCSink.h"
 #include <nlohmann/json.hpp>
 #include <algorithm>
+#include <atomic>
 #include <stdexcept>
 
 using namespace rtc;
@@ -66,6 +67,9 @@ std::shared_ptr<WebRTCSink::Peer> WebRTCSink::CreatePeer()
 	peer->srReporter = std::make_shared<RtcpSrReporter>(rtpConfig);
 	packetizer->addToChain(peer->srReporter);
 	packetizer->addToChain(std::make_shared<RtcpNackResponder>());
+	// a receiver that lost a picture asks for a new one with PLI/FIR
+	std::shared_ptr<std::atomic<bool>> keyframeRequested = m_KeyframeRequested;
+	packetizer->addToChain(std::make_shared<PliHandler>([keyframeRequested] { keyframeRequested->store(true); }));
 	peer->track->setMediaHandler(packetizer);
 	return peer;
 }
@@ -167,6 +171,15 @@ bool WebRTCSink::IsConnected() const
 	return false;
 }
 
+bool WebRTCSink::IsConsumingFrames() const
+{
+	std::lock_guard<std::mutex> lock(m_ConnectionMutex);
+	for (const auto& entry : m_Peers) {
+		if (entry.second->track && entry.second->track->isOpen()) return true;
+	}
+	return false;
+}
+
 std::string WebRTCSink::GetConnectionStatus() const
 {
 	bool anyConnected = false;
@@ -227,6 +240,8 @@ bool WebRTCSink::EnsureEncoderInitialized(int width, int height)
 	m_CodecContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
 	av_opt_set(m_CodecContext->priv_data, "preset", "ultrafast", 0);
 	av_opt_set(m_CodecContext->priv_data, "tune", "zerolatency", 0);
+	// libx264 turns a requested I frame into an IDR (one a viewer can start decoding from) only with this
+	av_opt_set(m_CodecContext->priv_data, "forced-idr", "1", 0);
 
 	if (avcodec_open2(m_CodecContext, codec, nullptr) < 0) {
 		if (m_Logger) m_Logger->EnterLog(::LogLevel::Error, "WebRTCSink: avcodec_open2 failed for " + m_Config.encoderName);
@@ -258,7 +273,7 @@ void WebRTCSink::ShutdownEncoder()
 	m_EncoderWidth = m_EncoderHeight = 0;
 }
 
-void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
+void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame, uint64_t captureTimeUs)
 {
 	{
 		std::lock_guard<std::mutex> lock(m_SettingsMutex);
@@ -270,12 +285,6 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 			ShutdownEncoder(); // rebuilt below with the new bitrate and frame rate
 		}
 	}
-	StageLap lap(SinkProfile());
-	cv::Mat scaled;
-	if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
-	const cv::Mat& bgrFrame = m_ScaleDivisor > 1 ? scaled : sourceFrame;
-	if (m_ScaleDivisor > 1) lap.Mark("scale");
-
 	std::vector<std::shared_ptr<Peer>> openPeers;
 	{
 		std::lock_guard<std::mutex> lock(m_ConnectionMutex);
@@ -285,12 +294,17 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 		}
 	}
 	if (openPeers.empty()) return;
-	// a viewer that has just opened its track can only start decoding at a keyframe, so the encoder restarts (its first frame is one)
-	bool newViewer = false;
+
+	StageLap lap(SinkProfile());
+	cv::Mat scaled;
+	if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
+	const cv::Mat& bgrFrame = m_ScaleDivisor > 1 ? scaled : sourceFrame;
+	if (m_ScaleDivisor > 1) lap.Mark("scale");
+	// a viewer that has just opened its track can only start decoding at a keyframe: the next frame is encoded as one, which the
+	// viewers already watching take in their stride (a restart of the encoder would reset the frame counter under them)
 	for (const auto& peer : openPeers) {
-		if (!peer->streaming) { peer->streaming = true; newViewer = true; }
+		if (!peer->streaming) { peer->streaming = true; m_KeyframeRequested->store(true); }
 	}
-	if (newViewer) ShutdownEncoder();
 	if (!EnsureEncoderInitialized(bgrFrame.cols, bgrFrame.rows)) return;
 
 	// RGA first (hardware); sws_scale is the fallback when RGA is not compiled in or the hardware call fails at
@@ -309,6 +323,13 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 		sws_scale(m_SwsContext, srcSlices, srcStride, 0, bgrFrame.rows, m_YuvFrame->data, m_YuvFrame->linesize);
 	}
 	m_YuvFrame->pts = m_FrameCounter++;
+	m_YuvFrame->pict_type = m_KeyframeRequested->exchange(false) ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
+	if (m_FirstCaptureUs == 0 && captureTimeUs != 0) m_FirstCaptureUs = captureTimeUs;
+	if (captureTimeUs >= m_FirstCaptureUs && m_FirstCaptureUs != 0) {
+		m_LastSentSeconds = static_cast<double>(captureTimeUs - m_FirstCaptureUs) / 1e6;
+	} else {
+		m_LastSentSeconds += 1.0 / m_Config.fps; // no capture time on this frame: advance at the nominal rate
+	}
 	lap.Mark("convert");
 
 	if (avcodec_send_frame(m_CodecContext, m_YuvFrame) < 0) return;
@@ -317,7 +338,7 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 	while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
 		lap.Mark("encode");
 		binary sample(reinterpret_cast<byte*>(packet->data), reinterpret_cast<byte*>(packet->data) + packet->size);
-		double elapsedSeconds = static_cast<double>(m_FrameCounter) / m_Config.fps;
+		const double elapsedSeconds = m_LastSentSeconds;
 		for (const auto& peer : openPeers) {
 			try {
 				peer->track->sendFrame(sample, std::chrono::duration<double>(elapsedSeconds));
@@ -334,8 +355,9 @@ void WebRTCSink::EncodeAndSend(const cv::Mat& sourceFrame)
 void WebRTCSink::Process(const std::vector<SourceResult>& results)
 {
 	for (const SourceResult& result : results) {
-		if (result.frame.has_value() && !result.frame.value().empty()) {
-			EncodeAndSend(result.frame->AsBgr());
+		// the BGR conversion below is wasted work with nobody watching
+		if (result.frame.has_value() && !result.frame.value().empty() && IsConsumingFrames()) {
+			EncodeAndSend(result.frame->AsBgr(), result.captureTimeUs);
 		}
 	}
 }

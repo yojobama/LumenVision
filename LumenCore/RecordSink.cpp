@@ -200,7 +200,13 @@ void RecordSink::StartNewSegment(int width, int height)
 		return;
 	}
 
-	if (avformat_write_header(m_FormatContext, nullptr) < 0) {
+	// Fragmented MP4: a header up front and a self-contained fragment at every keyframe, so a power cut (the end of every match) loses
+	// at most one GOP instead of a segment whose index was never written.
+	AVDictionary* muxerOptions = nullptr;
+	av_dict_set(&muxerOptions, "movflags", "frag_keyframe+empty_moov+default_base_moof", 0);
+	const int headerResult = avformat_write_header(m_FormatContext, &muxerOptions);
+	av_dict_free(&muxerOptions);
+	if (headerResult < 0) {
 		if (m_Logger) m_Logger->EnterLog(LogLevel::Error, "RecordSink: avformat_write_header failed for " + videoPath.string());
 		avio_closep(&m_FormatContext->pb);
 		avformat_free_context(m_FormatContext);
@@ -212,6 +218,7 @@ void RecordSink::StartNewSegment(int width, int height)
 	m_TelemetrySidecar.open(sidecarPath, std::ios::out | std::ios::trunc);
 	m_FrameCounter = 0;
 	m_SegmentStartedAt = std::chrono::steady_clock::now();
+	m_SidecarFlushedAt = m_SegmentStartedAt;
 	if (m_Logger) m_Logger->EnterLog("RecordSink: started segment " + videoPath.string());
 
 	EnforceRetention();
@@ -283,9 +290,13 @@ void RecordSink::EncodeAndWrite(const cv::Mat& bgrFrame, const SourceResult& res
 			{"producedTimeUs", result.producedTimeUs},
 			{"json", result.json.has_value() ? result.json.value() : nlohmann::json(nullptr)},
 		};
-		// flushed every line so the sidecar can be tailed while recording
+		// flushed about once a second (and on close) so the sidecar can still be tailed while recording without a write per frame
 		m_TelemetrySidecar << record.dump() << "\n";
-		m_TelemetrySidecar.flush();
+		const auto now = std::chrono::steady_clock::now();
+		if (now - m_SidecarFlushedAt >= std::chrono::seconds(1)) {
+			m_TelemetrySidecar.flush();
+			m_SidecarFlushedAt = now;
+		}
 		lap.Mark("sidecar");
 	}
 }

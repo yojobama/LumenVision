@@ -17,6 +17,10 @@ public:
 	// corrupted by SWIG's null-terminated std::string typemap. Empty until the first frame has been processed.
 	std::string GetLatestJpegBase64() const;
 
+	// A preview is only wanted while something asks for its frames (the server's stream and frame endpoints poll about every 100 ms):
+	// encoding stops about a second after the last request, and the camera and detectors can drop back to their cheap paths.
+	bool IsConsumingFrames() const override;
+
 	// Takes effect on the next frame. scaleDivisor N shrinks each frame to 1/N of its width and height before encoding (1 = full size).
 	void SetSettings(int jpegQuality, int scaleDivisor);
 
@@ -25,6 +29,10 @@ private:
 
 	std::atomic<int> m_JpegQuality;
 	std::atomic<int> m_ScaleDivisor{ 1 };
+	// when GetLatestJpegBase64 last ran and when Process last encoded (SourceResult::NowUs() epoch); the first is primed at construction so a
+	// new sink encodes until its first viewer arrives
+	mutable std::atomic<uint64_t> m_LastRequestUs{ 0 };
+	std::atomic<uint64_t> m_LastEncodeUs{ 0 };
 	// guards m_LatestJpegBase64: written by this sink's processing thread (Process()), read by the HTTP request thread
 	// (via Manager::GetMjpegFrameBase64).
 	mutable std::mutex m_Mutex;

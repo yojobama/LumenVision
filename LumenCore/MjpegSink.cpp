@@ -44,6 +44,18 @@ MjpegSink::MjpegSink(std::shared_ptr<Logger> logger, std::string id, int jpegQua
 	: ISink(logger, MAX_BOUND_SOURCES, false /* requireJson */, true /* requireFrame */, id)
 	, m_JpegQuality(jpegQuality)
 {
+	m_LastRequestUs = SourceResult::NowUs();
+}
+
+namespace {
+	// how long after the last poll a preview still counts as watched, and the closest two encodes may be (the server polls at ~10 fps)
+	constexpr uint64_t kWatchedWindowUs = 1500000;
+	constexpr uint64_t kMinEncodeIntervalUs = 80000;
+}
+
+bool MjpegSink::IsConsumingFrames() const
+{
+	return SourceResult::NowUs() - m_LastRequestUs.load() < kWatchedWindowUs;
 }
 
 void MjpegSink::SetSettings(int jpegQuality, int scaleDivisor)
@@ -54,6 +66,7 @@ void MjpegSink::SetSettings(int jpegQuality, int scaleDivisor)
 
 std::string MjpegSink::GetLatestJpegBase64() const
 {
+	m_LastRequestUs = SourceResult::NowUs();
 	std::lock_guard<std::mutex> lock(m_Mutex);
 	return m_LatestJpegBase64;
 }
@@ -62,6 +75,10 @@ void MjpegSink::Process(const std::vector<SourceResult>& results)
 {
 	for (const SourceResult& result : results) {
 		if (!result.frame.has_value() || result.frame->empty()) continue;
+		// nobody polling, or polled too recently to need another encode: skip the colour conversion and the JPEG too
+		const uint64_t nowUs = SourceResult::NowUs();
+		if (nowUs - m_LastRequestUs.load() >= kWatchedWindowUs || nowUs - m_LastEncodeUs.load() < kMinEncodeIntervalUs) continue;
+		m_LastEncodeUs = nowUs;
 
 		StageLap lap(SinkProfile());
 		std::vector<uint8_t> encoded;

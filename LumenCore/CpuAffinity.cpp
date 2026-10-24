@@ -78,6 +78,26 @@ void PinCurrentThreadToPerformanceCores()
 #endif
 }
 
+ScopedPerformanceAffinity::ScopedPerformanceAffinity()
+{
+#ifdef __linux__
+	const std::vector<int>& cores = GetPerformanceCoreIds();
+	if (cores.empty()) return;
+	static_assert(sizeof(cpu_set_t) <= sizeof(m_Saved), "saved affinity mask too small");
+	cpu_set_t* saved = reinterpret_cast<cpu_set_t*>(m_Saved);
+	if (pthread_getaffinity_np(pthread_self(), sizeof(cpu_set_t), saved) != 0) return;
+	m_Changed = true;
+	PinCurrentThreadToPerformanceCores();
+#endif
+}
+
+ScopedPerformanceAffinity::~ScopedPerformanceAffinity()
+{
+#ifdef __linux__
+	if (m_Changed) pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), reinterpret_cast<const cpu_set_t*>(m_Saved));
+#endif
+}
+
 void NameCurrentThread(const std::string& prefix, const std::string& id)
 {
 #ifdef __linux__

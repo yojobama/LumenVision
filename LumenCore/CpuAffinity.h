@@ -17,6 +17,22 @@ namespace CpuAffinity
 	// Names the calling thread "<prefix>-<id>" (cut to the kernel's 15 characters) so top, htop and perf show which node it serves.
 	void NameCurrentThread(const std::string& prefix, const std::string& id);
 
+	// For the duration of its life the calling thread runs on the performance cores (restored afterwards). Wrap the construction of
+	// anything that starts worker threads of its own, because those inherit the creating thread's affinity: a backend built from
+	// an API thread would otherwise leave its pool wherever that thread happened to be.
+	class ScopedPerformanceAffinity
+	{
+	public:
+		ScopedPerformanceAffinity();
+		~ScopedPerformanceAffinity();
+		ScopedPerformanceAffinity(const ScopedPerformanceAffinity&) = delete;
+		ScopedPerformanceAffinity& operator=(const ScopedPerformanceAffinity&) = delete;
+
+	private:
+		bool m_Changed = false;
+		alignas(8) unsigned char m_Saved[128] = {}; // the previous cpu_set_t (1024 bits)
+	};
+
 	// Starts OpenCV's worker pool from a thread pinned to the performance cores and sizes it to them, so the pool does not
 	// inherit whichever thread (possibly a .NET one) first made a parallel call. Call once at startup.
 	void InitialiseOpenCvThreads();

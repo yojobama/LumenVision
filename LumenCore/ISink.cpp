@@ -132,7 +132,7 @@ bool ISink::BindSource(std::shared_ptr<ISource> p_Source) {
         // GetToggleStatus() is only called once the alive flag confirms `this` still exists.
         p_Source->RegisterFrameConsumer(m_ID, m_RequireFrame, m_RequireColor, [this, aliveFlag] {
             auto alive = aliveFlag.lock();
-            return alive && *alive && this->GetToggleStatus();
+            return alive && *alive && this->GetToggleStatus() && this->IsConsumingFrames();
         });
         return true;
     }

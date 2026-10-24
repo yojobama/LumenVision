@@ -28,6 +28,10 @@ public:
 	bool IsBoundTo(const std::string& sourceID) const;
     void Toggle(bool threadWantedAlive);
 	bool GetToggleStatus();
+	// Whether anything is receiving this sink's output right now. A toggled-on preview sink with no viewer returns false, which lets
+	// the camera decode in grey and detectors skip drawing (see ISource::HasActiveFrameConsumer). Called from the source's thread
+	// for every frame, so it must be cheap.
+	virtual bool IsConsumingFrames() const { return true; }
 
 protected:
     // this node's stage timings (shared with its ISource half when it has one); see StageProfile.h

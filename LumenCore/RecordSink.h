@@ -78,6 +78,7 @@ private:
 
 	std::ofstream m_TelemetrySidecar;
 	std::chrono::steady_clock::time_point m_SegmentStartedAt;
+	std::chrono::steady_clock::time_point m_SidecarFlushedAt; // the sidecar is flushed about once a second, not per line
 	int m_SegmentIndex = 0; // monotonically increasing across this sink's whole lifetime, never reused
 };
 
