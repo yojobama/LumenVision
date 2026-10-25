@@ -48,6 +48,7 @@ jobs:
         run: ctest --test-dir build-san -C RelWithDebInfo -LE hitl --output-on-failure
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: lumencore-asan-arm64
           path: |
