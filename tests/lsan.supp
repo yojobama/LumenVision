@@ -1,0 +1,3 @@
+# LeakSanitizer suppressions for the sanitiser build (ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS=suppressions=tests/lsan.supp).
+# onnxruntime keeps two 96-byte process-lifetime allocations that it never frees.
+leak:libonnxruntime

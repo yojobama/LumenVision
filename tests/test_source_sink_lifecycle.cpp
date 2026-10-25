@@ -12,6 +12,8 @@ namespace {
 class TestSource : public ISource {
 public:
     TestSource(std::shared_ptr<Logger> logger, std::string id) : ISource(logger, id) {}
+    // a node stops its own thread before its members go (ISource's destructor only joins after the derived class has been destroyed)
+    ~TestSource() override { Toggle(false); }
     std::atomic<int> captureCount{0};
 
 protected:

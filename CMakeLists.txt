@@ -17,6 +17,18 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/stage")
 
 include(LumenFeatures)
 
+# Sanitiser build for finding memory, undefined-behaviour and data-race bugs: -DLUMEN_SANITIZE=address,undefined or =thread (ASan and TSan cannot share a
+# build). Applied to every target, fetched dependencies included, so the whole process is instrumented consistently. GCC and Clang only.
+set(LUMEN_SANITIZE "" CACHE STRING "Sanitisers to build with (e.g. address,undefined or thread); empty = off")
+if(LUMEN_SANITIZE)
+    if(MSVC)
+        message(FATAL_ERROR "LUMEN_SANITIZE needs GCC or Clang")
+    endif()
+    add_compile_options(-fsanitize=${LUMEN_SANITIZE} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${LUMEN_SANITIZE})
+    message(STATUS "Sanitisers enabled: ${LUMEN_SANITIZE}")
+endif()
+
 # Static archives (vkapriltag, codec_stereo) are linked into LumenCore's shared library
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 

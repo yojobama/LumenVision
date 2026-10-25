@@ -529,3 +529,13 @@ TEST_CASE("a tag's pose matches libapriltag's own estimate, with and without len
 		backend.ReleaseResult(detections);
 	}
 }
+
+#ifdef LUMEN_WITH_VULKAN_APRILTAG
+TEST_CASE("a Vulkan backend that cannot get its device throws and hands back the detector and family it had built", "[apriltag][vulkan]") {
+	// the constructor builds the libapriltag detector and family before it asks for the GPU; the sanitiser build (LUMEN_SANITIZE) fails this test
+	// with a leak report if they are not released on the way out
+	ApriltagTuning tuning;
+	tuning.gpuDevice = 9999;
+	for (int attempt = 0; attempt < 3; attempt++) REQUIRE_THROWS(VkApriltagBackend(640, 480, tuning));
+}
+#endif

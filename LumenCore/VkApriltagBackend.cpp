@@ -129,55 +129,65 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	// TagDecoder's documented default (false)
 	m_Detector->refine_edges = tuning.refineEdges;
 
-	m_Decimation = ResolveDecimation(tuning.quadDecimate, frameWidth, frameHeight);
+	try {
+		m_Decimation = ResolveDecimation(tuning.quadDecimate, frameWidth, frameHeight);
 
-	SharedContext shared = AcquireContext(tuning.gpuDevice);
-	m_Context = shared.context;
-	m_Lane = m_Context->CreateLane(m_Context->StreamSlot(shared.stream));
-	m_GpuDeviceName = m_Context->caps().name;
-	// importing needs the extension and an alignment our pool blocks satisfy
-	const vk::DeviceCaps& caps = m_Context->caps();
-	m_HostImportAvailable = !FrameImportDisabledByEnv() && caps.has_external_memory_host &&
-		caps.min_host_pointer_alignment > 0 && FramePool::kBlockAlignment % caps.min_host_pointer_alignment == 0;
+		SharedContext shared = AcquireContext(tuning.gpuDevice);
+		m_Context = shared.context;
+		m_Lane = m_Context->CreateLane(m_Context->StreamSlot(shared.stream));
+		m_GpuDeviceName = m_Context->caps().name;
+		// importing needs the extension and an alignment our pool blocks satisfy
+		const vk::DeviceCaps& caps = m_Context->caps();
+		m_HostImportAvailable = !FrameImportDisabledByEnv() && caps.has_external_memory_host &&
+			caps.min_host_pointer_alignment > 0 && FramePool::kBlockAlignment % caps.min_host_pointer_alignment == 0;
 
-	DetectorConfig config;
-	config.width = static_cast<uint32_t>(frameWidth);
-	config.height = static_cast<uint32_t>(frameHeight);
-	config.decimation = m_Decimation;
-	config.tag_width = static_cast<uint32_t>(m_Family->width_at_border);
-	config.reversed_border = m_Family->reversed_border;
-	config.normal_border = !m_Family->reversed_border;
-	// 4 threads by default rather than hardware_concurrency() (GPU-bound with a small CPU tail); QuadDecode's pool is
-	// fixed at construction, so changing this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
-	config.cpu_threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
+		DetectorConfig config;
+		config.width = static_cast<uint32_t>(frameWidth);
+		config.height = static_cast<uint32_t>(frameHeight);
+		config.decimation = m_Decimation;
+		config.tag_width = static_cast<uint32_t>(m_Family->width_at_border);
+		config.reversed_border = m_Family->reversed_border;
+		config.normal_border = !m_Family->reversed_border;
+		// 4 threads by default rather than hardware_concurrency() (GPU-bound with a small CPU tail); QuadDecode's pool is
+		// fixed at construction, so changing this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
+		config.cpu_threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
 
-	// The blob filters of the quad search: the sink's tuning when set, else the LUMEN_VK_MIN_* environment variables (for experiments), else the
-	// library's own values.
-	auto blobFilter = [](int tuned, const char* variable, uint32_t fallback) {
-		if (tuned > 0) return static_cast<uint32_t>(tuned);
-		const char* text = std::getenv(variable);
-		if (!text || !*text) return fallback;
-		char* end = nullptr;
-		const unsigned long value = std::strtoul(text, &end, 10);
-		return end && *end == '\0' ? static_cast<uint32_t>(value) : fallback;
-	};
-	config.min_white_black_diff = blobFilter(tuning.minWhiteBlackDiff, "LUMEN_VK_MIN_WHITE_BLACK_DIFF", config.min_white_black_diff);
-	config.min_cluster_pixels = blobFilter(tuning.minClusterPixels, "LUMEN_VK_MIN_CLUSTER_PIXELS", config.min_cluster_pixels);
-	config.min_tag_pixels = blobFilter(tuning.minTagPixels, "LUMEN_VK_MIN_TAG_PIXELS", config.min_tag_pixels);
+		// The blob filters of the quad search: the sink's tuning when set, else the LUMEN_VK_MIN_* environment variables (for experiments), else the
+		// library's own values.
+		auto blobFilter = [](int tuned, const char* variable, uint32_t fallback) {
+			if (tuned > 0) return static_cast<uint32_t>(tuned);
+			const char* text = std::getenv(variable);
+			if (!text || !*text) return fallback;
+			char* end = nullptr;
+			const unsigned long value = std::strtoul(text, &end, 10);
+			return end && *end == '\0' ? static_cast<uint32_t>(value) : fallback;
+		};
+		config.min_white_black_diff = blobFilter(tuning.minWhiteBlackDiff, "LUMEN_VK_MIN_WHITE_BLACK_DIFF", config.min_white_black_diff);
+		config.min_cluster_pixels = blobFilter(tuning.minClusterPixels, "LUMEN_VK_MIN_CLUSTER_PIXELS", config.min_cluster_pixels);
+		config.min_tag_pixels = blobFilter(tuning.minTagPixels, "LUMEN_VK_MIN_TAG_PIXELS", config.min_tag_pixels);
 
-	// the worker pools below start their threads here, so they take this thread's affinity: pin them to the performance cores
-	// whichever thread (the sink's, or an API call's) is building the backend
-	CpuAffinity::ScopedPerformanceAffinity performanceCores;
+		// the worker pools below start their threads here, so they take this thread's affinity: pin them to the performance cores
+		// whichever thread (the sink's, or an API call's) is building the backend
+		CpuAffinity::ScopedPerformanceAffinity performanceCores;
 
-	m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, *m_Lane, config);
-	m_QuadDecode = std::make_unique<QuadDecode>(config);
-	// TagDecoder must be told the same decimation as the GPU pass: refine_edges derives its per-edge search radius from it.
-	// APRILTAG_VK_REFINE, if set, overrides the requested method inside the library.
-	m_TagDecoder = std::make_unique<TagDecoder>(m_Detector, m_Decimation, config.cpu_threads,
-		ToRefineMethod(tuning.refineMode), tuning.probeMargin > 0.0f ? tuning.probeMargin : 0.0f);
+		m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, *m_Lane, config);
+		m_QuadDecode = std::make_unique<QuadDecode>(config);
+		// TagDecoder must be told the same decimation as the GPU pass: refine_edges derives its per-edge search radius from it.
+		// APRILTAG_VK_REFINE, if set, overrides the requested method inside the library.
+		m_TagDecoder = std::make_unique<TagDecoder>(m_Detector, m_Decimation, config.cpu_threads,
+			ToRefineMethod(tuning.refineMode), tuning.probeMargin > 0.0f ? tuning.probeMargin : 0.0f);
+	} catch (...) {
+		ReleaseResources();
+		throw;
+	}
 }
 
 VkApriltagBackend::~VkApriltagBackend()
+{
+	ReleaseResources();
+}
+
+void VkApriltagBackend::ReleaseResources()
 {
 	// destroy in reverse dependency order before m_Context (owns the device the others hold
 	// live handles into) and before the detector/family the TagDecoder borrows a pointer to

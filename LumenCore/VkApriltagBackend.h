@@ -75,6 +75,10 @@ private:
 	// detector will read it without an upload copy. False for any other frame, which Detect() uploads as before.
 	bool ImportFrameIfPossible(const cv::Mat& gray);
 
+	// Releases everything the constructor built, in dependency order; shared by the destructor and the constructor's failure path (a destructor
+	// does not run for an object whose constructor threw, which left the detector and the family leaking when no Vulkan device was found).
+	void ReleaseResources();
+
 	// One Vulkan context per GPU is shared by every Vulkan AprilTag sink; each sink gets its own submission lane.
 	struct SharedContext {
 		std::shared_ptr<apriltag_vulkan::vk::Context> context;

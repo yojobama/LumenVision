@@ -73,12 +73,11 @@ Manager::Manager()
 
 Manager::~Manager()
 {
-	m_SystemMonitor->StopMonitoring();
+	// every node's thread stops before its object is destroyed: the base-class destructors only join after the derived members are gone,
+	// so a thread still running then would be calling into a half-destroyed node
+	Shutdown();
     m_Logger->EnterLog("Manager destructed");
     delete m_SystemMonitor;
-    //m_CameraCalibrationSinks.clear();
-    m_Sources.clear();
-	m_Sinks.clear();
 }
 
 void Manager::Shutdown()

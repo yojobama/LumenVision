@@ -1,0 +1,21 @@
+# ThreadSanitizer suppressions for the sanitiser build (cmake -DLUMEN_SANITIZE=thread; run with TSAN_OPTIONS=suppressions=tests/tsan.supp).
+# OpenCV is a prebuilt, uninstrumented library: its worker pool hands work over with primitives TSan cannot see, so every parallel_for_ result
+# the test then reads is reported as a race. Reports whose stacks pass through these libraries are dropped; races between our own threads stay.
+called_from_lib:libopencv_core.so.500
+called_from_lib:libopencv_imgproc.so.500
+called_from_lib:libopencv_calib3d.so.500
+called_from_lib:libopencv_stereo.so.500
+called_from_lib:libopencv_features2d.so.500
+called_from_lib:libopencv_objdetect.so.500
+# WPILib's ntcore and wpiutil are prebuilt too: values cross threads through a lock-free message queue, so publishing from a sink's thread is reported
+# as racing with ntcore's own network thread.
+# (race:, not called_from_lib: that would also hide ntcore's mutex operations from TSan and make every unlock look unmatched)
+race:libntcore.so
+race:libwpiutil.so
+race:libwpinet.so
+# The one-off warm-up of OpenCV's pool (CpuAffinity::InitialiseOpenCvThreads) hands a stack lambda to OpenCV's workers; the join that follows orders it.
+race:CpuAffinity.cpp
+# glibc runs OpenCV's thread-local destructors at thread exit, on a mutex TSan never saw locked
+mutex:nptl_deallocate_tsd
+# the Vulkan loader (prebuilt) initialises its instance structures on a stack slot an earlier thread used
+race:libvulkan.so

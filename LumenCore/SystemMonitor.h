@@ -7,6 +7,7 @@
 #ifdef __linux__
 #include <sys/statvfs.h>
 #endif
+#include <atomic>
 #include <mutex>
 #include <thread>
 
@@ -71,7 +72,7 @@ public:
 private:
     int m_TimeoutMilliseconds;
 
-	bool m_ThreadWantedAlive;
+	std::atomic<bool> m_ThreadWantedAlive{ false }; // read by the monitor thread, cleared by StopMonitoring()
     std::jthread m_MonitorThread;
 	void m_MonitorThreadLoop();
 
