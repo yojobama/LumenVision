@@ -1,0 +1,12 @@
+
+ Performance counter stats for 'system wide':
+
+    15,604,509,776      cycles                                                                
+    14,331,488,500      instructions                     #    0.92  insn per cycle            
+        86,788,432      cache-misses                                                          
+        72,071,051      branch-misses                                                         
+            62,404      context-switches                                                      
+               567      cpu-migrations                                                        
+
+      20.005414391 seconds time elapsed
+

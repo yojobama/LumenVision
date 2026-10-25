@@ -1,0 +1,65 @@
+# perf report, workload B, 60 s at 499 Hz, frame-pointer call graphs, service pid only
+
+## by library
+    22.78%  libLumenCore.so             
+    20.20%  [kernel.kallsyms]           
+    11.12%  libopencv_core.so.500       
+    10.70%  libc.so.6                   
+     7.84%  libopencv_imgproc.so.500    
+     6.76%  libjpeg.so.8                
+     5.40%  libm.so.6                   
+     5.05%  libapriltag.so.3            
+     4.03%  libcoreclr.so               
+     2.22%  memfd:doublemapper (deleted)
+     1.47%  librknnrt.so                
+     1.08%  librockchip_mpp.so.1        
+     0.42%  libmali.so.1.9.0            
+     0.41%  libstdc++.so.6.0.33         
+
+## top symbols (self time)
+    13.63%  [.] std::_Function_handler<void (unsigned long, unsigned int), apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 18446744073709551615ul>) cons
+     8.26%  [k] arch_local_irq_enable
+     8.12%  [.] void cv::LUT_<unsigned char, unsigned char>(unsigned char const*, unsigned char const*, unsigned char*, int, int, int)
+     7.79%  [.] kleidicv_error_t kleidicv::neon::yuv2rgbx_operation<kleidicv::neon::YUVSpToRGBxOrBGRx<true, false>, unsigned char>(kleidicv::neon::YUVSpToRGBxOrBGRx<true, false>&, unsigned c
+     7.52%  [.] __memcpy_generic
+     5.90%  [.] apriltag_vulkan::(anonymous namespace)::ReadMomentsWindow(std::vector<apriltag_vulkan::LineFitMoments, std::allocator<apriltag_vulkan::LineFitMoments> > const&, unsigned long
+     4.56%  [.] quad_decode
+     3.49%  [.] hypotf@@GLIBC_2.35
+     2.40%  [k] local_daif_restore.constprop.0
+     2.34%  [.] cv::mixChannels8u(void const**, int const*, void**, int const*, int, int)
+     1.83%  [.] hypotf@@GLIBC_2.35
+     1.21%  [k] __pi_dcache_clean_poc
+     1.15%  [.] __sched_yield
+     1.05%  [k] __pi_dcache_inval_poc
+     0.79%  [.] MjpegSink::Process(std::vector<SourceResult, std::allocator<SourceResult> > const&)
+     0.71%  [k] __raw_spin_unlock_irqrestore
+     0.67%  [.] apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 18446744073709551615ul>) const
+     0.54%  [.] 0x000000000059a150
+     0.48%  [.] __memset_zva64
+     0.37%  [k] arch_local_irq_restore
+     0.36%  [k] __schedule
+     0.36%  [.] apriltag_vulkan::(anonymous namespace)::FitLine(apriltag_vulkan::LineFitMoments const&, double*, double*, double*, double*) [clone .constprop.0]
+     0.36%  [k] invoke_syscall
+     0.33%  [.] update_curbyte_default
+     0.29%  [.] 0x000000000004122c
+     0.27%  [.] quad_update_homographies
+     0.25%  [.] cv::WorkerThread::thread_body()
+     0.24%  [.] cfree@GLIBC_2.17
+     0.22%  [.] malloc
+     0.21%  [.] 0x00000000005925dc
+
+## inclusive, our own entry points
+    39.97%     0.04%  [.] ISink::ProcessingThreadLoop()
+    25.87%    13.63%  [.] std::_Function_handler<void (unsigned long, unsigned int), apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 1844674407370955161
+    15.82%     0.03%  [.] ApriltagDetector::Process(std::vector<SourceResult, std::allocator<SourceResult> > const&)
+    10.14%     0.00%  [.] RecordSink::Process(std::vector<SourceResult, std::allocator<SourceResult> > const&)
+     8.94%     0.02%  [.] VkApriltagBackend::Detect(cv::Mat const&)
+     6.95%     0.01%  [.] RecordSink::EncodeAndWrite(Frame const&, SourceResult const&)
+     5.99%     0.01%  [.] ObjectDetectionSink::Process(std::vector<SourceResult, std::allocator<SourceResult> > const&)
+     5.93%     0.01%  [.] RknnDetectionBackend::Infer(Frame const&)
+     5.47%     0.67%  [.] apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 18446744073709551615ul>) const
+     2.48%     0.00%  [.] RgaLetterbox::Run(Frame const&, unsigned char*, int, int, cv::Rect_<int> const&)
+     2.43%     0.01%  [.] apriltag_vulkan::GpuDetector::Detect(unsigned char const*)
+     2.10%     0.00%  [.] ISource::SourceThreadProc()
+     2.02%     0.01%  [.] V4l2CameraBackend::Grab(bool)
+     1.84%     0.00%  [.] MppJpegDecoder::DecodeNv12(unsigned char const*, unsigned long, int, int, MppJpegDecoder::Nv12Planes&)

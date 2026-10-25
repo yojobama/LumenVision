@@ -1,0 +1,65 @@
+# perf report, workload A, 60 s at 499 Hz, frame-pointer call graphs, service pid only
+
+## by library
+    48.70%  libLumenCore.so             
+    16.28%  [kernel.kallsyms]           
+    14.50%  libm.so.6                   
+     7.28%  libc.so.6                   
+     5.19%  libapriltag.so.3            
+     3.44%  librknnrt.so                
+     1.92%  librockchip_mpp.so.1        
+     0.80%  memfd:doublemapper (deleted)
+     0.69%  libcoreclr.so               
+     0.44%  libstdc++.so.6.0.33         
+     0.32%  libmali.so.1.9.0            
+     0.14%  librga.so                   
+     0.09%  ld-linux-aarch64.so.1       
+     0.08%  [vdso]                      
+
+## top symbols (self time)
+    30.64%  [.] std::_Function_handler<void (unsigned long, unsigned int), apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 18446744073709551615ul>) cons
+    14.37%  [.] apriltag_vulkan::(anonymous namespace)::ReadMomentsWindow(std::vector<apriltag_vulkan::LineFitMoments, std::allocator<apriltag_vulkan::LineFitMoments> > const&, unsigned long
+    14.31%  [.] hypotf@@GLIBC_2.35
+     4.79%  [.] __memcpy_generic
+     4.13%  [.] quad_decode
+     3.01%  [k] __raw_spin_unlock_irqrestore
+     2.14%  [k] __pi_dcache_clean_poc
+     1.86%  [k] __pi_dcache_inval_poc
+     1.19%  [.] apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 18446744073709551615ul>) const
+     1.02%  [k] arch_local_irq_enable
+     0.93%  [.] update_curbyte_default
+     0.65%  [.] __memset_zva64
+     0.50%  [.] mpp_trie_walk
+     0.49%  [k] __rseq_handle_notify_resume
+     0.49%  [.] matd_plu
+     0.45%  [.] void std::__merge_sort_with_buffer<__gnu_cxx::__normal_iterator<std::pair<double, unsigned int>*, std::vector<std::pair<double, unsigned int>, std::allocator<std::pair<double
+     0.44%  [k] _compound_head
+     0.43%  [k] fpsimd_bind_task_to_cpu
+     0.42%  [.] matd_create
+     0.41%  [.] malloc
+     0.37%  [.] std::pair<double, unsigned int>* std::__move_merge<__gnu_cxx::__normal_iterator<std::pair<double, unsigned int>*, std::vector<std::pair<double, unsigned int>, std::allocator<
+     0.36%  [k] rcu_all_qs
+     0.32%  [k] __radix_tree_replace
+     0.30%  [.] std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >::compare(char const*) const
+     0.29%  [k] __iommu_map_sg
+     0.27%  [k] rga3_set_reg
+     0.25%  [k] sg_alloc_append_table_from_pages
+     0.25%  [.] memcmp
+     0.23%  [.] nlohmann::json_abi_v3_11_3::basic_json<std::map, std::vector, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >, bool, long, unsigned long, doub
+     0.23%  [.] 0x000000000034336c
+
+## inclusive, our own entry points
+    61.24%    30.64%  [.] std::_Function_handler<void (unsigned long, unsigned int), apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 1844674407370955161
+    40.74%     0.01%  [.] ISink::ProcessingThreadLoop()
+    22.81%     0.05%  [.] ApriltagDetector::Process(std::vector<SourceResult, std::allocator<SourceResult> > const&)
+    22.59%     0.02%  [.] VkApriltagBackend::Detect(cv::Mat const&)
+    17.85%     1.19%  [.] apriltag_vulkan::QuadDecode::Decode(std::span<apriltag_vulkan::RawLineFitPoint const, 18446744073709551615ul>) const
+    17.14%     0.02%  [.] ObjectDetectionSink::Process(std::vector<SourceResult, std::allocator<SourceResult> > const&)
+    16.83%     0.04%  [.] RknnDetectionBackend::Infer(Frame const&)
+     7.96%     0.03%  [.] RgaLetterbox::Run(Frame const&, unsigned char*, int, int, cv::Rect_<int> const&)
+     3.25%     0.00%  [.] ISource::SourceThreadProc()
+     3.14%     0.00%  [.] V4l2CameraBackend::Grab(bool)
+     2.94%     0.01%  [.] MppJpegDecoder::DecodeNv12(unsigned char const*, unsigned long, int, int, MppJpegDecoder::Nv12Planes&)
+     2.73%     0.02%  [.] apriltag_vulkan::GpuDetector::Detect(unsigned char const*)
+     0.01%     0.00%  [.] RknnDetectionBackend::Infer(Frame const&)::{lambda(char const*)#1}::operator()(char const*) const
+     0.01%     0.01%  [.] MppJpegDecoder::DecodeNv12(unsigned char const*, unsigned long, int, int, MppJpegDecoder::Nv12Planes&)@plt

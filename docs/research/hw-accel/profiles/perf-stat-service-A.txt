@@ -1,0 +1,13 @@
+
+ Performance counter stats for process id '149325':
+
+     8,419,099,620      cycles                                                                
+     9,702,660,670      instructions                     #    1.15  insn per cycle            
+        50,694,979      cache-misses                                                          
+        28,195,552      branch-misses                                                         
+            16,054      context-switches                                                      
+               262      cpu-migrations                                                        
+               600      page-faults                                                           
+
+      20.006188751 seconds time elapsed
+
