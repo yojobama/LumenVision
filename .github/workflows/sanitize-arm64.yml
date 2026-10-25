@@ -1,0 +1,56 @@
+name: Sanitise (arm64)
+
+# Builds LumenCore for the Orange Pi's architecture with AddressSanitizer and UBSan (the RKNN, RGA and MPP glue only compiles there), runs the native
+# suite under them, and uploads the instrumented library so it can be run in the service on a board (LD_PRELOAD=libasan.so). Runs on demand, and when this
+# file changes on the feature branch (a workflow that is not on the default branch yet cannot be dispatched by hand).
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/native-api]
+    paths: ['.github/workflows/sanitize-arm64.yml']
+
+jobs:
+  sanitize-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # the same dependency build and cache key as release.yml, so a warm cache is reused
+      - name: Cache dependency build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.lumen-build
+            /usr/local/include
+            /usr/local/lib
+            /usr/local/bin
+            /opt/lumenvision-ffmpeg
+          key: lumen-deps-linux-arm64-${{ hashFiles('scripts/install-deps.sh', 'third_party/vkapriltag/apriltags_vulkan/library/**', 'third_party/vkapriltag/apriltags_vulkan/cmake/patches/*') }}
+          restore-keys: |
+            lumen-deps-linux-arm64-
+
+      - name: Install/build dependencies
+        run: ./scripts/install-deps.sh --with-nt4 --with-webrtc --with-rknn --with-mpp --with-ffmpeg-rockchip
+
+      - name: Configure
+        run: cmake --preset ci-linux-arm64 -B build-san -DLUMEN_SANITIZE=address,undefined
+
+      - name: Build
+        run: cmake --build build-san --config RelWithDebInfo
+
+      - name: Test
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/tests/lsan.supp
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: ctest --test-dir build-san -C RelWithDebInfo -LE hitl --output-on-failure
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lumencore-asan-arm64
+          path: |
+            build-san/stage/RelWithDebInfo/libLumenCore.so
+            build-san/stage/RelWithDebInfo/LumenCoreTests
+          if-no-files-found: error
