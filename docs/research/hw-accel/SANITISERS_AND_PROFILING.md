@@ -9,7 +9,9 @@ AddressSanitizer and UBSan, ThreadSanitizer, and `perf` on the Orange Pi 5 Plus,
   suite (126 test cases) runs clean under both. `tests/lsan.supp` and `tests/tsan.supp` list the prebuilt libraries the sanitisers cannot see into.
 - **Board (arm64):** the RKNN, RGA and MPP code only compiles there and the board has no development packages, so `.github/workflows/sanitize-arm64.yml` builds LumenCore with
   ASan+UBSan on an arm runner, runs the suite, and uploads the instrumented library and test binary. The hardware tests (`[hitl]`: V4L2 capture, MPP decode, Vulkan, the
-  RKNN int8 and fp16 models) were then run on the board with them.
+  RKNN int8 and fp16 models) were then run on the board with them. The instrumented library was also swapped into the running service (`LD_PRELOAD` of `libasan`, release
+  library backed up and restored afterwards) and the heavy graph (B below), three camera create/delete cycles, a recording with the source and the sink deleted in each order
+  and a recording across four camera mode changes were run against it: no sanitiser report, no kernel message, the service never restarted, and the dma-buf objects returned to zero.
 - **Profiles:** `perf record -F 499 -g` on the service for 60 s on two graphs. **A**: one camera (1280x720 at 30 fps) with a Vulkan AprilTag detector (ultrafast refine, margin 4)
   and a YOLO11 detector. **B**: A plus the stereo camera at 2560x720 at 60 fps split into halves (two more Vulkan detectors, one more YOLO), two recordings and two MJPEG tiles
   polled at 10 fps. The graph was held steady while the profiler ran.
@@ -63,5 +65,7 @@ blob-filter options already exposed on the Vulkan sink (`minWhiteBlackDiff`, `mi
 ## Not done, and why
 
 - The kernel `perf_event_paranoid` and `kptr_restrict` settings were left alone (`sudo perf` does not need them changed).
-- The service itself was not run under the instrumented library with the whole two-camera graph; the hardware suite on the board was.
+- ThreadSanitizer was only run on the host suite, not on the board (the board's service has two real cameras and the Mali driver, none of which TSan can see into usefully).
+- The single `rkvenc` "fd failed" kernel message seen once at the end of an earlier two-camera test run (an encode task submitted with a buffer descriptor that had just been
+  closed, during a teardown with recorders bound) did not recur in the ASan run, a re-run of the whole test, or deliberate source/sink/mode-change orders. It is unexplained.
 - GPU time (`vk-gpu:submit+wait`) is not visible to `perf`; the earlier measurements stand: with three Vulkan detectors the Mali GPU is the saturating resource, not the CPU.

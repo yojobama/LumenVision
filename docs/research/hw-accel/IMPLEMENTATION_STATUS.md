@@ -93,3 +93,10 @@ frame age 31.0 against 30.8 ms), and the .NET threads are idle enough not to mat
 | MIPI cameras (multi-planar V4L2, `VIDIOC_EXPBUF`) | no MIPI camera to test with, and a rewrite of the capture backend's buffer handling is not something to ship untested |
 | Predicted-region tag search, browser-side overlay | both need tags in view to validate, and the browser overlay changes what every detector preview shows |
 | Direct dma-buf import of the luma plane into Vulkan | the upload it would replace is 0.1 to 0.2 ms |
+
+## Third round: sanitisers and profilers
+
+Measured and fixed with real tools rather than the stage timers; see `SANITISERS_AND_PROFILING.md`. On the heavy two-camera graph (two Vulkan detectors with MJPEG tiles, a
+60 fps stereo camera, two recordings) the service went from 2.13 to 1.56 cores (-27%) and the performance cores from 48% to 35% busy, with the frame ages and detect times
+unchanged: the recorders' range squeeze uses NEON table lookups, detectors draw their overlay only for frames a preview will use, WebRTC is paced to its stream rate, and
+OpenCV's workers no longer spin between jobs. The sanitisers found a leak in the Vulkan backend's constructor, two thread-lifetime races and a test layout overflow, all fixed.
