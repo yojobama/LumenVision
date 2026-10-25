@@ -27,6 +27,12 @@ Environment=LD_LIBRARY_PATH=/opt/lumenvision
 # (lumenvision.service.d/10-vulkan-icd.conf) overriding this with the ICD registered on the board
 Environment=VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/mali.json
 
+# OpenCV's worker threads spin (pause, then sched_yield) for 2000 iterations after every parallel job before they sleep. With parallel calls arriving every few
+# milliseconds across the pipeline that was 8% of the service's CPU on an Orange Pi 5 Plus with two cameras (2.13 cores down to 1.81 with it off, no stage slower,
+# the performance cores 48% busy down to 41%). The main thread's own spin stays: turning that off as well saved nothing and slowed the detectors' short calls.
+# OpenCV reads this when its library loads, so it has to be in the process environment.
+Environment=OPENCV_THREAD_POOL_ACTIVE_WAIT_WORKER=0
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=lumenvision
