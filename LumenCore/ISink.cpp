@@ -133,6 +133,9 @@ bool ISink::BindSource(std::shared_ptr<ISource> p_Source) {
         p_Source->RegisterFrameConsumer(m_ID, m_RequireFrame, m_RequireColor, [this, aliveFlag] {
             auto alive = aliveFlag.lock();
             return alive && *alive && this->GetToggleStatus() && this->IsConsumingFrames();
+        }, [this, aliveFlag] {
+            auto alive = aliveFlag.lock();
+            return alive && *alive && this->GetToggleStatus() && this->WantsFrameNow();
         });
         return true;
     }

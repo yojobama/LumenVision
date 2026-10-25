@@ -23,6 +23,7 @@ WebRTCSink::WebRTCSink(std::shared_ptr<Logger> logger, std::string id, WebRTCSin
 	, m_Config(config)
 	, m_PendingConfig(config)
 {
+	m_StreamFps = std::clamp(config.fps, 1, 120);
 	if (m_Logger) m_Logger->EnterLog("WebRTCSink constructed, encoder=" + config.encoderName);
 }
 
@@ -158,6 +159,7 @@ void WebRTCSink::SetSettings(int bitrateKbps, int fps, int scaleDivisor)
 	std::lock_guard<std::mutex> lock(m_SettingsMutex);
 	m_PendingConfig.bitrateKbps = std::clamp(bitrateKbps, 100, 50000);
 	m_PendingConfig.fps = std::clamp(fps, 1, 120);
+	m_StreamFps = m_PendingConfig.fps;
 	m_PendingScaleDivisor = std::clamp(scaleDivisor, 1, 16);
 	m_SettingsChanged = true;
 }
@@ -178,6 +180,11 @@ bool WebRTCSink::IsConsumingFrames() const
 		if (entry.second->track && entry.second->track->isOpen()) return true;
 	}
 	return false;
+}
+
+bool WebRTCSink::WantsFrameNow() const
+{
+	return IsConsumingFrames() && SourceResult::NowUs() - m_LastEncodeUs.load() >= PacingIntervalUs();
 }
 
 std::string WebRTCSink::GetConnectionStatus() const
@@ -379,8 +386,11 @@ void WebRTCSink::EncodeAndSend(const Frame& frame, uint64_t captureTimeUs)
 void WebRTCSink::Process(const std::vector<SourceResult>& results)
 {
 	for (const SourceResult& result : results) {
-		// the BGR conversion below is wasted work with nobody watching
+		// the BGR conversion below is wasted work with nobody watching, and a camera faster than the stream is paced down to the stream's rate
 		if (result.frame.has_value() && !result.frame.value().empty() && IsConsumingFrames()) {
+			const uint64_t nowUs = SourceResult::NowUs();
+			if (nowUs - m_LastEncodeUs.load() < PacingIntervalUs()) continue;
+			m_LastEncodeUs = nowUs;
 			EncodeAndSend(*result.frame, result.captureTimeUs);
 		}
 	}

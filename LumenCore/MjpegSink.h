@@ -20,6 +20,8 @@ public:
 	// A preview is only wanted while something asks for its frames (the server's stream and frame endpoints poll about every 100 ms):
 	// encoding stops about a second after the last request, and the camera and detectors can drop back to their cheap paths.
 	bool IsConsumingFrames() const override;
+	// watched, and long enough since the last encode that Process() would take a frame now (it takes one per 80 ms at most)
+	bool WantsFrameNow() const override;
 
 	// Takes effect on the next frame. scaleDivisor N shrinks each frame to 1/N of its width and height before encoding (1 = full size).
 	void SetSettings(int jpegQuality, int scaleDivisor);

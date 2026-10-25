@@ -58,6 +58,12 @@ bool MjpegSink::IsConsumingFrames() const
 	return SourceResult::NowUs() - m_LastRequestUs.load() < kWatchedWindowUs;
 }
 
+bool MjpegSink::WantsFrameNow() const
+{
+	const uint64_t nowUs = SourceResult::NowUs();
+	return nowUs - m_LastRequestUs.load() < kWatchedWindowUs && nowUs - m_LastEncodeUs.load() >= kMinEncodeIntervalUs;
+}
+
 void MjpegSink::SetSettings(int jpegQuality, int scaleDivisor)
 {
 	m_JpegQuality = std::clamp(jpegQuality, 1, 100);

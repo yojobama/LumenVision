@@ -37,7 +37,36 @@ protected:
     }
 };
 
+// a preview that is watched but only takes a frame every so often
+class PacedSink : public TestSink {
+public:
+    using TestSink::TestSink;
+    ~PacedSink() override { Toggle(false); }
+    std::atomic<bool> watched{ true }, due{ false };
+    bool IsConsumingFrames() const override { return watched; }
+    bool WantsFrameNow() const override { return watched && due; }
+};
+
 } // namespace
+
+TEST_CASE("a detector is told to draw only for a consumer that wants a frame now, while the camera's colour decision follows who is watching", "[ISource][ISink][pacing]") {
+    auto source = std::make_shared<TestSource>(nullptr, "test-source-pacing");
+    auto sink = std::make_shared<PacedSink>(nullptr, "test-sink-pacing");
+    REQUIRE(sink->BindSource(source));
+    sink->Toggle(true);
+
+    // watched, but its pacing interval has not passed: the camera keeps decoding colour, and no annotated frame is wanted yet
+    REQUIRE(source->HasActiveColorFrameConsumer());
+    REQUIRE_FALSE(source->HasActiveFrameConsumer());
+
+    sink->due = true;
+    REQUIRE(source->HasActiveFrameConsumer());
+
+    sink->watched = false; // the viewer left
+    REQUIRE_FALSE(source->HasActiveColorFrameConsumer());
+    REQUIRE_FALSE(source->HasActiveFrameConsumer());
+    sink->Toggle(false);
+}
 
 TEST_CASE("a bound, toggled-on source/sink pair actually moves frames end to end", "[ISource][ISink]") {
     auto source = std::make_shared<TestSource>(nullptr, "test-source");

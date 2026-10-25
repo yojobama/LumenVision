@@ -5,6 +5,7 @@
 #include "Nv12Convert.h"
 #include <rtc/rtc.hpp>
 #include <opencv2/opencv.hpp>
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <map>
@@ -50,6 +51,9 @@ public:
 	bool IsConnected() const;
 	// true while a viewer's track is open: with nobody watching, bound sources decode in grey and detectors skip their overlay
 	bool IsConsumingFrames() const override;
+	// a viewer is connected and the stream's frame interval has passed since the last frame sent (the stream runs at its configured rate, whatever
+	// the camera's)
+	bool WantsFrameNow() const override;
 	// {"connected": any viewer connected, "peers": viewer count, "iceState", "gatheringComplete"} (the last two of the newest viewer)
 	std::string GetConnectionStatus() const;
 
@@ -111,6 +115,11 @@ private:
 	// rebuilt and track the real frame spacing instead of the nominal frame rate
 	uint64_t m_FirstCaptureUs = 0;
 	double m_LastSentSeconds = 0.0;
+	// the stream's configured rate (SetSettings) and when the last frame went to the encoder, for pacing a fast camera down to it (SourceResult::NowUs() epoch)
+	std::atomic<int> m_StreamFps{ 30 };
+	std::atomic<uint64_t> m_LastEncodeUs{ 0 };
+	// a frame is due once 90% of the stream's frame interval has passed (so a camera running exactly at the stream rate loses none to jitter)
+	uint64_t PacingIntervalUs() const { return 900000ull / static_cast<uint64_t>(std::max(1, m_StreamFps.load())); }
 
 #ifdef LUMEN_WITH_RGA
 	RgaColorConverter m_RgaConverter;

@@ -32,6 +32,11 @@ public:
 	// the camera decode in grey and detectors skip drawing (see ISource::HasActiveFrameConsumer). Called from the source's thread
 	// for every frame, so it must be cheap.
 	virtual bool IsConsumingFrames() const { return true; }
+	// Whether this sink would take a frame published right now: IsConsumingFrames() and, for a sink that uses fewer frames than its source makes
+	// (a preview paced at its stream rate), the pacing interval has passed. Detectors draw and convert their annotated frame only for a sink that
+	// wants it, so a 10 fps preview of a 60 fps camera costs the overlay ten times a second, not sixty. Called from the source's thread for
+	// every frame, so it must be cheap. Defaults to IsConsumingFrames().
+	virtual bool WantsFrameNow() const { return IsConsumingFrames(); }
 
 protected:
     // this node's stage timings (shared with its ISource half when it has one); see StageProfile.h

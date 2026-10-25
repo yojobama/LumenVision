@@ -34,12 +34,15 @@ public:
 	// Called by ISink::BindSource/UnbindSource so a dual-role node (ApriltagDetector/ObjectDetectionSink) can tell whether
 	// anything downstream wants its FRAME (not just its JSON). isActive is called lazily so it reflects the consumer's
 	// current state; it must return false once the registering sink is destroyed (guard with the alive-flag idiom).
-	void RegisterFrameConsumer(const std::string& sinkId, bool requiresFrame, bool requiresColor, std::function<bool()> isActive);
+	// wantsNow (optional) is the sharper question the detectors ask once per frame - would this consumer use a frame published right now (see
+	// ISink::WantsFrameNow) - while isActive stays the steady "is anyone watching", which decides the camera's colour or grey decode.
+	void RegisterFrameConsumer(const std::string& sinkId, bool requiresFrame, bool requiresColor, std::function<bool()> isActive, std::function<bool()> wantsNow = nullptr);
 	// removed on an explicit UnbindSource, not on destruction (isActive then returns false forever, leaving a few dead entries)
 	void UnregisterFrameConsumer(const std::string& sinkId);
 
-	// true if at least one bound, frame-requiring consumer is currently active (alive and toggled on), e.g. a running
-	// WebRTCSink. Lets detectors skip drawing annotations when only JSON is consumed (NT4).
+	// true if at least one bound, frame-requiring consumer is currently active (alive and toggled on) and would use a frame published right now,
+	// e.g. a WebRTCSink with a viewer whose pacing interval has passed. Lets detectors skip drawing annotations when only JSON is consumed (NT4),
+	// and for the frames a paced preview would drop anyway.
 	bool HasActiveFrameConsumer() const;
 	// true if at least one bound, active consumer needs its frame in COLOUR (WebRTC/Mjpeg/Record; see ISink requireColor).
 	// ApriltagDetector opts out since it only calls AsGray(), letting CameraSource request a straight-to-gray decode.
@@ -84,6 +87,7 @@ private:
 		bool requiresFrame;
 		bool requiresColor;
 		std::function<bool()> isActive;
+		std::function<bool()> wantsNow; // empty: same as isActive
 	};
 	mutable std::mutex m_FrameConsumersMutex;
 	std::unordered_map<std::string, FrameConsumer> m_FrameConsumers;
