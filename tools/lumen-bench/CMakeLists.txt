@@ -21,6 +21,9 @@ target_compile_definitions(lumen-bench PRIVATE
     LUMEN_TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data"
 )
 
+# the same feature defines as LumenCore, so the headers lay their classes out the way the library does (see tests/CMakeLists.txt)
+target_compile_definitions(lumen-bench PRIVATE ${LUMEN_ENABLED_DEFINES})
+
 if(LUMEN_WITH_VULKAN_APRILTAG)
     # VkApriltagBackend.h includes vkapriltag headers, whose PRIVATE LumenCore linkage does not propagate.
     find_package(Vulkan REQUIRED)

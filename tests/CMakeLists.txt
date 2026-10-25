@@ -38,6 +38,11 @@ add_executable(LumenCoreTests
     test_camera_closed.cpp
 )
 
+# Every LUMEN_WITH_* feature the library was built with, so a test sees the same class layouts as LumenCore (a header guards members with them: the RGA
+# helper inside RknnDetectionBackend, for one). Without this a test that builds such an object on its own stack constructs it with a smaller size than the
+# library's constructor writes, which AddressSanitizer reported as a stack-buffer-overflow.
+target_compile_definitions(LumenCoreTests PRIVATE ${LUMEN_ENABLED_DEFINES})
+
 if(LUMEN_WITH_ONNX)
     # The header is guarded by LUMEN_WITH_ONNX, and its inline onnxruntime C++ wrappers need a
     # direct link (LumenCore links onnxruntime PRIVATE).

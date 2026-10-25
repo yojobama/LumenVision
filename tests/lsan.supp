@@ -1,3 +1,8 @@
 # LeakSanitizer suppressions for the sanitiser build (ASAN_OPTIONS=detect_leaks=1 LSAN_OPTIONS=suppressions=tests/lsan.supp).
 # onnxruntime keeps two 96-byte process-lifetime allocations that it never frees.
 leak:libonnxruntime
+# Loading the Vulkan driver (dlopen) runs constructors that allocate once per process, and the sanitiser runtimes' own objects made under that dlopen are
+# reported with them; vk::Context does destroy its instance (vkDestroyInstance in ~Context).
+leak:_dl_init
+leak:libvulkan
+leak:libmali

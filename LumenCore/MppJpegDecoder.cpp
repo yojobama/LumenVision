@@ -19,6 +19,12 @@ namespace {
 
 	// shared by EnsureOutputBufferGroup and EnsureInputBufferGroup: tried in mpp_buffer.h priority order (DMA_HEAP > DRM > ION),
 	// falling back if the preferred allocator is unavailable.
+	//
+	// mpp_buffer.h takes a buffer type with the flag bits OR-ed in (MPP_BUFFER_TYPE_DMA_HEAP | MPP_BUFFER_FLAGS_CACHABLE), which a C++ enum cannot hold
+	// (UBSan's enum check reports the value); that is the library's documented interface, so the check is off for this one function.
+#if defined(__GNUC__)
+	__attribute__((no_sanitize("undefined")))
+#endif
 	MppBufferGroup CreateInternalGroup(const char* tag, bool cpuReads)
 	{
 		// cacheable first for a buffer the CPU reads back (a plain DMA_HEAP group is the write-combined "system-uncached" heap,
