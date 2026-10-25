@@ -76,11 +76,18 @@ SUBSYSTEM=="dma_heap", GROUP="video", MODE="0660"
 KERNEL=="rga", GROUP="video", MODE="0660"
 # RK3588 GPU (fb000000.gpu), memory controller (dmc) and NPU (fdab0000.npu): hold the top clock instead of the on-demand governors
 SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu*|dmc|fdab0000.npu", ATTR{governor}="performance"
+EOF
+
 # RK3588 big cores (the four Cortex-A76 that run the vision threads): hold the top clock too. With the on-demand governor a single detector leaves
 # them lightly loaded, they clock down between frames, and a frame then takes about twice as long (AprilTag detect 9.7 ms against 4.3 ms, decode 2.5 ms
-# against 1.3 ms, measured on an Orange Pi 5 Plus); a busy graph hides it. The cost is a little idle power.
+# against 1.3 ms, measured on an Orange Pi 5 Plus); a busy graph hides it. The cost is a little idle power. Only in the arm64 package: cores 4-7 of an x64
+# machine are not these. This rule applies when the package is installed onto a running board; at boot Armbian's optimisation service writes ondemand back
+# after it, so lumenvision.service sets the governor again each time it starts.
+if [[ "$DEB_ARCH" == "arm64" ]]; then
+    cat >> "$STAGE_DIR/etc/udev/rules.d/99-lumenvision-rockchip.rules" <<'EOF'
 SUBSYSTEM=="cpu", KERNEL=="cpu[4-7]", ACTION=="add", ATTR{cpufreq/scaling_governor}="performance"
 EOF
+fi
 
 echo "==> Writing DEBIAN control files"
 INSTALLED_SIZE_KB=$(du -sk "$STAGE_DIR/opt" "$STAGE_DIR/etc" | awk '{sum+=$1} END {print sum}')

@@ -2,6 +2,8 @@
 Description=LumenVision vision coprocessor server
 After=network-online.target
 Wants=network-online.target
+# Armbian's own boot-time optimisation writes its configured CPU governor (ondemand) to every cluster; the governor step below has to come after it
+After=armbian-hardware-optimize.service
 # PhotonVision and LumenVision both need exclusive access to the camera devices and CPU/NPU
 Conflicts=photonvision.service
 
@@ -11,6 +13,13 @@ User=lumen
 Group=lumen
 # Access to /dev/dri (Vulkan/rkmpp) and /dev/mpp_service (rkmpp encode)
 SupplementaryGroups=video render
+
+# RK3588 big cores (the four Cortex-A76 that run the vision threads): hold the top clock. With the on-demand governor a single detector leaves them lightly
+# loaded, they clock down between frames, and a frame then takes about twice as long (AprilTag detect 9.7 ms against 4.3 ms, measured on an Orange Pi 5 Plus).
+# The packaged udev rule does this when the package is installed onto a running board, but Armbian's optimisation service writes ondemand back at every boot
+# (checked by rebooting a board), so it is applied here too, as root (the "+"), each time the service starts. Anything that is not an RK3588 is left alone.
+# "$$" is systemd's escape for a literal dollar sign.
+ExecStartPre=+/bin/sh -c 'grep -qs rk3588 /proc/device-tree/compatible || exit 0; for g in /sys/devices/system/cpu/cpu[4-7]/cpufreq/scaling_governor; do echo performance > "$$g"; done; true'
 
 WorkingDirectory=/opt/lumenvision
 ExecStart=/opt/lumenvision/Server
