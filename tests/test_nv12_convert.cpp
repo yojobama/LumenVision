@@ -66,3 +66,35 @@ TEST_CASE("an NV12 frame is scaled to a smaller encoder frame and refuses a form
 	REQUIRE_FALSE(converter.Convert(Frame(cv::Mat(48, 64, CV_8UC3, cv::Scalar(1, 2, 3))), dst)); // not an NV12 frame
 	av_frame_free(&dst);
 }
+
+// The table this replaced was built from the double formulas below; the integer arithmetic must give the same byte for every possible input.
+TEST_CASE("the range squeeze is byte-for-byte the rounded formula for all 256 luma and chroma values", "[nv12][ffmpeg]") {
+	cv::Mat y(4, 256, CV_8UC1), uv(2, 128, CV_8UC2);
+	for (int row = 0; row < 4; row++)
+		for (int x = 0; x < 256; x++) y.at<uchar>(row, x) = static_cast<uchar>(x);
+	for (int x = 0; x < 128; x++) { // both channels see every value, once on each parity of row
+		uv.at<cv::Vec2b>(0, x) = cv::Vec2b(static_cast<uchar>(2 * x), static_cast<uchar>(2 * x + 1));
+		uv.at<cv::Vec2b>(1, x) = cv::Vec2b(static_cast<uchar>(2 * x + 1), static_cast<uchar>(2 * x));
+	}
+	const Frame source = Frame::FromNv12(y, uv, nullptr);
+	const auto luma = [](int v) { return cv::saturate_cast<uchar>(16.0 + v * 219.0 / 255.0); };
+	const auto chroma = [](int v) { return cv::saturate_cast<uchar>(128.0 + (v - 128) * 224.0 / 255.0); };
+
+	Nv12ToAvFrame converter;
+	for (AVPixelFormat format : { AV_PIX_FMT_NV12, AV_PIX_FMT_YUV420P }) {
+		AVFrame* dst = AllocateFrame(format, 256, 4);
+		REQUIRE(converter.Convert(source, dst));
+		for (int row = 0; row < 4; row++)
+			for (int x = 0; x < 256; x++) REQUIRE(dst->data[0][row * dst->linesize[0] + x] == luma(x));
+		for (int row = 0; row < 2; row++) {
+			for (int x = 0; x < 128; x++) {
+				const cv::Vec2b in = uv.at<cv::Vec2b>(row, x);
+				const uchar u = format == AV_PIX_FMT_NV12 ? dst->data[1][row * dst->linesize[1] + 2 * x] : dst->data[1][row * dst->linesize[1] + x];
+				const uchar v = format == AV_PIX_FMT_NV12 ? dst->data[1][row * dst->linesize[1] + 2 * x + 1] : dst->data[2][row * dst->linesize[2] + x];
+				REQUIRE(u == chroma(in[0]));
+				REQUIRE(v == chroma(in[1]));
+			}
+		}
+		av_frame_free(&dst);
+	}
+}
