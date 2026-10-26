@@ -100,3 +100,36 @@ Measured and fixed with real tools rather than the stage timers; see `SANITISERS
 60 fps stereo camera, two recordings) the service went from 2.13 to 1.56 cores (-27%) and the performance cores from 48% to 35% busy, with the frame ages and detect times
 unchanged: the recorders' range squeeze uses NEON table lookups, detectors draw their overlay only for frames a preview will use, WebRTC is paced to its stream rate, and
 OpenCV's workers no longer spin between jobs. The sanitisers found a leak in the Vulkan backend's constructor, two thread-lifetime races and a test layout overflow, all fixed.
+
+## Fourth round: vkapriltag 1.7.0 to 1.8.0
+
+The submodule moved to the `v1.8.0` tag's commit (`5400c69`; its output is identical to 1.7.0's, the existing single-detector API is unchanged). Measured on the board with the
+same build of LumenVision either side (only the library differs; `dev79` and `dev81`), service environment as shipped, 40 s per run after a 12 s warm-up, two runs per cell.
+All Vulkan sinks use the ultrafast refine preset with probeMargin 4. The harness and the raw runs are in `profiles/harness/` and `profiles/vkapriltag-1.7.0.jsonl`, `profiles/vkapriltag-1.8.0.jsonl`.
+
+| Workload (one camera at 1280x720 and 30 fps unless said) | | 1.7.0 | 1.8.0 | change |
+|---|---|---|---|---|
+| **V**: one Vulkan detector, decimation 2 (the default) | service CPU | 0.14 cores | 0.10 | -26% |
+| | `detect` | 3.54 ms | 3.06 | -13.5% |
+| | CPU quad fit (`vk-quads`) | 0.77 ms | 0.44 | -43% |
+| **V1**: one detector, decimation 1 | service CPU | 0.35 cores | 0.23 | -34% |
+| | `detect` | 11.13 ms | 8.95 | -19.6% |
+| | GPU submit and wait | 8.09 ms | 6.95 | -14% |
+| | CPU quad fit | 2.75 ms | 1.71 | -38% |
+| | frame age at publish | 24.6 ms | 22.6 | -8% |
+| **W**: three detectors (that camera and the stereo camera's two halves at 2560x720, 60 fps), decimation 2 | service CPU | 0.72 cores | 0.54 | -26% |
+| | CPU quad fit | 0.83 / 0.98 ms | 0.47 / 0.61 | -43% / -38% |
+| | `detect`, frame age | | | within the run-to-run scatter |
+| **W1**: the same three at decimation 1 (the GPU is saturated, 95%, in both) | service CPU | 1.69 cores | 1.32 | -22% |
+| | `detect` (camera, left, right half) | 19.2 / 21.5 / 21.5 ms | 16.4 / 17.1 / 17.1 | -15% / -21% / -21% |
+| | frame age of the halves | 49.4 ms | 43.3 | -12% |
+| **B**: W plus two YOLO detectors, two recordings, two MJPEG tiles | service CPU | 1.45 cores | 1.25 | -14% |
+
+The CPU stage of the detector (the quad fit) is 36-43% cheaper in every workload, which is what the library's changes aim at (the line-fit hypotenuse in double precision, whose cost this
+repository's profile had singled out in `SANITISERS_AND_PROFILING.md`, and its CPU-tail work); the service's CPU follows it. The decimation-1 GPU passes are 11-18% cheaper. At the default
+decimation with several detectors the frame is bound by the camera's interval and the GPU is a third loaded, so the gain shows as CPU saved rather than latency. Decode, the NPU run and its frame age,
+and the MJPEG tile frame counts are unchanged. The GPU submit-and-wait cells for the camera's own detector in W and B scatter by 1-3 ms between runs of the same version (it shares the GPU with the other
+detectors), so no conclusion is drawn from them.
+
+Correctness: the library's own change log calls its output identical, and the board's hardware suite agrees: with an ASan+UBSan build against 1.8.0, the Vulkan backend tests and the
+CPU-against-Vulkan agreement test on a real tagged image pass exactly as before (11 test cases passed, 1 skipped for PhotonVision's own model, 435 assertions, no sanitiser report).

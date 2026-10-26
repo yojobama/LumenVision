@@ -51,7 +51,9 @@ Frame ages, detect times and the MJPEG tile frame counts are unchanged by the ch
 `QuadDecode.cpp` calls `std::hypotf` in the line fit (lines 79, 94 and 118 at v1.7.0), once or twice per candidate window. glibc's `hypotf` costs 7.5 ns a call on an A76 core
 and 34.6 ns on an A55; `sqrtf(x * x + y * y)` costs 0.9 ns and 5.3 ns, and a `double` square root rounded to `float` 3.1 ns and 10.2 ns. For the magnitudes the fit sees
 (moment differences up to a few 1e9) the worst relative error against a `double` hypot is 1.1e-7 for the float form and 5.9e-8 for the double form (under half an ulp).
-It is 14% of the service's samples on graph A, so replacing the three calls would take about a tenth off the detector's CPU. `profiles/hypot_bench.cpp` reproduces the numbers:
+It is 14% of the service's samples on graph A, so replacing the three calls would take about a tenth off the detector's CPU. `profiles/hypot_bench.cpp` reproduces the numbers.
+**Update:** vkapriltag 1.8.0 evaluates the line-fit hypotenuse in double and rounds once (the form below), among other CPU-tail work; the measured effect of the upgrade is in `IMPLEMENTATION_STATUS.md`.
+The proposal as made:
 
 ```diff
 -  const float hypot_cached = std::hypotf(static_cast<float>(Cxx - Cyy), static_cast<float>(2 * Cxy));
