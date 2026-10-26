@@ -19,7 +19,7 @@
 // The constrained result is the robot's own pose (x, y in metres, yaw in radians) from the floor-constrained solve.
 //
 // fiducialId / objectClassId are -1 and objectConfidence / poseAmbiguity / the reprojection errors are -1 when not applicable. A target
-// with no pose has zero translations and identity quaternions. The Java decoder in photoncompat follows this comment.
+// with no pose has zero translations and identity quaternions. The Java decoder in lumenlib follows this comment.
 struct PacketTarget {
 	int16_t fiducialId = -1;
 	int16_t objectClassId = -1;

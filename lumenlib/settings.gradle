@@ -1,3 +1,3 @@
 // Independent Gradle build (not a subproject of robot/) so robot/ consumes the published
 // vendordep/Maven artefact rather than a same-build source reference.
-rootProject.name = "photoncompat"
+rootProject.name = "lumenlib"

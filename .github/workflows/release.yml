@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the backend .deb, board images and the photoncompat vendordep, and publishes them to a
+# Builds the backend .deb, board images and the lumenlib vendordep, and publishes them to a
 # GitHub Release on a pushed version tag. A workflow_dispatch run builds and uploads artefacts only;
 # publish-release runs only for a tag.
 on:
@@ -193,24 +193,24 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Build and publish photoncompat
-        working-directory: photoncompat
-        run: ./gradlew publish -PphotoncompatVersion=${{ steps.version.outputs.value }}
+      - name: Build and publish lumenlib
+        working-directory: lumenlib
+        run: ./gradlew publish -PlumenlibVersion=${{ steps.version.outputs.value }}
 
       - name: Render vendordep JSON
         run: |
           sed "s/__VERSION__/${{ steps.version.outputs.value }}/g" \
-            photoncompat/vendordep-template.json > photoncompat.json
+            lumenlib/vendordep-template.json > lumenlib.json
 
       - uses: actions/upload-artifact@v4
         with:
-          name: photoncompat-maven-repo
-          path: photoncompat/build/maven-repo
+          name: lumenlib-maven-repo
+          path: lumenlib/build/maven-repo
 
       - uses: actions/upload-artifact@v4
         with:
-          name: photoncompat-vendordep-json
-          path: photoncompat.json
+          name: lumenlib-vendordep-json
+          path: lumenlib.json
 
   publish-release:
     needs: [build-deb-arm64, build-deb-x64, build-images, build-vendordep]
@@ -238,12 +238,12 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: photoncompat-vendordep-json
+          name: lumenlib-vendordep-json
           path: dist
 
       - uses: actions/download-artifact@v4
         with:
-          name: photoncompat-maven-repo
+          name: lumenlib-maven-repo
           path: maven-repo
 
       - name: Publish Maven artifacts to GitHub Pages
@@ -263,6 +263,6 @@ jobs:
             dist/lumenvision-backend_*_arm64.deb \
             dist/lumenvision-backend_*_amd64.deb \
             dist/lumenvision-*.img.xz \
-            dist/photoncompat.json \
+            dist/lumenlib.json \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes

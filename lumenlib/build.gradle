@@ -1,20 +1,20 @@
-// org.lumenvision:photoncompat-java - NT4 client library robot code uses to read a LumenVision
+// org.lumenvision:lumenlib-java - NT4 client library robot code uses to read a LumenVision
 // coprocessor's AprilTag/object-detection results. A plain java-library module (not GradleRIO),
-// published as an FRC vendor library (photoncompat/vendordep-template.json); robot/ consumes it via
-// robot/vendordeps/photoncompat.json.
+// published as an FRC vendor library (lumenlib/vendordep-template.json); robot/ consumes it via
+// robot/vendordeps/lumenlib.json.
 plugins {
     id "java-library"
     id "maven-publish"
 }
 
 group = "org.lumenvision"
-// Set with `-PphotoncompatVersion=X.Y.Z` in release builds; local builds get a placeholder
-version = project.hasProperty("photoncompatVersion") ? project.photoncompatVersion : "0.0.0-local"
+// Set with `-PlumenlibVersion=X.Y.Z` in release builds; local builds get a placeholder
+version = project.hasProperty("lumenlibVersion") ? project.lumenlibVersion : "0.0.0-local"
 
 // Baked into the jar so LumenVersionCheck can compare it with the coprocessor's ".version" NT4 topic;
 // the resource file is a template whose ${version} is expanded here
 processResources {
-    filesMatching("photoncompat-version.properties") {
+    filesMatching("lumenlib-version.properties") {
         expand(version: project.version.toString())
     }
 }
@@ -99,7 +99,7 @@ publishing {
     publications {
         maven(MavenPublication) {
             from components.java
-            artifactId = "photoncompat-java"
+            artifactId = "lumenlib-java"
         }
     }
     repositories {
@@ -112,12 +112,12 @@ publishing {
 }
 
 // Renders vendordep-template.json for a local build and copies it into robot/vendordeps, so the example robot (or any GradleRIO
-// project pointed at the same file) resolves photoncompat from this checkout's build/maven-repo instead of a release.
+// project pointed at the same file) resolves lumenlib from this checkout's build/maven-repo instead of a release.
 tasks.register("installIntoRobot") {
     dependsOn "publishMavenPublicationToLocalRepository"
     def template = file("vendordep-template.json")
     def repoUrl = layout.buildDirectory.dir("maven-repo").get().asFile.toURI().toString()
-    def target = file("../robot/vendordeps/photoncompat.json")
+    def target = file("../robot/vendordeps/lumenlib.json")
     doLast {
         def json = template.text
                 .replace("https://yojobama.github.io/LumenVision/maven", repoUrl)

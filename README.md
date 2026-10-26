@@ -113,9 +113,9 @@ ambiguity`, best and alternate camera-to-tag as `f32 t[3], q[4]`, `f32` best and
 corners[8]`, `f32 minAreaRect[8]`. `LumenCore/ResultPacket.h` is the specification; `tests/data/packet_v2.bin` locks it
 between the C++ encoder and the Java decoder.
 
-### Robot code: the `photoncompat` vendordep
+### Robot code: the `lumenlib` vendordep
 
-`photoncompat/` is one Java artefact with two packages. `org.lumenvision.lib` is LumenVision's own API: `LumenCoprocessor`
+`lumenlib/` is one Java artefact with two packages. `org.lumenvision.lib` is LumenVision's own API: `LumenCoprocessor`
 (recording, the LED, the node graph), `LumenNode` (start, stop and snapshot any node by name), `LumenDetector` (results,
 calibration, FPS limit, the constrained-solve seed) and `LumenPoseEstimator` (the coprocessor's multi-tag and constrained
 solves). `org.lumenvision.photoncompat` maps PhotonLib's classes onto it (`PhotonCamera`, `PhotonPoseEstimator`, `PhotonUtils`,
@@ -128,10 +128,10 @@ the simulation), so a team migrating changes its imports:
 - Every pose strategy runs in `PhotonPoseEstimator`: the client-side ones from the targets and the field layout, the coprocessor
   ones (multi-tag, constrained SolvePnP) from the coprocessor. `MULTI_TAG_PNP_ON_RIO` is mapped to coprocessor multi-tag.
 
-- **Install from a release:** add `https://github.com/yojobama/LumenVision/releases/latest/download/photoncompat.json`
+- **Install from a release:** add `https://github.com/yojobama/LumenVision/releases/latest/download/lumenlib.json`
   in the WPILib "Manage Vendor Libraries" dialog.
-- **Install from a checkout:** `cd photoncompat && ./gradlew installIntoRobot` publishes to `photoncompat/build/maven-repo` and
-  writes `robot/vendordeps/photoncompat.json` pointing at it (git-ignored). `robot/` is an example project: see
+- **Install from a checkout:** `cd lumenlib && ./gradlew installIntoRobot` publishes to `lumenlib/build/maven-repo` and
+  writes `robot/vendordeps/lumenlib.json` pointing at it (git-ignored). `robot/` is an example project: see
   `subsystems/VisionSubsystem.java` (the native API) and `PhotonCompatVisionSubsystem.java` (PhotonLib names).
 - **Simulation:** `org.lumenvision.photoncompat.sim` has `VisionSystemSim`, `PhotonCameraSim`, `SimCameraProperties`,
   `VisionTargetSim` and `TargetModel`. A simulated camera projects targets through a pinhole model and publishes the same
@@ -139,7 +139,7 @@ the simulation), so a team migrating changes its imports:
   ambiguity) and pixel noise moves the reported corners only; targets do not occlude each other.
 - **Hardware in the loop:** no code is needed. Point the real coprocessor at the simulation's NT server
   (`createForServer`) and the robot code sees real detections in simulation.
-- **Tests:** `cd photoncompat && ./gradlew test` (an in-process NT server and ntcore's JNI, unpacked from WPILib's native zips).
+- **Tests:** `cd lumenlib && ./gradlew test` (an in-process NT server and ntcore's JNI, unpacked from WPILib's native zips).
 
 ## Calibration
 

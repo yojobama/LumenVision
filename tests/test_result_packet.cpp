@@ -5,7 +5,7 @@
 #include <iterator>
 #include <string>
 
-// The "result" packet is a cross-language contract: photoncompat's Java decoder reads the same golden file
+// The "result" packet is a cross-language contract: lumenlib's Java decoder reads the same golden file
 // (tests/data/packet_v2.bin). Set LUMEN_UPDATE_GOLDEN=1 to rewrite it after an intentional layout change.
 
 namespace {

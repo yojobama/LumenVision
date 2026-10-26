@@ -124,7 +124,7 @@ public class LumenDetector extends LumenNode {
         if (decoded.isEmpty()) {
             if (!schemaWarned) {
                 schemaWarned = true;
-                LumenVersionCheck.report("LumenVision node '" + getName() + "' published a result this library cannot decode; update photoncompat to match the coprocessor.");
+                LumenVersionCheck.report("LumenVision node '" + getName() + "' published a result this library cannot decode; update lumenlib to match the coprocessor.");
             }
             return Optional.empty();
         }
@@ -149,7 +149,7 @@ public class LumenDetector extends LumenNode {
         if (protocol != LumenVersionCheck.PROTOCOL) {
             protocolRefused = true;
             LumenVersionCheck.report("LumenVision: the coprocessor speaks protocol " + (protocol < 0 ? "1-2 (none published)" : protocol)
-                    + " but photoncompat-java needs " + LumenVersionCheck.PROTOCOL + "; results are ignored until both are updated together.");
+                    + " but lumenlib-java needs " + LumenVersionCheck.PROTOCOL + "; results are ignored until both are updated together.");
         }
     }
 

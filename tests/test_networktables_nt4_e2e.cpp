@@ -178,7 +178,7 @@ TEST_CASE("NetworkTablesSink surfaces the robot's config/recording request and p
 	nt::NetworkTableInstance robot = nt::NetworkTableInstance::Create();
 	robot.SetServer("127.0.0.1", TEST_NT4_PORT);
 	robot.StartClient4("LumenCoreTests-nt4-recording-robot");
-	// As published by photoncompat LumenCoprocessor.setRecording().
+	// As published by lumenlib LumenCoprocessor.setRecording().
 	auto recordingPub = robot.GetBooleanTopic("/lumenvision/config/recording").Publish();
 	recordingPub.Set(true);
 

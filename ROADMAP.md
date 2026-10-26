@@ -426,7 +426,7 @@ FRC vision is "I updated one side and not the other."
 
 - Pure-Java artefact, no JNI — everything arrives over NT, and the maths is wpimath's.
 - Maven repo on GitHub Pages: `https://yojobama.github.io/LumenVision/maven` (release.yml
-  publishes `photoncompat/build/maven-repo` to gh-pages under `maven/`).
+  publishes `lumenlib/build/maven-repo` to gh-pages under `maven/`).
 - `<Name>.json` vendordep manifest with `frcYear`, `uuid`, `mavenUrls`, `jsonUrl`,
   `javaDependencies`; served from the coprocessor itself too — PhotonVision does this and teams
   love it (grab the vendordep from the device you are already looking at).

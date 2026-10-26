@@ -18,7 +18,7 @@ ignores a coprocessor that reports another one.
 - A NetworkTablesSink publishes every detector node. Snapshots over REST are `POST /api/snapshot/take?NodeID=`.
 - The LED has an auto mode (-1): lit while any detector runs.
 
-## Robot library (`photoncompat-java`)
+## Robot library (`lumenlib-java`)
 - `org.lumenvision.lib`: `LumenCoprocessor`, `LumenNode`, `LumenDetector`, `LumenGraph`, `LumenPoseEstimator` (coprocessor multi-tag and constrained solves).
 - `org.lumenvision.photoncompat`: PhotonLib's names. Replace `org.photonvision` imports with these. `setPipelineIndex` runs the camera's
   i-th detector (or `withPipelines("a", "b")`), driver mode stops them all, `takeInputSnapshot` saves the camera's frame.

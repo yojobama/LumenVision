@@ -24,7 +24,7 @@ final class LumenVersionCheck {
 
     private static String loadJarVersion() {
         // built from the template under src/main/resources by processResources expand()
-        try (InputStream in = LumenVersionCheck.class.getResourceAsStream("/photoncompat-version.properties")) {
+        try (InputStream in = LumenVersionCheck.class.getResourceAsStream("/lumenlib-version.properties")) {
             if (in == null) return "unknown";
             Properties props = new Properties();
             props.load(in);
@@ -41,7 +41,7 @@ final class LumenVersionCheck {
     static void warnOnMismatch(String coprocessorVersion) {
         if (coprocessorVersion == null || coprocessorVersion.isEmpty()) return;
         if (coprocessorVersion.equals(JAR_VERSION)) return;
-        report("LumenVision: photoncompat-java version (" + JAR_VERSION
+        report("LumenVision: lumenlib-java version (" + JAR_VERSION
                 + ") does not match the coprocessor's own reported version ("
                 + coprocessorVersion + ") - update one to match the other.");
     }

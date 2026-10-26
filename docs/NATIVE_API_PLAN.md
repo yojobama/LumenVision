@@ -23,7 +23,7 @@ compatibility layer already runs on the new primitives.
 
 Work:
 - Record the baseline: `LumenCoreTests.exe "~[hitl]"` (102 cases), `dotnet test Server.Tests` (247), `npx tsc --noEmit` and `npm run build` in `webui`,
-  `./gradlew test` in `photoncompat`, `./gradlew build` in `robot`.
+  `./gradlew test` in `lumenlib`, `./gradlew build` in `robot`.
 - Pull the Pi's live `data.json` and save a copy as a test fixture (`Server.Tests/fixtures/data-with-profiles.json`), plus a synthetic one that
   covers every profile field (both detector kinds, driver mode on, camera overrides, a field layout, an active index other than 0).
 - Write characterisation tests for what robot code can do today, at the Java level against an in-process NT server and a scripted fake
