@@ -180,3 +180,8 @@ See `NPU_TOOLKIT_2_5.md`. Every option of the 2.x toolkits that builds for the R
 quantisation algorithms, per-layer quantisation, automatic hybrid quantisation, single-core mode, weight compression and pruning, and the undocumented
 2.5.0 compiler switches. None is faster or more accurate than the script's per-channel int8, which is only 0.6 mAP behind fp32. The script now pins those
 options and records them in the model's manifest. The input size is the lever that matters: 384x640 runs in 9.5 ms on one NPU core against 15.8 ms.
+
+## Building for the board's CPUs
+
+See `CPU_TUNING.md`. `-DLUMEN_TARGET_CPU=cortex-a76.cortex-a55` builds the tree for the RK3588's cores. On the board it measured within 1% of the generic build on
+every workload: the hot code is vkapriltag's scalar quad fit (64% of the service's CPU), which the new instructions do not help. The option stays off in release builds.

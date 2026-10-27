@@ -30,8 +30,9 @@ if(LUMEN_SANITIZE)
 endif()
 
 # Code generation for one CPU, e.g. -DLUMEN_TARGET_CPU=cortex-a76.cortex-a55 for the RK3588 (tuned for its big cores and its little ones, using what both have:
-# Armv8.2 with dot product, fp16 and LSE atomics). Applied to every target built here, vkapriltag and the in-tree apriltag included; prebuilt dependencies
-# (OpenCV, FFmpeg) keep their own flags. The binaries then run only on that CPU or newer. Empty = the toolchain's generic default.
+# Armv8.2 with dot product, fp16 and LSE atomics). Applied to every target built here, vkapriltag included; prebuilt dependencies (OpenCV, FFmpeg,
+# libapriltag) keep their own flags. The binaries then run only on that CPU or newer. Empty = the toolchain's generic default. On the RK3588 it measured
+# no faster (docs/research/hw-accel/CPU_TUNING.md), so release builds leave it empty.
 set(LUMEN_TARGET_CPU "" CACHE STRING "-mcpu value for GCC/Clang builds (e.g. cortex-a76.cortex-a55); empty = generic")
 if(LUMEN_TARGET_CPU)
     if(MSVC)
