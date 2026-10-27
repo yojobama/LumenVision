@@ -1,0 +1,12 @@
+model=1_apriltagV4-yolo11.rknn input=640x640 cores=0 input_path=set iterations=200 wall_ms=15.92 npu_run_ms=15.27
+model=1_apriltagV4-yolo11.rknn input=640x640 cores=01 input_path=set iterations=200 wall_ms=19.23 npu_run_ms=18.88
+model=1_apriltagV4-yolo11.rknn input=640x640 cores=012 input_path=set iterations=200 wall_ms=19.16 npu_run_ms=18.86
+model=1_apriltagV4-yolo11.rknn input=640x640 cores=0 input_path=mem iterations=200 wall_ms=15.58 npu_run_ms=15.40
+model=yolo11n_dfl_i8.rknn input=640x640 cores=0 input_path=set iterations=200 wall_ms=18.10 npu_run_ms=17.60
+model=yolo11n_dfl_i8.rknn input=640x640 cores=01 input_path=set iterations=200 wall_ms=24.35 npu_run_ms=23.17
+model=yolo11n_dfl_i8.rknn input=640x640 cores=012 input_path=set iterations=200 wall_ms=25.02 npu_run_ms=23.84
+model=yolo11n_dfl_i8.rknn input=640x640 cores=0 input_path=mem iterations=200 wall_ms=19.40 npu_run_ms=18.77
+model=yolo11n_dfl_fp16.rknn input=640x640 cores=0 input_path=set iterations=200 wall_ms=42.68 npu_run_ms=30.29
+model=yolo11n_dfl_fp16.rknn input=640x640 cores=01 input_path=set iterations=200 wall_ms=46.43 npu_run_ms=33.99
+model=yolo11n_dfl_fp16.rknn input=640x640 cores=012 input_path=set iterations=200 wall_ms=45.95 npu_run_ms=33.56
+model=yolo11n_dfl_fp16.rknn input=640x640 cores=0 input_path=mem iterations=200 wall_ms=43.07 npu_run_ms=41.65

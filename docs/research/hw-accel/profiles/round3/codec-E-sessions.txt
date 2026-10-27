@@ -1,0 +1,14 @@
+session iova range dump:
+session: pid=671927 index=188
+ device: fdbd0000.rkvenc-core
+ memory: 0 MiB
+------------------------------------------------------------------------------------------------------------
+| session|  device|   width|  height|  format|  fps_in| fps_out| rc_mode| bitrate|gop_size| profile|
+|     188|  RKVENC|    1280|     720|    h264|      30|      30|     cbr| 8000000|      60|    high|
+session iova range dump:
+session: pid=671931 index=189
+ device: fdbd0000.rkvenc-core
+ memory: 0 MiB
+------------------------------------------------------------------------------------------------------------
+| session|  device|   width|  height|  format|  fps_in| fps_out| rc_mode| bitrate|gop_size| profile|
+|     189|  RKVENC|    2560|     720|    h264|      30|      30|     cbr| 8000000|      60|    high|

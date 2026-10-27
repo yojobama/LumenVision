@@ -1,0 +1,17 @@
+                                              gpu-S1         gpu-W        gpu-W1         gpu-B
+seconds                                         20.0          20.0          20.0          20.0
+gpu busy %                                      27.4          24.7          66.5          26.5
+shader cores busy % of GPU-active               86.7          77.2          91.4          75.5
+issue starvation % of core-active               88.5          92.5          89.2         105.5
+arithmetic issue % of core-active               41.0          34.1          40.8          32.2
+load/store issue % of core-active               56.1          47.6          55.9          45.0
+partial reads % of LS reads                    100.0         100.0         100.0         100.0
+atomics per s (M)                               30.3          20.1          76.6          19.9
+LS reads from L2 GB/s                           4.37          2.69         11.01          2.65
+LS reads from DRAM GB/s                          1.6          0.81           4.1          0.82
+GPU DRAM read GB/s                              1.61          0.83          4.13          0.83
+GPU DRAM write GB/s                             1.32          0.86          3.37          0.84
+L3 TLB misses per s (M)                          0.1           0.0           0.2           0.0
+TLB misses per 1000 L2 reads                     0.4           0.4           0.4           0.3
+diverged % of arithmetic instr                 44.51          43.7         44.21         43.56
+compute tasks per s (k)                        314.2         236.0         790.1         233.4

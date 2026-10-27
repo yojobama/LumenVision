@@ -1,0 +1,40 @@
+    31.79%  libjpeg.so.8                
+    14.81%  libLumenCore.so             
+    13.57%  libcoreclr.so               
+    10.74%  [kernel.kallsyms]           
+     7.19%  memfd:doublemapper (deleted)
+     7.17%  libopencv_imgproc.so.500    
+     6.25%  libc.so.6                   
+     4.51%  libopencv_core.so.500       
+     1.77%  librockchip_mpp.so.1        
+     1.13%  libapriltag.so.3            
+     0.25%  libavformat.so.61           
+     0.14%  libavutil.so.59             
+     0.10%  ld-linux-aarch64.so.1       
+     0.09%  libavcodec.so.61            
+     0.08%  libmali.so.1.9.0            
+     7.09%  [.] kleidicv_error_t kleidicv::neon::yuv2rgbx_operation<kleidicv::neon::YUVSpToRGBxOrBGRx<true, false>, unsigned char>(kleidicv::neon::YUVSpToRGBxOrBGRx<true,
+     5.94%  [.] (anonymous namespace)::ApplyTable(cv::Mat const&, unsigned char*, unsigned long, unsigned char const*)
+     5.00%  [.] __memcpy_generic
+     4.50%  [.] apriltag_vulkan::(anonymous namespace)::FitQuadForBlob(apriltag_vulkan::DetectorConfig const&, std::span<apriltag_vulkan::RawLineFitPoint const, 184467440
+     4.21%  [.] cv::mixChannels8u(void const**, int const*, void**, int const*, int, int)
+     2.91%  [.] MjpegSink::Process(std::vector<SourceResult, std::allocator<SourceResult> > const&)
+     1.71%  [.] 0x000000000059a150
+     1.54%  [k] __pi_dcache_inval_poc
+     1.29%  [.] 0x000000000004122c
+     1.23%  [k] arch_local_irq_enable
+     0.96%  [.] quad_decode
+     0.88%  [.] 0x00000000000139b4
+     0.73%  [.] 0x00000000000412a4
+     0.72%  [.] update_curbyte_default
+     0.71%  [.] 0x0000000000014024
+     0.69%  [k] __pi_dcache_clean_poc
+     0.65%  [.] 0x0000000000041334
+     0.65%  [.] apriltag_vulkan::(anonymous namespace)::FitLine(apriltag_vulkan::LineFitMoments const&, double*, double*, double*, double*)
+     0.57%  [.] 0x0000000000044b48
+     0.50%  [.] 0x000000000004133c
+     0.47%  [.] 0x0000000000014270
+     0.47%  [.] 0x000000000044b9b8
+     0.45%  [.] 0x0000000000044b4c
+     0.44%  [.] 0x000000000004130c
+     0.44%  [k] arch_local_irq_restore

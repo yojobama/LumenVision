@@ -1,0 +1,10 @@
+min=1 maxtemp=45C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=2.94 left-vk.detect=4.8 lenovo-vk.age=16.77 left-npu.infer=18.74 left-npu.age=46.53 stereo.decode=2.56
+min=2 maxtemp=47C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=3.27 left-vk.detect=4.95 lenovo-vk.age=17.19 left-npu.infer=18.76 left-npu.age=46.6 stereo.decode=2.55
+min=3 maxtemp=48C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=4.02 left-vk.detect=4.83 lenovo-vk.age=17.49 left-npu.infer=18.81 left-npu.age=46.69 stereo.decode=2.57
+min=4 maxtemp=49C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=4.46 left-vk.detect=4.95 lenovo-vk.age=17.91 left-npu.infer=18.84 left-npu.age=46.58 stereo.decode=2.53
+min=5 maxtemp=49C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=4.31 left-vk.detect=4.84 lenovo-vk.age=17.79 left-npu.infer=18.87 left-npu.age=47.03 stereo.decode=2.59
+min=6 maxtemp=49C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=3.94 left-vk.detect=4.55 lenovo-vk.age=17.65 left-npu.infer=18.84 left-npu.age=46.97 stereo.decode=2.81
+min=7 maxtemp=50C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=3.63 left-vk.detect=4.42 lenovo-vk.age=17.32 left-npu.infer=18.83 left-npu.age=47.27 stereo.decode=2.85
+min=8 maxtemp=50C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=3.35 left-vk.detect=4.53 lenovo-vk.age=17.18 left-npu.infer=18.83 left-npu.age=47.0 stereo.decode=2.73
+min=9 maxtemp=50C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=3.01 left-vk.detect=4.54 lenovo-vk.age=15.76 left-npu.infer=18.75 left-npu.age=46.25 stereo.decode=2.6
+min=10 maxtemp=50C a76=2352/2352MHz a76max=2352 a55=1800 gpu=1000MHz npu=1000MHz ddr=2112MHz | lenovo-vk.detect=2.99 left-vk.detect=4.35 lenovo-vk.age=16.22 left-npu.infer=18.81 left-npu.age=46.64 stereo.decode=2.64

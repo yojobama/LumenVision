@@ -167,3 +167,9 @@ The NPU run and its frame age, and decode, are unchanged. The per-run values agr
 Correctness: the board's hardware suite with an ASan+UBSan build against 1.9.0 passes exactly as before (11 test cases passed, 1 skipped for PhotonVision's own model, 435 assertions, no sanitiser
 report), including the CPU-against-Vulkan agreement test on a real tagged image. One behaviour to know about: 1.9.0 trusts a single merge pass of the labelling instead of running a second one to
 check it converged; `APRILTAG_VK_UF_VERIFY=1` in the service's environment restores the check.
+
+## Sixth round: the accelerators, the codecs and the server
+
+See `PROFILING_ROUND3.md`. The MJPEG previews are encoded on the RK3588's JPEG encoder and handed to the server as bytes in a pooled buffer (an encoder-heavy graph went
+from 1.02 to 0.45 cores; the server's 13 full GCs a second are gone), and the cameras' NV12 frames now convert to RGB as the full-range YUV they are (every colour
+picture had its contrast stretched by about 16%). GPU counters, the NPU, scheduling and a 10-minute thermal soak are recorded there too.
