@@ -38,6 +38,7 @@ set(LUMEN_CORE_SOURCES
     PixelUnpack.cpp
     RecordSink.cpp
     Nv12Convert.cpp
+    YuvRange.cpp
     ResultPacket.cpp
     CoordinateFrames.cpp
     ConstrainedPnp.cpp

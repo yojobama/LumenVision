@@ -54,8 +54,15 @@ TEST_CASE("an NV12 frame reads its luma plane in place and converts the strided 
 	REQUIRE(frame.AsGray().data == buffer.bytes->data());
 	REQUIRE(frame.AsGray().size() == frame.size());
 
-	cv::Mat expected;
-	cv::cvtColor(buffer.Packed(), expected, cv::COLOR_YUV2BGR_NV12);
+	// the planes are full (JPEG) range: squeezed to video range first, OpenCV's video-range conversion gives the expected picture
+	cv::Mat packed = buffer.Packed(), squeezed(packed.size(), CV_8UC1), expected;
+	for (int row = 0; row < packed.rows; row++)
+		for (int col = 0; col < packed.cols; col++) {
+			const int v = packed.at<uchar>(row, col);
+			squeezed.at<uchar>(row, col) = row < DecoderBuffer::height ? cv::saturate_cast<uchar>(16.0 + v * 219.0 / 255.0)
+				: cv::saturate_cast<uchar>(128.0 + (v - 128) * 224.0 / 255.0);
+		}
+	cv::cvtColor(squeezed, expected, cv::COLOR_YUV2BGR_NV12);
 	REQUIRE(cv::norm(frame.AsBgr(), expected, cv::NORM_INF) == 0.0);
 
 	cv::Mat copy;
@@ -107,4 +114,28 @@ TEST_CASE("FromNv12 refuses planes that do not fit together", "[frame][nv12]") {
 	REQUIRE_THROWS(Frame::FromNv12(y, cv::Mat(9, 20, CV_8UC2), nullptr));
 	REQUIRE_THROWS(Frame::FromNv12(cv::Mat(20, 40, CV_8UC3), uv, nullptr));
 	REQUIRE_THROWS(Frame::FromNv12(cv::Mat(21, 40, CV_8UC1), cv::Mat(10, 20, CV_8UC2), nullptr));
+}
+
+// The NV12 frames come from the JPEG decoder, so their values are full range: black is 0 and white 255, as a JPEG decoder converts them. OpenCV's
+// NV12 conversion alone treats them as video range (Y 16 black, 235 white) and stretched every camera picture's contrast.
+TEST_CASE("an NV12 frame converts to BGR as full-range YUV, as a JPEG decoder does", "[frame][nv12]") {
+	// greys: every luma level with neutral chroma comes back as the same level, to within one
+	for (int level = 0; level < 256; level += 5) {
+		cv::Mat y(4, 4, CV_8UC1, cv::Scalar(level)), uv(2, 2, CV_8UC2, cv::Scalar(128, 128));
+		const cv::Vec3b pixel = Frame::FromNv12(y, uv, nullptr).AsBgr().at<cv::Vec3b>(0, 0);
+		for (int c = 0; c < 3; c++) REQUIRE(std::abs(pixel[c] - level) <= 1);
+	}
+	// colours: the JFIF (full-range BT.601) formula, to within two levels
+	for (int u : { 64, 128, 192 })
+		for (int v : { 64, 128, 192 }) {
+			const int luma = 120;
+			cv::Mat y(4, 4, CV_8UC1, cv::Scalar(luma)), uv(2, 2, CV_8UC2, cv::Scalar(u, v));
+			cv::Mat copy;
+			Frame::FromNv12(y, uv, nullptr).CopyBgrTo(copy);
+			const cv::Vec3b pixel = copy.at<cv::Vec3b>(0, 0);
+			const double r = luma + 1.402 * (v - 128), g = luma - 0.344136 * (u - 128) - 0.714136 * (v - 128), b = luma + 1.772 * (u - 128);
+			REQUIRE(std::abs(pixel[2] - cv::saturate_cast<uchar>(r)) <= 2);
+			REQUIRE(std::abs(pixel[1] - cv::saturate_cast<uchar>(g)) <= 2);
+			REQUIRE(std::abs(pixel[0] - cv::saturate_cast<uchar>(b)) <= 2);
+		}
 }

@@ -1,5 +1,6 @@
 #ifdef LUMEN_WITH_MPP_JPEG
 #include "MppJpegDecoder.h"
+#include "YuvRange.h"
 
 #include <rockchip/rk_mpi.h>
 #include <rockchip/mpp_frame.h>
@@ -133,7 +134,7 @@ bool MppJpegDecoder::Decode(const uint8_t* jpegData, size_t jpegSize, int width,
 	if (!DecodeNv12(jpegData, jpegSize, width, height, planes)) return false;
 	const auto copyStart = std::chrono::steady_clock::now();
 	if (asGray) planes.y.copyTo(dst); // the Y plane is the greyscale image (no conversion)
-	else cv::cvtColorTwoPlane(planes.y, planes.uv, dst, cv::COLOR_YUV2BGR_NV12);
+	else YuvRange::FullRangeNv12ToBgr(planes.y, planes.uv, dst); // a JPEG's YUV is full range
 	m_LastCopyOutUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - copyStart).count();
 	return true;
 }

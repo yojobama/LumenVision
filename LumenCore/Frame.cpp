@@ -1,5 +1,6 @@
 #include "Frame.h"
 #include "FramePool.h"
+#include "YuvRange.h"
 #include <stdexcept>
 
 Frame::Frame(const cv::Mat& mat)
@@ -145,7 +146,7 @@ const cv::Mat& Frame::AsBgr() const
 			break;
 		case FrameFormat::NV12:
 			bgr = FramePool::Instance().Acquire(m_Storage->mat.rows, m_Storage->mat.cols, CV_8UC3, owner);
-			cv::cvtColorTwoPlane(m_Storage->mat, m_Storage->uv, bgr, cv::COLOR_YUV2BGR_NV12);
+			YuvRange::FullRangeNv12ToBgr(m_Storage->mat, m_Storage->uv, bgr);
 			break;
 		default:
 			throw std::runtime_error("Frame::AsBgr: no conversion implemented for this format");
@@ -174,7 +175,7 @@ void Frame::CopyBgrTo(cv::Mat& dst) const
 	case FrameFormat::NV12:
 		// a cached conversion is reused rather than made twice
 		if (m_Storage->bgrView.has_value()) m_Storage->bgrView->copyTo(dst);
-		else cv::cvtColorTwoPlane(mat, m_Storage->uv, dst, cv::COLOR_YUV2BGR_NV12);
+		else YuvRange::FullRangeNv12ToBgr(mat, m_Storage->uv, dst);
 		break;
 	default:
 		throw std::runtime_error("Frame::CopyBgrTo: no conversion implemented for this format");

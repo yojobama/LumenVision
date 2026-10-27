@@ -25,6 +25,7 @@ public:
 
 	// An NV12 frame: `y` is the luma plane (CV_8UC1, height x width) and `uv` the chroma plane (CV_8UC2, height/2 x width/2), either
 	// possibly with a row stride larger than the width. `owner` keeps the memory both views point into alive for as long as the Frame is.
+	// The values are full (JPEG) range: NV12 frames come from the hardware JPEG decoder, and AsBgr() and the encoders convert accordingly.
 	static Frame FromNv12(cv::Mat y, cv::Mat uv, std::shared_ptr<void> owner);
 
 	bool empty() const;

@@ -32,6 +32,9 @@ bool RgaLetterbox::Run(const Frame& frame, uint8_t* canvas, int canvasWidth, int
 		src = wrapbuffer_virtualaddr_t(const_cast<uchar*>(bgr.data), srcWidth, srcHeight, static_cast<int>(bgr.step / bgr.elemSize()), srcHeight, RK_FORMAT_BGR_888);
 	}
 	rga_buffer_t dst = wrapbuffer_virtualaddr_t(canvas, canvasWidth, canvasHeight, canvasWidth, canvasHeight, RK_FORMAT_RGB_888);
+	// an NV12 frame holds full-range values (it comes from the JPEG decoder); RGA's default YUV to RGB conversion assumes video range and would
+	// stretch the picture's contrast
+	if (frame.IsNv12()) dst.color_space_mode = IM_YUV_TO_RGB_BT601_FULL;
 
 	if (m_PaintedCanvas != canvas || m_PaintedWidth != canvasWidth || m_PaintedHeight != canvasHeight || m_PaintedPicture != picture) {
 		// painted by the CPU: a hardware fill can only run on the RGA2 core, which cannot address the memory above 4 GB that a plain heap buffer may
