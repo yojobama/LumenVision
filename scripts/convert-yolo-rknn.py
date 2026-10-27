@@ -7,14 +7,21 @@ rknn-toolkit2 only runs on x86-64 Linux, so run this in a container or WSL, not 
         python3 scripts/convert-yolo-rknn.py --onnx yolov8n.onnx --out yolov8n-640x384.rknn \\
         --dataset calibration-frames/ --imgsz 384x640
 
-The ONNX must come from Rockchip's split-head recipe (airockchip/ultralytics_yolov8, see its RKOPT_README.md): the decoded head is cut
+The ONNX must come from Rockchip's split-head recipe (airockchip/ultralytics_yolov8, or airockchip/ultralytics_yolo11 for YOLO11; see their RKOPT_README.md): the decoded head is cut
 into box / class / score-sum outputs for each FPN scale, which is the layout RknnDetectionBackend decodes. Export it at the size you
 will run (HxW): for a 16:9 camera 384x640 skips the grey padding a square 640x640 input would carry (44% of the input at 720p),
 and detections are unchanged because the picture's scale is the same.
 
-Quantisation is only as good as its calibration: use 100-300 frames from the camera and scenes the robot will actually see, not
-dataset images. The toolkit version should match the runtime on the board (see the log line RknnDetectionBackend prints at load); the
-version used is written next to the model.
+Calibrate on frames from the camera and scenes the robot will actually see, not dataset images. How many matters little: on COCO,
+20 to 500 frames all came within 0.15 mAP of each other, and the int8 model is 0.6 mAP behind fp32. The toolkit version should match the
+runtime on the board (see the log line RknnDetectionBackend prints at load); the version and options used are written next to the model.
+
+Measured with rknn-toolkit2 2.5.0 on the RK3588 (YOLO11n, COCO, docs/research/hw-accel/NPU_TOOLKIT_2_5.md): per-channel int8 with the
+`normal` algorithm, as here, is the best setting. mmse, kl_divergence and per-layer quantisation lose 0.8 to 1.6 mAP. Automatic hybrid
+quantisation is 15% slower with no gain. The compiler switches (single_core_mode, compress_weight, model_pruning, sram/nbuf preference,
+core0-only, disable_first_conv, flash attention) leave the NPU time unchanged. w8a16, w4a16, gdq and group quantisation are not available
+for the RK3588, and w16a16i_dfp does not run there. Two choices do move the numbers: the input size (384x640 takes 9.5 ms on one NPU core
+against 15.8 ms for 640x640) and --fp16 (lossless against fp32, at 27 ms).
 
 This script is not run by CI; check the printed accuracy analysis and the model on the board before relying on a conversion.
 """
@@ -83,8 +90,10 @@ def main():
 
     images = [] if args.fp16 else calibration_list(args.dataset, args.samples)
     rknn = RKNN(verbose=False)
+    # the toolkit's defaults, pinned: the alternatives measured worse (see the docstring), and a later toolkit's defaults may change
+    quantisation = {"quantized_dtype": "w8a8", "quantized_algorithm": "normal", "quantized_method": "channel"}
     # the graph takes RGB uint8 and divides by 255 itself, so the backend feeds raw pixels (RknnDetectionBackend: "no normalisation")
-    rknn.config(mean_values=[[0, 0, 0]], std_values=[[255, 255, 255]], target_platform=args.target)
+    rknn.config(mean_values=[[0, 0, 0]], std_values=[[255, 255, 255]], target_platform=args.target, **quantisation)
     if rknn.load_onnx(model=args.onnx) != 0:
         sys.exit("load_onnx failed")
 
@@ -112,6 +121,7 @@ def main():
         "source": Path(args.onnx).name,
         "inputSize": {"height": args.imgsz[0], "width": args.imgsz[1]},
         "quantisation": "fp16" if args.fp16 else "int8",
+        "quantisationOptions": None if args.fp16 else quantisation,
         "calibrationFrames": len(images),
         "toolkitVersion": toolkit,
         "converted": datetime.now(timezone.utc).isoformat(timespec="seconds"),

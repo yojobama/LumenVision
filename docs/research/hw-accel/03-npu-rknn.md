@@ -114,6 +114,9 @@ Source: https://raw.githubusercontent.com/airockchip/rknn-toolkit2/master/rknpu2
   tests/test_rknn_detection_hitl.cpp:19-20) already reflect int8 noise. A documented converter with a proper calibration set
   (100-500 *in-domain* FRC images) and optional hybrid quantisation is where accuracy is won back (see F-hybrid).
 - Confidence: medium (numbers high; the n/640 inference is mine).
+- Measured since (NPU_TOOLKIT_2_5.md): YOLO11n converted with Rockchip's split head and this repo's script loses only 0.6 mAP to int8
+  (38.76 against 39.35 fp32, COCO, 4500 held-out images, on the board), and 20 calibration frames do as well as 500. Hybrid quantisation
+  and the other quantisation algorithms do not win any of that back. PhotonVision's loss comes from its conversion, not from int8 itself.
 
 ### F5. Correction to ROADMAP C1 / README: rknpu2 on RK3588 has no NV12 input format
 - Claim: ROADMAP.md:245 and README.md:58/340 say "RKNN takes NV12 input natively". The RK3588 runtime API has no YUV/NV12

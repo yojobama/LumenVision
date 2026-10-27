@@ -173,3 +173,10 @@ check it converged; `APRILTAG_VK_UF_VERIFY=1` in the service's environment resto
 See `PROFILING_ROUND3.md`. The MJPEG previews are encoded on the RK3588's JPEG encoder and handed to the server as bytes in a pooled buffer (an encoder-heavy graph went
 from 1.02 to 0.45 cores; the server's 13 full GCs a second are gone), and the cameras' NV12 frames now convert to RGB as the full-range YUV they are (every colour
 picture had its contrast stretched by about 16%). GPU counters, the NPU, scheduling and a 10-minute thermal soak are recorded there too.
+
+## rknn-toolkit2 2.5.0 conversion options
+
+See `NPU_TOOLKIT_2_5.md`. Every option of the 2.x toolkits that builds for the RK3588 was measured on the board with YOLO11n against COCO. These include the
+quantisation algorithms, per-layer quantisation, automatic hybrid quantisation, single-core mode, weight compression and pruning, and the undocumented
+2.5.0 compiler switches. None is faster or more accurate than the script's per-channel int8, which is only 0.6 mAP behind fp32. The script now pins those
+options and records them in the model's manifest. The input size is the lever that matters: 384x640 runs in 9.5 ms on one NPU core against 15.8 ms.

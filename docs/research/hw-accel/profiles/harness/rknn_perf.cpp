@@ -79,7 +79,7 @@ int main(int argc, char** argv)
 			input.buf = image.data();
 			rknn_inputs_set(ctx, 1, &input);
 		}
-		rknn_run(ctx, nullptr);
+		if (rknn_run(ctx, nullptr) != RKNN_SUCC) { std::fprintf(stderr, "rknn_run failed\n"); std::exit(1); } // else failed calls get timed
 		rknn_perf_run run{};
 		if (rknn_query(ctx, RKNN_QUERY_PERF_RUN, &run, sizeof(run)) == RKNN_SUCC) npuUs = static_cast<double>(run.run_duration);
 		std::vector<rknn_output> outputs(io.n_output);

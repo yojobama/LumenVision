@@ -1,0 +1,15 @@
+rknn_speed_ab.sh 3 lb200 nosum_lb200 (core 0, 500 runs per line)
+model=lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.58 npu_run_ms=15.79
+model=nosum_lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.39 npu_run_ms=15.64
+model=lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.62 npu_run_ms=15.75
+model=nosum_lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.39 npu_run_ms=15.63
+model=lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.55 npu_run_ms=15.75
+model=nosum_lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.38 npu_run_ms=15.63
+
+rknn_speed_ab.sh 3 lb200 r384x640
+model=lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.60 npu_run_ms=15.76
+model=r384x640.rknn input=640x384 cores=0 input_path=set iterations=500 wall_ms=11.00 npu_run_ms=9.61
+model=lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.54 npu_run_ms=15.75
+model=r384x640.rknn input=640x384 cores=0 input_path=set iterations=500 wall_ms=9.91 npu_run_ms=9.43
+model=lb200.rknn input=640x640 cores=0 input_path=set iterations=500 wall_ms=16.57 npu_run_ms=15.77
+model=r384x640.rknn input=640x384 cores=0 input_path=set iterations=500 wall_ms=9.93 npu_run_ms=9.45
