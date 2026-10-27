@@ -18,7 +18,7 @@ old = load(sys.argv[1]); new = load(sys.argv[2]) if len(sys.argv) > 2 else None
 metrics = [('service_cores', 0), ('gpu_load', 0), ('lenovo-vk detect', 0), ('lenovo-vk detect', 1), ('lenovo-vk vk-gpu:submit+wait', 0), ('lenovo-vk vk-quads', 0), ('lenovo-vk vk-tags', 0),
            ('lenovo-vk age', 0), ('lenovo-vk interval', 0), ('left-vk detect', 0), ('left-vk detect', 1), ('left-vk vk-gpu:submit+wait', 0), ('left-vk vk-quads', 0), ('left-vk age', 0),
            ('right-vk detect', 0), ('right-vk age', 0), ('left-npu infer', 0), ('left-npu age', 0), ('lenovo decode', 0), ('stereo decode', 0)]
-for w in ('V', 'V1', 'W', 'W1', 'B'):
+for w in ('V', 'V1', 'S', 'S1', 'W', 'W1', 'B'):
     if w not in old: continue
     print('== workload %s (%d runs old%s)' % (w, len(old[w]), ', %d new' % len(new[w]) if new and w in new else ''))
     for k, i in metrics:

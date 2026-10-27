@@ -12,7 +12,7 @@ sys.argv = ['x', 'ultrafast']
 exec(open('/tmp/mc_test.py').read().split('\ndef main():')[0])
 # V1 and W1 are V and W with the Vulkan detectors at decimation 1 (the default is 2)
 variant = workload
-if workload in ('V1', 'W1'):
+if workload in ('V1', 'W1', 'S1'):
     VK_EXTRA['quadDecimate'] = 1
     workload = workload[0]
     label = label + '-dec1'
@@ -44,6 +44,15 @@ def restart_service():
 
 def build():
     srcs, sinks, pollers = [], [], []
+    if workload == 'S':
+        # one Vulkan detector on the stereo camera's left half (1280x720 at 60 fps), nothing else: a single detector without the Lenovo camera
+        stereo = create_camera('ab-stereo', STEREO_PATH); srcs.append(stereo)
+        set_mode(stereo, 2560, 720, 60)
+        time.sleep(3)
+        halves = req('POST', '/cameraSource/%d/split' % stereo)
+        srcs += halves
+        sinks.append(vk('ab-left-vk', halves[0], 1280, 720))
+        return srcs, sinks, pollers
     lenovo = create_camera('ab-lenovo', LENOVO); srcs.append(lenovo)
     set_mode(lenovo, 1280, 720, 30)
     lenovoVk = vk('ab-lenovo-vk', lenovo, 1280, 720)

@@ -133,3 +133,37 @@ detectors), so no conclusion is drawn from them.
 
 Correctness: the library's own change log calls its output identical, and the board's hardware suite agrees: with an ASan+UBSan build against 1.8.0, the Vulkan backend tests and the
 CPU-against-Vulkan agreement test on a real tagged image pass exactly as before (11 test cases passed, 1 skipped for PhotonVision's own model, 435 assertions, no sanitiser report).
+
+## Fifth round: vkapriltag 1.8.0 to 1.9.0
+
+The submodule moved to the `v1.9.0` tag's commit (`0d537c8`). The release is GPU-side (six fewer dispatches per frame, labelling in one merge pass with run starts from a workgroup scan,
+threshold and block passes folded together, wider loads on integrated GPUs, a larger-blob sort); the public API is unchanged and the library's output is stated to be identical.
+Measured on the board with the same LumenVision build either side (`dev81` and `dev83`), 40 s per run after a 12 s warm-up, two runs per cell, the service as shipped. The Lenovo camera
+was unplugged for this round, so the workloads use the stereo camera's halves (1280x720 each, at 60 fps) only; both versions were measured fresh, back to back, under those conditions.
+All Vulkan sinks use the ultrafast refine preset with probeMargin 4. Raw runs: `profiles/vkapriltag-1.8.0-round2.jsonl`, `profiles/vkapriltag-1.9.0.jsonl` and the single-detector pair
+`profiles/vkapriltag-single-1.8.0.jsonl`, `profiles/vkapriltag-single-1.9.0.jsonl`; the harness (workloads S and S1 added) is in `profiles/harness/`.
+
+| Workload | | 1.8.0 | 1.9.0 | change |
+|---|---|---|---|---|
+| **S**: one detector on a 60 fps half, decimation 2 (the default) | `detect` | 3.02 ms | 2.60 | -14% |
+| | GPU submit and wait | 2.27 ms | 1.89 | -17% |
+| | GPU load | 11.5% | 10.0 | |
+| **S1**: the same at decimation 1 | `detect` | 7.88 ms | 6.24 | -21% |
+| | GPU submit and wait | 6.12 ms | 4.64 | -24% |
+| | GPU load | 35% | 26.5 | -24% |
+| | frame age at publish | 27.0 ms | 25.3 | -6% |
+| **W**: both halves, decimation 2 | GPU load | 24% | 18.5 | -23% |
+| | `detect` (left, right) | 4.55 / 3.72 ms | 3.79 / 3.44 | -17% / -8% |
+| **W1**: both halves, decimation 1 | GPU load | 67.5% | 52 | -23% |
+| | `detect` (left, right) | 9.68 / 12.09 ms | 9.34 / 7.74 | -3.5% / -36% |
+| | frame age (left, right) | 29.0 / 31.4 ms | 28.5 / 26.9 | -2% / -14% |
+| **B**: W plus a YOLO detector, two recordings and two MJPEG tiles | GPU load | 24.5% | 20.0 | -18% |
+| | left `detect` | 4.77 ms | 3.88 | -19% |
+
+The service's CPU is unchanged (within 2-5% in every workload): the release works on the GPU, which now spends 13-24% less time per frame. A single detector's `detect` gets 14-21% shorter;
+when two detectors share the GPU at decimation 1 the second one gains most (the right half's `detect` 12.1 to 7.7 ms, its frame age 31.4 to 26.9 ms), because the GPU is no longer saturated.
+The NPU run and its frame age, and decode, are unchanged. The per-run values agree closely within each version (for example S1's GPU wait 6.10 and 6.15 ms against 4.59 and 4.69 ms).
+
+Correctness: the board's hardware suite with an ASan+UBSan build against 1.9.0 passes exactly as before (11 test cases passed, 1 skipped for PhotonVision's own model, 435 assertions, no sanitiser
+report), including the CPU-against-Vulkan agreement test on a real tagged image. One behaviour to know about: 1.9.0 trusts a single merge pass of the labelling instead of running a second one to
+check it converged; `APRILTAG_VK_UF_VERIFY=1` in the service's environment restores the check.
