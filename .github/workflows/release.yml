@@ -7,6 +7,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      target_cpu:
+        description: "LUMEN_TARGET_CPU for the arm64 build (e.g. cortex-a76.cortex-a55); empty = generic"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -49,7 +54,10 @@ jobs:
         run: ./scripts/install-deps.sh --with-nt4 --with-webrtc --with-rknn --with-mpp --with-ffmpeg-rockchip
 
       - name: Configure
-        run: cmake --preset ci-linux-arm64
+        env:
+          TARGET_CPU: ${{ inputs.target_cpu }}
+        # the cache keeps LUMEN_TARGET_CPU when build-deb.sh configures the preset again
+        run: cmake --preset ci-linux-arm64 ${TARGET_CPU:+-DLUMEN_TARGET_CPU=$TARGET_CPU}
 
       - name: Build
         run: cmake --build --preset ci-linux-arm64

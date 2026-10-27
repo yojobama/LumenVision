@@ -29,6 +29,18 @@ if(LUMEN_SANITIZE)
     message(STATUS "Sanitisers enabled: ${LUMEN_SANITIZE}")
 endif()
 
+# Code generation for one CPU, e.g. -DLUMEN_TARGET_CPU=cortex-a76.cortex-a55 for the RK3588 (tuned for its big cores and its little ones, using what both have:
+# Armv8.2 with dot product, fp16 and LSE atomics). Applied to every target built here, vkapriltag and the in-tree apriltag included; prebuilt dependencies
+# (OpenCV, FFmpeg) keep their own flags. The binaries then run only on that CPU or newer. Empty = the toolchain's generic default.
+set(LUMEN_TARGET_CPU "" CACHE STRING "-mcpu value for GCC/Clang builds (e.g. cortex-a76.cortex-a55); empty = generic")
+if(LUMEN_TARGET_CPU)
+    if(MSVC)
+        message(FATAL_ERROR "LUMEN_TARGET_CPU needs GCC or Clang")
+    endif()
+    add_compile_options(-mcpu=${LUMEN_TARGET_CPU})
+    message(STATUS "Code generation for CPU: ${LUMEN_TARGET_CPU}")
+endif()
+
 # Static archives (vkapriltag, codec_stereo) are linked into LumenCore's shared library
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
