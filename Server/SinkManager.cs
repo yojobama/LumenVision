@@ -335,6 +335,31 @@ namespace Server
 
         public string GetMjpegFrameBase64(int sinkId) => ManagerWrapper.Instance.GetMjpegFrameBase64(sinkId);
 
+        // The latest JPEG of an MjpegSink copied into `buffer`, which comes from (and is grown through) the shared array pool; returns the JPEG's
+        // length, 0 when there is none yet. No per-frame allocation: a base64 string per frame made every frame a large-object allocation.
+        public int CopyMjpegFrame(int sinkId, ref byte[] buffer)
+        {
+            while (true)
+            {
+                int length;
+                var pin = System.Runtime.InteropServices.GCHandle.Alloc(buffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+                try
+                {
+                    length = ManagerWrapper.Instance.CopyMjpegFrame(sinkId, pin.AddrOfPinnedObject(), buffer.Length);
+                }
+                finally
+                {
+                    pin.Free();
+                }
+                if (length <= buffer.Length) return length;
+                System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
+                buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(length);
+            }
+        }
+
+        // increments with every new JPEG of the sink, so a stream sends a frame only once
+        public long GetMjpegFrameSequence(int sinkId) => ManagerWrapper.Instance.GetMjpegFrameSequence(sinkId);
+
         // creates a RecordSink; bind it to a frame-producing node to record segmented MP4 files plus a JSON-Lines telemetry sidecar.
         // dstFolder is relative to the working directory; defaults to a name-derived folder under "recordings/".
         public int AddRecordSink(string name, string? dstFolder = null, string? encoderName = null,

@@ -1817,6 +1817,22 @@ string Manager::GetMjpegFrameBase64(int sinkId)
     return mjpegSink ? mjpegSink->GetLatestJpegBase64() : "";
 }
 
+int Manager::CopyMjpegFrame(int sinkId, void* buffer, int capacity)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return 0;
+    auto mjpegSink = std::dynamic_pointer_cast<MjpegSink>(sink->second);
+    return mjpegSink ? mjpegSink->CopyLatestJpeg(buffer, capacity) : 0;
+}
+
+long long Manager::GetMjpegFrameSequence(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return 0;
+    auto mjpegSink = std::dynamic_pointer_cast<MjpegSink>(sink->second);
+    return mjpegSink ? static_cast<long long>(mjpegSink->GetLatestJpegSequence()) : 0;
+}
+
 // Declared unconditionally with an #ifdef'd body, as in the NT4/WebRTC blocks above.
 #ifdef LUMEN_WITH_RECORD
 int Manager::CreateRecordSink(string dstFolder, string encoderName, int bitrateKbps, int fps, int segmentSeconds, int64_t maxFolderSizeBytes, int maxFileCount)

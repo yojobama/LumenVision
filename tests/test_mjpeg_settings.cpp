@@ -165,3 +165,55 @@ TEST_CASE("an MjpegSink encodes only while its frames are being polled", "[mjpeg
 	std::error_code ignored;
 	std::filesystem::remove(clip, ignored);
 }
+
+TEST_CASE("the server's copy of an MjpegSink frame is the JPEG itself, sized first when the buffer is short, with a sequence that advances", "[mjpeg]") {
+	Manager manager;
+	const std::filesystem::path clip = std::filesystem::temp_directory_path() / "lumencore-test-mjpeg-copy.avi";
+	{
+		cv::Mat bus = cv::imread(std::string(LUMEN_TEST_DATA_DIR) + "/bus.jpg");
+		REQUIRE_FALSE(bus.empty());
+		cv::VideoWriter writer(clip.string(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 30.0, bus.size());
+		REQUIRE(writer.isOpened());
+		for (int i = 0; i < 300; i++) writer.write(bus);
+	}
+	int sourceId = manager.CreateVideoFileSource(clip.string(), 30);
+	int sinkId = manager.CreateMjpegSink(80);
+	manager.BindSourceToSink(sourceId, sinkId);
+	manager.StartSinkById(sinkId);
+	manager.StartSourceById(sourceId);
+
+	REQUIRE(manager.CopyMjpegFrame(sinkId, nullptr, 0) >= 0);
+	REQUIRE(WaitForFrameSize(manager, sinkId, cv::Size()) != cv::Size());
+	const long long first = manager.GetMjpegFrameSequence(sinkId);
+	REQUIRE(first > 0);
+
+	// a short buffer: the size comes back and nothing is written
+	std::vector<uint8_t> small(16, 0xAB);
+	const int size = manager.CopyMjpegFrame(sinkId, small.data(), static_cast<int>(small.size()));
+	REQUIRE(size > 16);
+	REQUIRE(small == std::vector<uint8_t>(16, 0xAB));
+
+	// a big enough buffer: a JPEG that decodes to the source picture's size
+	std::vector<uint8_t> jpeg(static_cast<size_t>(size) * 2);
+	const int copied = manager.CopyMjpegFrame(sinkId, jpeg.data(), static_cast<int>(jpeg.size()));
+	REQUIRE(copied > 0);
+	jpeg.resize(static_cast<size_t>(copied));
+	REQUIRE(jpeg[0] == 0xFF);
+	REQUIRE(jpeg[1] == 0xD8);
+	cv::Mat decoded = cv::imdecode(jpeg, cv::IMREAD_COLOR);
+	REQUIRE(decoded.size() == cv::imread(std::string(LUMEN_TEST_DATA_DIR) + "/bus.jpg").size());
+
+	// still polled, so it keeps encoding and the sequence moves on
+	for (int i = 0; i < 20 && manager.GetMjpegFrameSequence(sinkId) == first; i++) {
+		manager.CopyMjpegFrame(sinkId, nullptr, 0);
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));
+	}
+	REQUIRE(manager.GetMjpegFrameSequence(sinkId) > first);
+
+	// not an MjpegSink: nothing
+	REQUIRE(manager.CopyMjpegFrame(sourceId, jpeg.data(), static_cast<int>(jpeg.size())) == 0);
+	REQUIRE(manager.GetMjpegFrameSequence(-1) == 0);
+	manager.Shutdown();
+	std::error_code ignored;
+	std::filesystem::remove(clip, ignored);
+}

@@ -331,6 +331,11 @@ public:
 	void SetWebRTCSinkSettings(int sinkId, int bitrateKbps, int fps, int scaleDivisor);
 	// base64-encoded JPEG (see MjpegSink::GetLatestJpegBase64). Empty string if sinkId isn't an MjpegSink or no frame has arrived yet.
 	string GetMjpegFrameBase64(int sinkId);
+	// The latest JPEG's bytes copied into `buffer` (a pinned .NET array) when they fit in `capacity`; returns their size either way, 0 if sinkId
+	// isn't an MjpegSink or no frame has arrived yet (see MjpegSink::CopyLatestJpeg). What the server's MJPEG endpoints use.
+	int CopyMjpegFrame(int sinkId, void* buffer, int capacity);
+	// increments with every new JPEG of the sink (0 before the first, or if sinkId isn't an MjpegSink)
+	long long GetMjpegFrameSequence(int sinkId);
 
 	// terminal sink: bind any single frame-producing node and record it to segmented MP4 files plus a JSON-Lines telemetry sidecar (see
 	// RecordSink.h). Takes only primitive parameters, as RecordSink.h's libavformat API must never reach swig.i. Declared unconditionally.

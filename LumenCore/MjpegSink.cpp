@@ -1,6 +1,7 @@
 #include "MjpegSink.h"
 #include <opencv2/opencv.hpp>
 #include <algorithm>
+#include <cstring>
 
 namespace {
 	constexpr int MAX_BOUND_SOURCES = 1; // matches WebRTCSink's own single-source convention
@@ -74,8 +75,32 @@ void MjpegSink::SetSettings(int jpegQuality, int scaleDivisor)
 std::string MjpegSink::GetLatestJpegBase64() const
 {
 	m_LastRequestUs = SourceResult::NowUs();
+	std::shared_ptr<const std::vector<uint8_t>> jpeg;
+	{
+		std::lock_guard<std::mutex> lock(m_Mutex);
+		jpeg = m_LatestJpeg;
+	}
+	return jpeg ? Base64Encode(*jpeg) : std::string();
+}
+
+int MjpegSink::CopyLatestJpeg(void* buffer, int capacity) const
+{
+	m_LastRequestUs = SourceResult::NowUs();
+	std::shared_ptr<const std::vector<uint8_t>> jpeg;
+	{
+		std::lock_guard<std::mutex> lock(m_Mutex);
+		jpeg = m_LatestJpeg;
+	}
+	if (!jpeg) return 0;
+	const int size = static_cast<int>(jpeg->size());
+	if (buffer && size <= capacity) std::memcpy(buffer, jpeg->data(), jpeg->size());
+	return size;
+}
+
+uint64_t MjpegSink::GetLatestJpegSequence() const
+{
 	std::lock_guard<std::mutex> lock(m_Mutex);
-	return m_LatestJpegBase64;
+	return m_Sequence;
 }
 
 void MjpegSink::Process(const std::vector<SourceResult>& results)
@@ -112,9 +137,10 @@ void MjpegSink::Process(const std::vector<SourceResult>& results)
 		}
 		lap.Mark("jpeg");
 
-		std::string base64 = Base64Encode(encoded);
-		lap.Mark("base64");
+		// kept as bytes: the server copies them straight into its response buffer (CopyLatestJpeg); base64 is made only for the callers that ask for it
+		auto jpeg = std::make_shared<const std::vector<uint8_t>>(std::move(encoded));
 		std::lock_guard<std::mutex> lock(m_Mutex);
-		m_LatestJpegBase64 = std::move(base64);
+		m_LatestJpeg = std::move(jpeg);
+		m_Sequence++;
 	}
 }

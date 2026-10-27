@@ -70,6 +70,8 @@
 %include "FrameFormat.h"
 %include "CameraMode.h"
 %include "FrameTransform.h"
+// Manager::CopyMjpegFrame writes into a buffer the caller pins: an IntPtr in C#, not an opaque SWIGTYPE_p_void
+%apply void *VOID_INT_PTR { void *buffer }
 %include "Manager.h"
 %include "CameraCalibrationResult.h"
 %include "StereoCalibrationResult.h"
