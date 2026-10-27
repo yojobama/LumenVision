@@ -68,6 +68,15 @@ def build():
     halves = req('POST', '/cameraSource/%d/split' % stereo)
     srcs += halves
     left, right = halves
+    if workload == 'E':
+        # encoder-heavy: a recording per camera and four MJPEG tiles polled at 10 fps (each camera, the detector's annotated output, a stereo half)
+        rec_l = record('ab-rec-lenovo', lenovo, '/tmp/ab-rec-lenovo')
+        rec_s = record('ab-rec-stereo', stereo, '/tmp/ab-rec-stereo')
+        tiles = [mjpeg('ab-mjpeg-lenovo', lenovo), mjpeg('ab-mjpeg-stereo', stereo), mjpeg('ab-mjpeg-lenovo-vk', lenovoVk), mjpeg('ab-mjpeg-left', left)]
+        sinks += [rec_l, rec_s] + tiles
+        for s_ in tiles:
+            p = Poller(s_); p.start(); pollers.append(p)
+        return srcs, sinks, pollers
     if workload == 'C':
         for h in halves:
             req('PATCH', '/source/fpsLimit?SourceID=%d&fps=30' % h)
@@ -122,8 +131,8 @@ def main():
             v = stage(name, 'decode')
             if v:
                 res['%s decode' % name.replace('ab-', '')] = v
-        for name in ('ab-left-npu', 'ab-rec-stereo'):
-            for st in ('infer', 'age', 'convert', 'encode'):
+        for name in ('ab-left-npu', 'ab-rec-stereo', 'ab-rec-lenovo', 'ab-mjpeg-lenovo', 'ab-mjpeg-stereo', 'ab-mjpeg-lenovo-vk', 'ab-mjpeg-left'):
+            for st in ('infer', 'age', 'convert', 'encode', 'bgr+scale', 'jpeg', 'process'):
                 v = stage(name, st)
                 if v:
                     res['%s %s' % (name.replace('ab-', ''), st)] = v
