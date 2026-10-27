@@ -2,7 +2,7 @@ name: Sanitise (arm64)
 
 # Builds LumenCore for the Orange Pi's architecture with AddressSanitizer and UBSan (the RKNN, RGA and MPP glue only compiles there), runs the native
 # suite under them, and uploads the instrumented library so it can be run in the service on a board (LD_PRELOAD=libasan.so). Runs on demand, and when this
-# file changes on the feature branch (a workflow that is not on the default branch yet cannot be dispatched by hand: touch this file to run it; last run for the hardware JPEG encoder).
+# file changes on the feature branch (a workflow that is not on the default branch yet cannot be dispatched by hand: touch this file to run it; last run for the full-range NV12 conversion and the MJPEG byte transport).
 on:
   workflow_dispatch:
   push:
