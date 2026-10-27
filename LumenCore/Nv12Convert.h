@@ -13,10 +13,14 @@ extern "C" {
 // limited range, so each plane goes through a lookup table on the way (one pass over the pixels that was a copy anyway; NEON table lookups on ARM64).
 class Nv12ToAvFrame {
 public:
+	// squeezeRange false keeps the JPEG range (the planes are copied as they are), for a consumer that takes full-range input such as a JPEG encoder.
+	explicit Nv12ToAvFrame(bool squeezeRange = true) : m_SqueezeRange(squeezeRange) {}
+
 	// `src` must be an NV12 Frame; `dst` is allocated (width, height, format NV12 or YUV420P, even dimensions). Returns false for anything else.
 	bool Convert(const Frame& src, AVFrame* dst);
 
 private:
+	bool m_SqueezeRange;
 	cv::Mat m_ScaledY, m_ScaledUv, m_Chroma; // reused between frames
 };
 

@@ -1,5 +1,6 @@
 #if defined(LUMEN_WITH_WEBRTC) || defined(LUMEN_WITH_RECORD)
 #include "Nv12Convert.h"
+#include <cstring>
 #if defined(__aarch64__) && defined(__ARM_NEON)
 #include <arm_neon.h>
 #endif
@@ -46,11 +47,15 @@ void ApplyTable(const uint8_t* src, uint8_t* dst, size_t n, const uint8_t* table
 	for (; i < n; i++) dst[i] = table[src[i]];
 }
 
-// the same over a whole plane, row by row (rows are the plane's own width, so padding between rows is never touched)
+// the same over a whole plane, row by row (rows are the plane's own width, so padding between rows is never touched); a null table copies the rows
 void ApplyTable(const cv::Mat& src, uint8_t* dst, size_t dstStep, const uint8_t* table)
 {
 	const size_t rowBytes = static_cast<size_t>(src.cols) * src.elemSize();
-	for (int row = 0; row < src.rows; row++) ApplyTable(src.ptr<uint8_t>(row), dst + static_cast<size_t>(row) * dstStep, rowBytes, table);
+	for (int row = 0; row < src.rows; row++) {
+		uint8_t* out = dst + static_cast<size_t>(row) * dstStep;
+		if (table) ApplyTable(src.ptr<uint8_t>(row), out, rowBytes, table);
+		else std::memcpy(out, src.ptr<uint8_t>(row), rowBytes);
+	}
 }
 
 }
@@ -65,7 +70,10 @@ bool Nv12ToAvFrame::Convert(const Frame& src, AVFrame* dst)
 	const cv::Mat& y = src.YPlane();
 	const cv::Mat& uv = src.UvPlane();
 	const bool scaled = dst->width != y.cols || dst->height != y.rows;
+	// without the squeeze the planes are copied as they are (a full-range consumer such as a JPEG encoder)
 	const RangeTables& tables = Tables();
+	const uint8_t* lumaTable = m_SqueezeRange ? tables.luma.ptr<uint8_t>() : nullptr;
+	const uint8_t* chromaTable = m_SqueezeRange ? tables.chroma.ptr<uint8_t>() : nullptr;
 
 	// luma: shrink (area averaging) if the stream is smaller than the picture, then range-convert straight into the encoder's plane
 	const cv::Mat* lumaSource = &y;
@@ -73,7 +81,7 @@ bool Nv12ToAvFrame::Convert(const Frame& src, AVFrame* dst)
 		cv::resize(y, m_ScaledY, cv::Size(dst->width, dst->height), 0, 0, cv::INTER_AREA);
 		lumaSource = &m_ScaledY;
 	}
-	ApplyTable(*lumaSource, dst->data[0], static_cast<size_t>(dst->linesize[0]), tables.luma.ptr<uint8_t>());
+	ApplyTable(*lumaSource, dst->data[0], static_cast<size_t>(dst->linesize[0]), lumaTable);
 
 	// chroma: the same, as interleaved UV pairs (one table serves both channels)
 	const cv::Mat* chromaSource = &uv;
@@ -82,10 +90,10 @@ bool Nv12ToAvFrame::Convert(const Frame& src, AVFrame* dst)
 		chromaSource = &m_ScaledUv;
 	}
 	if (format == AV_PIX_FMT_NV12) {
-		ApplyTable(*chromaSource, dst->data[1], static_cast<size_t>(dst->linesize[1]), tables.chroma.ptr<uint8_t>());
+		ApplyTable(*chromaSource, dst->data[1], static_cast<size_t>(dst->linesize[1]), chromaTable);
 	} else {
 		m_Chroma.create(chromaSource->rows, chromaSource->cols, CV_8UC2);
-		ApplyTable(*chromaSource, m_Chroma.ptr<uint8_t>(), m_Chroma.step[0], tables.chroma.ptr<uint8_t>());
+		ApplyTable(*chromaSource, m_Chroma.ptr<uint8_t>(), m_Chroma.step[0], chromaTable);
 		cv::Mat dstU(dst->height / 2, dst->width / 2, CV_8UC1, dst->data[1], static_cast<size_t>(dst->linesize[1]));
 		cv::Mat dstV(dst->height / 2, dst->width / 2, CV_8UC1, dst->data[2], static_cast<size_t>(dst->linesize[2]));
 		cv::extractChannel(m_Chroma, dstU, 0);

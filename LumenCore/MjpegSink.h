@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ISink.h"
+#include "MjpegHwEncoder.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -39,4 +40,9 @@ private:
 	// (via Manager::GetMjpegFrameBase64).
 	mutable std::mutex m_Mutex;
 	std::string m_LatestJpegBase64;
+
+	// the RK3588's JPEG encoder when there is one (the CPU encoder otherwise, or when it fails); used only by Process()
+	MjpegHwEncoder m_HwEncoder;
+	std::shared_ptr<Logger> m_Logger;
+	bool m_EncoderLogged = false;
 };

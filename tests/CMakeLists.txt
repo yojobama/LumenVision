@@ -32,6 +32,7 @@ add_executable(LumenCoreTests
     test_logger.cpp
     test_system_monitor.cpp
     test_mjpeg_settings.cpp
+    test_mjpeg_hw_encoder_hitl.cpp
     test_stereo_calibrator.cpp
     test_stereo_depth_crop.cpp
     test_frame_nv12.cpp

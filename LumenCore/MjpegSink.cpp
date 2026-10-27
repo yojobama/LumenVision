@@ -43,6 +43,7 @@ namespace {
 MjpegSink::MjpegSink(std::shared_ptr<Logger> logger, std::string id, int jpegQuality)
 	: ISink(logger, MAX_BOUND_SOURCES, false /* requireJson */, true /* requireFrame */, id)
 	, m_JpegQuality(jpegQuality)
+	, m_Logger(logger)
 {
 	m_LastRequestUs = SourceResult::NowUs();
 }
@@ -88,16 +89,27 @@ void MjpegSink::Process(const std::vector<SourceResult>& results)
 
 		StageLap lap(SinkProfile());
 		std::vector<uint8_t> encoded;
-		std::vector<int> params{ cv::IMWRITE_JPEG_QUALITY, m_JpegQuality.load() };
-		const cv::Mat* image = &result.frame->AsBgr();
-		cv::Mat scaled;
+		const int quality = m_JpegQuality.load();
 		const int divisor = m_ScaleDivisor.load();
-		if (divisor > 1) {
-			cv::resize(*image, scaled, cv::Size(), 1.0 / divisor, 1.0 / divisor, cv::INTER_AREA);
-			image = &scaled;
+		// the hardware JPEG encoder takes a camera's NV12 frame as it is; on the CPU it was a BGR conversion and a libjpeg encode (5.9 ms for
+		// 1280x720 on an A76 core) for every frame of every watched tile
+		const bool hardware = m_HwEncoder.Encode(*result.frame, quality, divisor, encoded);
+		if (!m_EncoderLogged && m_Logger) {
+			m_EncoderLogged = true;
+			m_Logger->EnterLog(LogLevel::Info, hardware ? "MjpegSink: JPEG encoding on the hardware encoder (mjpeg_rkmpp)"
+				: "MjpegSink: JPEG encoding on the CPU (" + m_HwEncoder.LastError() + ")");
 		}
-		lap.Mark("bgr+scale");
-		if (!cv::imencode(".jpg", *image, encoded, params)) continue;
+		if (!hardware) {
+			std::vector<int> params{ cv::IMWRITE_JPEG_QUALITY, quality };
+			const cv::Mat* image = &result.frame->AsBgr();
+			cv::Mat scaled;
+			if (divisor > 1) {
+				cv::resize(*image, scaled, cv::Size(), 1.0 / divisor, 1.0 / divisor, cv::INTER_AREA);
+				image = &scaled;
+			}
+			lap.Mark("bgr+scale");
+			if (!cv::imencode(".jpg", *image, encoded, params)) continue;
+		}
 		lap.Mark("jpeg");
 
 		std::string base64 = Base64Encode(encoded);
