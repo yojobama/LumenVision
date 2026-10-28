@@ -89,6 +89,26 @@ SUBSYSTEM=="cpu", KERNEL=="cpu[4-7]", ACTION=="add", ATTR{cpufreq/scaling_govern
 EOF
 fi
 
+# The board's name resolves to IPv4 only (arm64 package only: on an ordinary Linux machine the package should not change name resolution). The board
+# has only a link-local IPv6 address; reached over it, Firefox offers WebRTC candidates on IPv6 alone, which the server cannot pair with, and the
+# previews fall back to MJPEG. avahi stops publishing the IPv6 address (its own config file, see avahi-lumenvision.conf), and systemd-resolved stops
+# answering LLMNR, which hands it out too; Windows resolves the bare name over mDNS as well.
+if [[ "$DEB_ARCH" == "arm64" ]]; then
+    mkdir -p "$STAGE_DIR/etc/lumenvision" "$STAGE_DIR/etc/systemd/system/avahi-daemon.service.d" "$STAGE_DIR/etc/systemd/resolved.conf.d"
+    cp scripts/avahi-lumenvision.conf "$STAGE_DIR/etc/lumenvision/avahi-daemon.conf"
+    cat > "$STAGE_DIR/etc/systemd/system/avahi-daemon.service.d/lumenvision.conf" <<'EOF'
+# Installed by the lumenvision-backend .deb: run avahi with LumenVision's config (IPv4 only, see /etc/lumenvision/avahi-daemon.conf)
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/avahi-daemon -s -f /etc/lumenvision/avahi-daemon.conf
+EOF
+    cat > "$STAGE_DIR/etc/systemd/resolved.conf.d/lumenvision.conf" <<'EOF'
+# Installed by the lumenvision-backend .deb: LLMNR would answer the board's name with its link-local IPv6 address (mDNS through avahi still resolves it)
+[Resolve]
+LLMNR=no
+EOF
+fi
+
 echo "==> Writing DEBIAN control files"
 INSTALLED_SIZE_KB=$(du -sk "$STAGE_DIR/opt" "$STAGE_DIR/etc" | awk '{sum+=$1} END {print sum}')
 # Fall back to a fixed identity when git user.name/email are unset

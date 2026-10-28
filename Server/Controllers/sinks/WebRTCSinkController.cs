@@ -49,11 +49,13 @@ namespace Server.Controllers.sinks
             SinkManager.Instance.WebRTCSetAnswer(sinkId, sdp, peer ?? "");
         }
 
-        // POST: submit one of the browser's trickled ICE candidates
+        // POST: submit one of the browser's trickled ICE candidates. An empty candidate is the browser's end-of-candidates marker (Firefox sends one);
+        // the query binder turns it, and an empty mid, into null, which the native call rejects, so the marker is acknowledged and dropped here.
         [HttpPost("webrtcSink/candidate")]
-        public Task AddIceCandidate([FromQuery] int sinkId, [FromQuery] string candidate, [FromQuery] string mid, [FromQuery] string? peer = null)
+        public Task AddIceCandidate([FromQuery] int sinkId, [FromQuery] string? candidate, [FromQuery] string? mid, [FromQuery] string? peer = null)
         {
-            SinkManager.Instance.WebRTCAddIceCandidate(sinkId, candidate, mid, peer ?? "");
+            if (string.IsNullOrEmpty(candidate)) return Task.CompletedTask;
+            SinkManager.Instance.WebRTCAddIceCandidate(sinkId, candidate, mid ?? "", peer ?? "");
             return Task.CompletedTask;
         }
 

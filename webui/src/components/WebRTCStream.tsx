@@ -80,7 +80,8 @@ export const WebRTCStream: React.FC<WebRTCStreamProps> = ({
       let answerSent = false;
       const pendingCandidates: RTCIceCandidate[] = [];
       pc.onicecandidate = async (event) => {
-        if (!event.candidate) return;
+        // null ends gathering; an empty candidate string is the end-of-candidates marker (Firefox), which the server has no use for
+        if (!event.candidate || !event.candidate.candidate) return;
         if (!answerSent) {
           pendingCandidates.push(event.candidate);
           return;

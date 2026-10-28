@@ -38,6 +38,10 @@ case "$1" in
         systemctl restart systemd-journald || true
 
         systemctl daemon-reload
+        # the arm64 package's name-resolution settings (IPv4-only avahi, no LLMNR); try-restart leaves a service that is not running alone
+        if [ -f /etc/systemd/system/avahi-daemon.service.d/lumenvision.conf ]; then
+            systemctl try-restart avahi-daemon.service systemd-resolved.service || true
+        fi
         systemctl enable lumenvision.service
         # restart so an upgrade picks up the new binary
         systemctl restart lumenvision.service || true

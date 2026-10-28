@@ -1,6 +1,14 @@
 #!/bin/sh
-# lumenvision-backend .deb postrm - removes the sudoers rule when the package is purged
+# lumenvision-backend .deb postrm - restores avahi and systemd-resolved to their own settings once the package's overrides are gone, and removes the
+# sudoers rule when the package is purged
 set -e
+
+case "$1" in
+    remove|purge)
+        systemctl daemon-reload || true
+        systemctl try-restart avahi-daemon.service systemd-resolved.service || true
+        ;;
+esac
 
 case "$1" in
     purge)
