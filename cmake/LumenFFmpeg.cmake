@@ -12,12 +12,13 @@
 
 find_package(PkgConfig REQUIRED)
 
-# Prefer the dedicated ffmpeg-rockchip prefix (h264_rkmpp encoder, rkrga filters) when present; it is
-# outside ldconfig's path so the apt libavcodec SONAME cannot shadow it, hence the rpath below
+# Prefer the dedicated prefix when present: ffmpeg-rockchip (h264_rkmpp encoder, rkrga filters) on aarch64, upstream FFmpeg on x86_64
+# (install-deps.sh --with-bundled-ffmpeg), either way the FFmpeg the .deb carries. It is outside ldconfig's path so the apt libavcodec
+# SONAME cannot shadow it, hence the rpath below
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND EXISTS "/opt/lumenvision-ffmpeg/lib/pkgconfig")
     set(LUMEN_FFMPEG_DEDICATED_PREFIX "/opt/lumenvision-ffmpeg")
     set(ENV{PKG_CONFIG_PATH} "${LUMEN_FFMPEG_DEDICATED_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
-    message(STATUS "Using ffmpeg-rockchip (h264_rkmpp encoder + rkrga filters) from ${LUMEN_FFMPEG_DEDICATED_PREFIX}")
+    message(STATUS "Using the FFmpeg in ${LUMEN_FFMPEG_DEDICATED_PREFIX}")
 endif()
 
 pkg_check_modules(LUMEN_AVCODEC  IMPORTED_TARGET libavcodec)

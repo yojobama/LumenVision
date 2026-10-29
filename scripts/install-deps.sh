@@ -25,6 +25,10 @@
 #                   also build nyanmisaka/ffmpeg-rockchip (h264_rkmpp encoder, rkrga filters) into
 #                   /opt/lumenvision-ffmpeg, outside ldconfig's path so the apt ffmpeg SONAME does
 #                   not shadow it. Requires --with-mpp; aarch64 only.
+#   --with-bundled-ffmpeg
+#                   x86_64 counterpart: build upstream FFmpeg into /opt/lumenvision-ffmpeg so the
+#                   amd64 .deb carries its own FFmpeg (the system FFmpeg's SONAME differs between
+#                   Ubuntu releases: 24.04 has libavcodec.so.60, 26.04 a newer one).
 #
 set -euo pipefail
 
@@ -39,6 +43,7 @@ WITH_NT4=0
 WITH_RKNN=0
 WITH_MPP=0
 WITH_FFMPEG_ROCKCHIP=0
+WITH_BUNDLED_FFMPEG=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -50,6 +55,7 @@ while [[ $# -gt 0 ]]; do
         --with-rknn) WITH_RKNN=1; shift ;;
         --with-mpp) WITH_MPP=1; shift ;;
         --with-ffmpeg-rockchip) WITH_FFMPEG_ROCKCHIP=1; shift ;;
+        --with-bundled-ffmpeg) WITH_BUNDLED_FFMPEG=1; shift ;;
         -h|--help)
             grep '^#' "$0" | sed 's/^# \{0,1\}//'
             exit 0
@@ -173,6 +179,17 @@ install_base() {
 # Built from source into /usr/local (the distro ships 4.x); opencv_contrib provides ArUco for ChArUco calibration
 OPENCV_VERSION="5.0.0"
 
+# True unless the dedicated FFmpeg prefix exists and the installed OpenCV videoio needs another libavcodec (compared by SONAME, so no rpath is needed)
+opencv_ffmpeg_matches() {
+    [[ -d "$LUMEN_FFMPEG_PREFIX/lib/pkgconfig" ]] || return 0
+    local videoio="$PREFIX/lib/libopencv_videoio.so"
+    [[ -e "$videoio" ]] || return 0
+    local want have
+    want="$(readelf -d "$LUMEN_FFMPEG_PREFIX/lib/libavcodec.so" 2>/dev/null | sed -n 's/.*(SONAME).*\[\(.*\)\]/\1/p')"
+    have="$(readelf -d "$videoio" 2>/dev/null | sed -n 's/.*(NEEDED).*\[\(libavcodec[^]]*\)\]/\1/p')"
+    [[ -z "$have" || "$have" == "$want" ]]
+}
+
 build_opencv() {
     if [[ "$SKIP_OPENCV" -eq 1 ]]; then
         log "Skipping OpenCV build (--skip-opencv)"
@@ -185,9 +202,13 @@ build_opencv() {
     if pkg-config --exists opencv5 2>/dev/null; then
         local installed_ver
         installed_ver="$(pkg-config --modversion opencv5)"
-        if [[ "$installed_ver" == "$OPENCV_VERSION"* ]]; then
+        if [[ "$installed_ver" == "$OPENCV_VERSION"* ]] && opencv_ffmpeg_matches; then
             log "OpenCV ${installed_ver} already installed at the requested version, skipping build"
             return 0
+        elif [[ "$installed_ver" == "$OPENCV_VERSION"* ]]; then
+            # e.g. restored from a CI cache made before the dedicated prefix existed: its videoio would need an FFmpeg the package does not carry
+            warn "OpenCV ${installed_ver} links a different FFmpeg than $LUMEN_FFMPEG_PREFIX — rebuilding"
+            rm -f "$BUILD_ROOT/opencv-${OPENCV_VERSION}/build/CMakeCache.txt"
         else
             warn "found OpenCV ${installed_ver} via pkg-config; expected ${OPENCV_VERSION}.x — rebuilding"
         fi
@@ -209,11 +230,11 @@ build_opencv() {
 
     # No GTK/Python dev packages: headless machines, Python bindings off.
     #
-    # FFmpeg: when the ffmpeg-rockchip prefix exists (fetch_ffmpeg_rockchip runs first) point OpenCV at
-    # it, so only one ffmpeg SONAME is ever bundled; otherwise use apt's ffmpeg-dev packages.
+    # FFmpeg: when the dedicated prefix exists (fetch_ffmpeg_rockchip/fetch_bundled_ffmpeg run first) point
+    # OpenCV at it, so only one ffmpeg SONAME is ever bundled; otherwise use apt's ffmpeg-dev packages.
     local opencv_pkg_config_path=""
     if [[ -d "$LUMEN_FFMPEG_PREFIX/lib/pkgconfig" ]]; then
-        log "OpenCV: using ffmpeg-rockchip at $LUMEN_FFMPEG_PREFIX for -DWITH_FFMPEG=ON (not apt's system ffmpeg)"
+        log "OpenCV: using the FFmpeg at $LUMEN_FFMPEG_PREFIX for -DWITH_FFMPEG=ON (not apt's system ffmpeg)"
         opencv_pkg_config_path="$LUMEN_FFMPEG_PREFIX/lib/pkgconfig"
         apt_install libv4l-dev libtbb-dev libjpeg-dev libpng-dev libtiff-dev
     else
@@ -840,6 +861,28 @@ EOF
 FFMPEG_ROCKCHIP_REF="${FFMPEG_ROCKCHIP_REF:-7.1}"
 LUMEN_FFMPEG_PREFIX=/opt/lumenvision-ffmpeg
 
+# Installs a configured and built FFmpeg tree ($1) into LUMEN_FFMPEG_PREFIX with a $ORIGIN rpath on every library
+install_ffmpeg_build() {
+    local src="$1"
+    # copy the staged tree rather than `make install` (too many files to list individually)
+    local stage="$src/stage"
+    rm -rf "$stage"
+    DESTDIR="$stage" make -C "$src" install >/dev/null
+
+    sudo mkdir -p "$LUMEN_FFMPEG_PREFIX"
+    sudo cp -a "$stage$LUMEN_FFMPEG_PREFIX/." "$LUMEN_FFMPEG_PREFIX/"
+    rm -rf "$stage"
+
+    # patchelf sets the $ORIGIN rpath directly on the installed files, in case ffmpeg's LDFLAGS
+    # handling missed some
+    apt_install patchelf
+    local _so
+    while IFS= read -r -d '' _so; do
+        sudo patchelf --set-rpath '$ORIGIN' "$_so"
+    done < <(find "$LUMEN_FFMPEG_PREFIX/lib" -maxdepth 1 -name '*.so*' -print0)
+    log "rpath=\$ORIGIN set on every $LUMEN_FFMPEG_PREFIX/lib/*.so* (verifying one): $(patchelf --print-rpath "$LUMEN_FFMPEG_PREFIX/lib/libavcodec.so" 2>&1 || true)"
+}
+
 fetch_ffmpeg_rockchip() {
     [[ "$WITH_FFMPEG_ROCKCHIP" -eq 1 ]] || return 0
     [[ "$ARCH" == "aarch64" ]] || return 0
@@ -879,24 +922,7 @@ fetch_ffmpeg_rockchip() {
             --extra-ldflags='-Wl,-rpath,$ORIGIN'
         make -j "$JOBS"
     )
-
-    # copy the staged tree rather than `make install` (too many files to list individually)
-    local stage="$src/stage"
-    rm -rf "$stage"
-    DESTDIR="$stage" make -C "$src" install >/dev/null
-
-    sudo mkdir -p "$LUMEN_FFMPEG_PREFIX"
-    sudo cp -a "$stage$LUMEN_FFMPEG_PREFIX/." "$LUMEN_FFMPEG_PREFIX/"
-    rm -rf "$stage"
-
-    # patchelf sets the $ORIGIN rpath directly on the installed files, in case ffmpeg's LDFLAGS
-    # handling missed some
-    apt_install patchelf
-    local _so
-    while IFS= read -r -d '' _so; do
-        sudo patchelf --set-rpath '$ORIGIN' "$_so"
-    done < <(find "$LUMEN_FFMPEG_PREFIX/lib" -maxdepth 1 -name '*.so*' -print0)
-    log "rpath=\$ORIGIN set on every $LUMEN_FFMPEG_PREFIX/lib/*.so* (verifying one): $(patchelf --print-rpath "$LUMEN_FFMPEG_PREFIX/lib/libavcodec.so" 2>&1 || true)"
+    install_ffmpeg_build "$src"
 
     log "ffmpeg-rockchip installed to $LUMEN_FFMPEG_PREFIX"
     # captured first; see install_ffmpeg on pipefail
@@ -910,15 +936,67 @@ fetch_ffmpeg_rockchip() {
 }
 
 # ---------------------------------------------------------------------------
+# 12. x86_64-only: upstream FFmpeg for the amd64 package
+# ---------------------------------------------------------------------------
+# The amd64 .deb used to link apt's FFmpeg without carrying it, so it only ran where libavcodec.so.60 happened to be installed (Ubuntu 24.04 with
+# ffmpeg); on Ubuntu 26.04 the server could not load LumenCore and systemd restarted it forever. Built into the same prefix as ffmpeg-rockchip,
+# so cmake/LumenFFmpeg.cmake, OpenCV and CopyLinuxRuntimeDeps.cmake pick it up the same way. Same major release as ffmpeg-rockchip (7.1).
+# Autodetection is off so the libraries need nothing beyond libx264 (bundled, see CopyLinuxRuntimeDeps.cmake), zlib and glibc.
+BUNDLED_FFMPEG_REF="${BUNDLED_FFMPEG_REF:-n7.1.5}"
+
+fetch_bundled_ffmpeg() {
+    [[ "$WITH_BUNDLED_FFMPEG" -eq 1 ]] || return 0
+    [[ "$ARCH" == "x86_64" ]] || return 0
+
+    local stamp="$LUMEN_FFMPEG_PREFIX/.lumen-ffmpeg-ref"
+    if [[ "$(cat "$stamp" 2>/dev/null)" == "$BUNDLED_FFMPEG_REF" ]] && \
+       PKG_CONFIG_PATH="$LUMEN_FFMPEG_PREFIX/lib/pkgconfig" pkg-config --exists libavcodec 2>/dev/null; then
+        log "FFmpeg ${BUNDLED_FFMPEG_REF} already installed at $LUMEN_FFMPEG_PREFIX"
+        return 0
+    fi
+    if [[ "$CHECK_ONLY" -eq 1 ]]; then
+        note_missing "FFmpeg ${BUNDLED_FFMPEG_REF} in $LUMEN_FFMPEG_PREFIX (would build it from source)"
+        return 0
+    fi
+
+    log "FFmpeg ${BUNDLED_FFMPEG_REF} (upstream, from source) into $LUMEN_FFMPEG_PREFIX"
+    apt_install nasm libx264-dev zlib1g-dev
+
+    local src="$BUILD_ROOT/ffmpeg-${BUNDLED_FFMPEG_REF}"
+    if [[ ! -d "$src" ]]; then
+        git clone --branch "$BUNDLED_FFMPEG_REF" --depth 1 https://github.com/FFmpeg/FFmpeg.git "$src"
+    fi
+
+    (
+        cd "$src"
+        ./configure \
+            --prefix="$LUMEN_FFMPEG_PREFIX" \
+            --enable-shared --disable-static \
+            --enable-gpl --enable-version3 \
+            --disable-autodetect --enable-libx264 --enable-zlib \
+            --disable-doc \
+            --extra-ldflags='-Wl,-rpath,$ORIGIN'
+        make -j "$JOBS"
+    )
+    sudo rm -rf "$LUMEN_FFMPEG_PREFIX"
+    install_ffmpeg_build "$src"
+    echo "$BUNDLED_FFMPEG_REF" | sudo tee "$stamp" >/dev/null
+
+    log "FFmpeg ${BUNDLED_FFMPEG_REF} installed to $LUMEN_FFMPEG_PREFIX"
+}
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 log "LumenVision dependency check/install — arch=$ARCH, check-only=$CHECK_ONLY, jobs=$JOBS"
 
 install_base
-# fetch_mpp/fetch_ffmpeg_rockchip run before build_opencv so its -DWITH_FFMPEG=ON detection links
-# ffmpeg-rockchip (SONAME 61) rather than apt's ffmpeg (SONAME 60 on the CI runner)
+# fetch_mpp/fetch_ffmpeg_rockchip/fetch_bundled_ffmpeg run before build_opencv so its -DWITH_FFMPEG=ON
+# detection links the dedicated FFmpeg (SONAME 61) rather than apt's ffmpeg (SONAME 60 on the CI runner)
 fetch_mpp || warn "MPP setup failed - see the log above; continuing"
 fetch_ffmpeg_rockchip || warn "ffmpeg-rockchip setup failed - see the log above; continuing"
+# not optional: a package built without it would need an FFmpeg the target may not have
+fetch_bundled_ffmpeg
 build_opencv
 build_apriltag
 install_ffmpeg

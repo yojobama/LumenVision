@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds a self-contained lumenvision-backend .deb for the host architecture (arm64 or amd64).
 # Requires a prior scripts/install-deps.sh run: the LumenCore POST_BUILD step bundles the runtime
-# dependencies from /usr/local and /opt/lumenvision-ffmpeg into the package.
+# dependencies from /usr/local and /opt/lumenvision-ffmpeg into the package. That FFmpeg comes from
+# --with-ffmpeg-rockchip on aarch64 and --with-bundled-ffmpeg on x86_64; the package is refused without it.
 #
 # Usage: VERSION=1.2.3 scripts/build-deb.sh
 #   VERSION            - package version (digits/dots, no leading "v"); required
@@ -64,6 +65,21 @@ cp -r "$PUBLISH_DIR/." "$STAGE_DIR/opt/lumenvision/"
 mkdir -p "$STAGE_DIR/opt/lumenvision/wwwroot"
 cp -r webui/dist/. "$STAGE_DIR/opt/lumenvision/wwwroot/"
 chmod +x "$STAGE_DIR/opt/lumenvision/Server"
+
+# Every FFmpeg library the bundle links must be in it: the system's FFmpeg SONAME differs between releases (an amd64 package linked to Ubuntu
+# 24.04's libavcodec.so.60 could not load LumenCore on 26.04, and systemd restarted the server forever)
+MISSING_FFMPEG=""
+for elf in "$STAGE_DIR/opt/lumenvision/"*.so*; do
+    [[ -f "$elf" ]] || continue
+    for needed in $(readelf -d "$elf" 2>/dev/null | sed -n 's/.*(NEEDED).*\[\(lib\(avcodec\|avformat\|avutil\|avfilter\|avdevice\|swscale\|swresample\|postproc\)\.so[^]]*\)\]/\1/p'); do
+        [[ -e "$STAGE_DIR/opt/lumenvision/$needed" ]] || MISSING_FFMPEG+=" $(basename "$elf"):$needed"
+    done
+done
+if [[ -n "$MISSING_FFMPEG" ]]; then
+    echo "the package would need FFmpeg libraries it does not carry:$MISSING_FFMPEG" >&2
+    echo "run scripts/install-deps.sh with --with-bundled-ffmpeg (x86_64) or --with-ffmpeg-rockchip (aarch64), then rebuild LumenCore" >&2
+    exit 1
+fi
 
 cp scripts/lumenvision.service "$STAGE_DIR/etc/systemd/system/lumenvision.service"
 cp scripts/journald-lumenvision.conf "$STAGE_DIR/etc/systemd/journald.conf.d/lumenvision.conf"
