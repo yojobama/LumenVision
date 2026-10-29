@@ -10,12 +10,51 @@
 #include <thread>
 #include <vector>
 
+extern "C" {
+#include <libavformat/avformat.h>
+}
+
 namespace {
 
 // the position of a four-character MP4 box type in the file's bytes, or npos
 size_t FindBox(const std::string& bytes, const char* type)
 {
 	return bytes.find(type);
+}
+
+// What an MP4's first video stream holds, read with libavformat (OpenCV builds without its FFmpeg backend cannot open MP4 at all)
+struct Mp4Summary {
+	bool opened = false;
+	int packets = 0;
+	bool firstIsKeyframe = false;
+	double firstSeconds = -1;
+};
+
+Mp4Summary SummariseMp4(const std::filesystem::path& path)
+{
+	Mp4Summary summary;
+	AVFormatContext* format = nullptr;
+	if (avformat_open_input(&format, path.string().c_str(), nullptr, nullptr) < 0) return summary;
+	if (avformat_find_stream_info(format, nullptr) >= 0) {
+		const int video = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+		if (video >= 0) {
+			summary.opened = true;
+			AVPacket* packet = av_packet_alloc();
+			while (av_read_frame(format, packet) >= 0) {
+				if (packet->stream_index == video) {
+					if (summary.packets == 0) {
+						summary.firstIsKeyframe = (packet->flags & AV_PKT_FLAG_KEY) != 0;
+						summary.firstSeconds = packet->pts * av_q2d(format->streams[video]->time_base);
+					}
+					summary.packets++;
+				}
+				av_packet_unref(packet);
+			}
+			av_packet_free(&packet);
+		}
+	}
+	avformat_close_input(&format);
+	return summary;
 }
 
 }
@@ -110,19 +149,14 @@ TEST_CASE("segments rotate on a keyframe from one running encoder: each file pla
 
 	int framesRecorded = 0;
 	for (const auto& video : videos) {
-		UNSCOPED_INFO(video.filename().string() << ": " << std::filesystem::file_size(video) << " bytes");
-		cv::VideoCapture capture(video.string());
-		REQUIRE(capture.isOpened());
-		cv::Mat first;
-		// the first frame decodes (the file starts on a keyframe) and the file's clock starts at 0
-		REQUIRE(capture.read(first));
-		REQUIRE_FALSE(first.empty());
-		CHECK(capture.get(cv::CAP_PROP_POS_MSEC) < 40.0);
-		int frames = 1;
-		cv::Mat frame;
-		while (capture.read(frame)) frames++;
-		UNSCOPED_INFO(video.filename().string() << ": " << frames << " frames");
-		framesRecorded += frames;
+		const Mp4Summary summary = SummariseMp4(video);
+		UNSCOPED_INFO(video.filename().string() << ": " << std::filesystem::file_size(video) << " bytes, " << summary.packets << " frames");
+		REQUIRE(summary.opened);
+		// every file starts on a keyframe, so it plays from its start, and its clock starts at 0
+		CHECK(summary.firstIsKeyframe);
+		CHECK(summary.firstSeconds >= 0.0);
+		CHECK(summary.firstSeconds < 0.04);
+		framesRecorded += summary.packets;
 	}
 	CHECK(videos.size() >= 2);
 	// the files together hold every frame the encoder was given, none dropped at a rotation
