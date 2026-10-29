@@ -4,6 +4,7 @@
 // librga's headers need NULL defined before inclusion (they do not include <cstddef>); keep this include first.
 #include <cstddef>
 #include <im2d.h>
+#include "RgaCores.h"
 
 extern "C" {
 #include <libavutil/imgutils.h>
@@ -28,6 +29,7 @@ bool RgaColorConverter::ConvertBgrToNv12(const cv::Mat& bgrFrame, AVFrame* dstFr
 		m_Scratch.data(), width, height, width, height, RK_FORMAT_YCbCr_420_SP);
 
 	// BT601 limited range, matching libswscale's default so switching between RGA and sws_scale does not shift colours
+	RgaUseRga3Cores();
 	IM_STATUS status = imcvtcolor(src, dst, RK_FORMAT_BGR_888, RK_FORMAT_YCbCr_420_SP, IM_RGB_TO_YUV_BT601_LIMIT);
 	if (status != IM_STATUS_SUCCESS) return false;
 

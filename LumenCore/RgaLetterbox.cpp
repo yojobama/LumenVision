@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstring>
 #include <im2d.h>
+#include "RgaCores.h"
 
 bool RgaLetterbox::Run(const Frame& frame, uint8_t* canvas, int canvasWidth, int canvasHeight, const cv::Rect& picture)
 {
@@ -38,7 +39,7 @@ bool RgaLetterbox::Run(const Frame& frame, uint8_t* canvas, int canvasWidth, int
 
 	if (m_PaintedCanvas != canvas || m_PaintedWidth != canvasWidth || m_PaintedHeight != canvasHeight || m_PaintedPicture != picture) {
 		// painted by the CPU: a hardware fill can only run on the RGA2 core, which cannot address the memory above 4 GB that a plain heap buffer may
-		// sit in on a 16 GB board, while the scaling and conversion below can be scheduled on either core
+		// sit in on a 16 GB board; the scaling and conversion below are kept on the RGA3 cores for the same reason (RgaCores.h)
 		std::memset(canvas, 114, static_cast<size_t>(canvasWidth) * canvasHeight * 3); // YOLO's 114 grey
 		m_PaintedCanvas = canvas;
 		m_PaintedWidth = canvasWidth;
@@ -50,6 +51,7 @@ bool RgaLetterbox::Run(const Frame& frame, uint8_t* canvas, int canvasWidth, int
 	const im_rect sourceRect = { 0, 0, srcWidth, srcHeight };
 	const im_rect targetRect = { picture.x, picture.y, picture.width, picture.height };
 	const im_rect patternRect = { 0, 0, 0, 0 };
+	RgaUseRga3Cores();
 	return improcess(src, dst, pattern, sourceRect, targetRect, patternRect, IM_SYNC) == IM_STATUS_SUCCESS;
 }
 
