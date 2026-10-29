@@ -178,14 +178,21 @@ void RecordSink::StartNewSegment(int width, int height)
 	CloseCurrentSegment();
 
 	if (!EnsureEncoderInitialized(width, height)) return;
+	m_FrameCounter = 0;
+	m_RotateFromPts = AV_NOPTS_VALUE;
+	OpenSegmentFiles();
+}
 
+bool RecordSink::OpenSegmentFiles()
+{
 	std::string baseName = SegmentBaseName(m_SegmentIndex++);
 	std::filesystem::path videoPath = std::filesystem::path(m_Config.dstFolder) / (baseName + ".mp4");
 	std::filesystem::path sidecarPath = std::filesystem::path(m_Config.dstFolder) / (baseName + ".jsonl");
 
 	if (avformat_alloc_output_context2(&m_FormatContext, nullptr, "mp4", videoPath.string().c_str()) < 0 || !m_FormatContext) {
 		if (m_Logger) m_Logger->EnterLog(LogLevel::Error, "RecordSink: avformat_alloc_output_context2 failed for " + videoPath.string());
-		return;
+		m_FormatContext = nullptr;
+		return false;
 	}
 
 	m_VideoStream = avformat_new_stream(m_FormatContext, nullptr);
@@ -197,7 +204,7 @@ void RecordSink::StartNewSegment(int width, int height)
 		avformat_free_context(m_FormatContext);
 		m_FormatContext = nullptr;
 		m_VideoStream = nullptr;
-		return;
+		return false;
 	}
 
 	// Fragmented MP4: a header up front and a self-contained fragment at every keyframe, so a power cut (the end of every match) loses
@@ -212,33 +219,33 @@ void RecordSink::StartNewSegment(int width, int height)
 		avformat_free_context(m_FormatContext);
 		m_FormatContext = nullptr;
 		m_VideoStream = nullptr;
-		return;
+		return false;
 	}
 
 	m_TelemetrySidecar.open(sidecarPath, std::ios::out | std::ios::trunc);
-	m_FrameCounter = 0;
+	m_SegmentPtsBase = AV_NOPTS_VALUE;
 	m_SegmentStartedAt = std::chrono::steady_clock::now();
 	m_SidecarFlushedAt = m_SegmentStartedAt;
 	if (m_Logger) m_Logger->EnterLog("RecordSink: started segment " + videoPath.string());
 
 	EnforceRetention();
+	return true;
 }
 
-void RecordSink::CloseCurrentSegment()
+void RecordSink::WritePacket(AVPacket* packet)
+{
+	// each file is a standalone MP4 whose timestamps start at 0, while the encoder's run on across files
+	if (m_SegmentPtsBase == AV_NOPTS_VALUE) m_SegmentPtsBase = packet->pts != AV_NOPTS_VALUE ? packet->pts : packet->dts;
+	if (packet->pts != AV_NOPTS_VALUE) packet->pts -= m_SegmentPtsBase;
+	if (packet->dts != AV_NOPTS_VALUE) packet->dts -= m_SegmentPtsBase;
+	packet->stream_index = m_VideoStream->index;
+	av_packet_rescale_ts(packet, m_CodecContext->time_base, m_VideoStream->time_base);
+	av_interleaved_write_frame(m_FormatContext, packet);
+}
+
+void RecordSink::CloseSegmentFiles()
 {
 	if (m_FormatContext) {
-		// flush the encoder before finalising the container (send a null frame, drain every remaining packet):
-		// libx264 holds frames in its lookahead even with max_b_frames=0
-		avcodec_send_frame(m_CodecContext, nullptr);
-		AVPacket* packet = av_packet_alloc();
-		while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
-			packet->stream_index = m_VideoStream->index;
-			av_packet_rescale_ts(packet, m_CodecContext->time_base, m_VideoStream->time_base);
-			av_interleaved_write_frame(m_FormatContext, packet);
-			av_packet_unref(packet);
-		}
-		av_packet_free(&packet);
-
 		av_write_trailer(m_FormatContext);
 		avio_closep(&m_FormatContext->pb);
 		avformat_free_context(m_FormatContext);
@@ -248,9 +255,25 @@ void RecordSink::CloseCurrentSegment()
 	if (m_TelemetrySidecar.is_open()) {
 		m_TelemetrySidecar.close();
 	}
-	// Each segment is a standalone MP4 with PTS starting at 0, so the encoder is torn down here and
-	// StartNewSegment creates a fresh one (a reused encoder would see PTS going backwards).
+}
+
+void RecordSink::CloseCurrentSegment()
+{
+	if (m_FormatContext && m_CodecContext) {
+		// flush the encoder before finalising the container (send a null frame, drain every remaining packet):
+		// libx264 holds frames in its lookahead even with max_b_frames=0
+		avcodec_send_frame(m_CodecContext, nullptr);
+		AVPacket* packet = av_packet_alloc();
+		while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
+			WritePacket(packet);
+			av_packet_unref(packet);
+		}
+		av_packet_free(&packet);
+	}
+	CloseSegmentFiles();
+	// a drained encoder cannot take frames again, so it goes too; this is the end of the recording or a change of frame size
 	ShutdownEncoder();
+	m_RotateFromPts = AV_NOPTS_VALUE;
 }
 
 void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
@@ -259,13 +282,19 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 	// a camera's hardware-decoded NV12 picture is converted straight from its planes; anything else goes through BGR
 	const bool nv12 = frame.IsNv12();
 	const cv::Size size = nv12 ? cv::Size(frame.size().width & ~1, frame.size().height & ~1) : frame.AsBgr().size();
-	bool segmentExpired = m_FormatContext &&
-		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - m_SegmentStartedAt).count() >= m_Config.segmentSeconds;
-	if (!m_FormatContext || m_EncoderWidth != size.width || m_EncoderHeight != size.height || segmentExpired) {
+	// a new encoder only for the first segment, after a failure, or when the frame size changes
+	if (!m_FormatContext || !m_CodecContext || m_EncoderWidth != size.width || m_EncoderHeight != size.height) {
 		StartNewSegment(size.width, size.height);
 		lap.Mark("segment-start");
 	}
 	if (!m_FormatContext || !m_CodecContext) return;
+	// a due segment asks for a keyframe now; the file changes when that keyframe comes out of the encoder (below), so every file starts on one
+	bool forceKeyframe = false;
+	if (m_RotateFromPts == AV_NOPTS_VALUE &&
+		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - m_SegmentStartedAt).count() >= m_Config.segmentSeconds) {
+		m_RotateFromPts = m_FrameCounter; // this frame's pts
+		forceKeyframe = true;
+	}
 
 	if (nv12) {
 		if (!m_Nv12Converter.Convert(frame, m_YuvFrame)) return;
@@ -276,6 +305,7 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 		sws_scale(m_SwsContext, srcSlices, srcStride, 0, bgrFrame.rows, m_YuvFrame->data, m_YuvFrame->linesize);
 	}
 	m_YuvFrame->pts = m_FrameCounter++;
+	m_YuvFrame->pict_type = forceKeyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
 	lap.Mark("convert");
 
 	if (avcodec_send_frame(m_CodecContext, m_YuvFrame) < 0) return;
@@ -283,13 +313,23 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 	AVPacket* packet = av_packet_alloc();
 	while (avcodec_receive_packet(m_CodecContext, packet) == 0) {
 		lap.Mark("encode");
-		packet->stream_index = m_VideoStream->index;
-		av_packet_rescale_ts(packet, m_CodecContext->time_base, m_VideoStream->time_base);
-		av_interleaved_write_frame(m_FormatContext, packet);
+		// the keyframe asked for above (or the GOP's own, if it comes first) starts the next file; the packets before it finish this one
+		if (m_RotateFromPts != AV_NOPTS_VALUE && (packet->flags & AV_PKT_FLAG_KEY) && packet->pts >= m_RotateFromPts) {
+			CloseSegmentFiles();
+			m_RotateFromPts = AV_NOPTS_VALUE;
+			if (!OpenSegmentFiles()) {
+				// the next frame starts over with a new encoder and file
+				av_packet_unref(packet);
+				break;
+			}
+			lap.Mark("segment-start");
+		}
+		WritePacket(packet);
 		av_packet_unref(packet);
 		lap.Mark("mux");
 	}
 	av_packet_free(&packet);
+	if (!m_FormatContext) return;
 
 	if (m_TelemetrySidecar.is_open()) {
 		nlohmann::json record{

@@ -53,8 +53,13 @@ private:
 	// ISink::Toggle(false), after the processing thread has stopped: finalises any open segment (trailer written, sidecar closed)
 	void OnStopped() override;
 
-	void StartNewSegment(int width, int height); // caller must already hold m_Mutex
-	void CloseCurrentSegment();                  // caller must already hold m_Mutex
+	// The encoder lives for the whole recording; a segment rotation only changes the file (see EncodeAndWrite). Creating and destroying an
+	// h264_rkmpp encoder every segment corrupted MPP's frame pool on teardown, which in a 12 h soak ended in encode jobs on closed buffers.
+	void StartNewSegment(int width, int height); // a new encoder and a new file (first segment, or a new frame size); caller holds m_Mutex
+	void CloseCurrentSegment();                  // drains and destroys the encoder, then closes the file; caller holds m_Mutex
+	bool OpenSegmentFiles();                     // the next segment's MP4 and sidecar; caller holds m_Mutex
+	void CloseSegmentFiles();                    // finishes the current MP4 and sidecar, leaving the encoder running; caller holds m_Mutex
+	void WritePacket(AVPacket* packet);          // into the current file, its timestamps offset to the file's start; caller holds m_Mutex
 	void EnforceRetention();                     // caller must already hold m_Mutex
 
 	bool EnsureEncoderInitialized(int width, int height); // caller must already hold m_Mutex
@@ -76,7 +81,11 @@ private:
 	AVFrame* m_YuvFrame = nullptr;
 	int m_EncoderWidth = 0;
 	int m_EncoderHeight = 0;
-	int64_t m_FrameCounter = 0; // resets to 0 at the start of each segment - AVStream pts is per-file
+	int64_t m_FrameCounter = 0; // the encoder's pts, continuous across segments; each file's start is subtracted when writing
+	int64_t m_SegmentPtsBase = AV_NOPTS_VALUE; // pts of the current file's first packet
+	// the segment is due from this pts on: the first keyframe packet at or after it starts a new file (an encoder with a lookahead still
+	// hands out older packets, keyframes among them, after the request); AV_NOPTS_VALUE when no rotation is pending
+	int64_t m_RotateFromPts = AV_NOPTS_VALUE;
 
 	std::ofstream m_TelemetrySidecar;
 	std::chrono::steady_clock::time_point m_SegmentStartedAt;
