@@ -1,0 +1,55 @@
+715 minutes sampled (2026-10-28T22:27:38 to 2026-10-29T10:26:42)
+service: restarts 0, PID changes 0, minutes not active 0, API errors 0, max API response 22 ms
+
+resources (first 60 min -> last 60 min, slope per hour over the run):
+  rss_mb              721.7 ->     778.4      +5.13/h   (min 690, max 781)
+  anon_mb             332.8 ->     399.8      +5.86/h   (min 301, max 401)
+  threads              70.8 ->      70.7      +0.02/h   (min 69, max 74)
+  fds                 366.8 ->     393.6      +2.67/h   (min 363, max 398)
+  dmabuf_fds           78.8 ->     105.6      +2.67/h   (min 77, max 110)
+  dmabuf_objects       76.0 ->      93.7      +1.76/h   (min 75, max 97)
+  dmabuf_mb           121.0 ->     168.6      +4.78/h   (min 119, max 177)
+  mem_avail_mb      14796.2 ->   14633.6     -13.66/h   (min 14613, max 14852)
+  service_cores         1.5 ->       2.5      +0.13/h   (min 1.232, max 2.509)
+  busy_a76             36.0 ->      61.4      +3.25/h   (min 29.6, max 62.1)
+  busy_a55              7.4 ->      10.9      +0.40/h   (min 6.4, max 11.8)
+
+temperatures and clocks: max 73 C (soc-thermal 72, bigcore0-thermal 73, bigcore1-thermal 73, littlecore-thermal 73, center-thermal 69, gpu-thermal 68, npu-thermal 70), A76 [2352] MHz, A55 [1800] MHz, GPU [1000] MHz, NPU [1000] MHz, DMC [2112] MHz; A76 governor ['performance']
+loads (mean): GPU 23%, DMC 43%, NPU cores [0, 80, 49]
+
+per node, by quarter of the run: fps | mean ms of the main stage | max ms of it
+  Lenovo0             30.2 decode-hw   1.5      5 ||  30.2 decode-hw   1.6      6 ||  30.2 decode-hw   1.8      8 ||  30.2 decode-hw   1.8      9
+  soak-cpu-tags       59.0 detect      9.2     37 ||  56.7 detect     12.0     39 ||  35.5 detect     30.6     74 ||  27.9 detect     35.7     64
+  soak-mjpeg-cpu         - jpeg        8.3     14 ||     - jpeg        8.5     16 ||     - jpeg        9.3     19 ||     - jpeg        9.4     25
+  soak-mjpeg-npu         - jpeg        8.1     11 ||     - jpeg        8.1     12 ||     - jpeg        8.4     15 ||     - jpeg        8.4     18
+  soak-npu-coco       49.8 infer      20.2     38 ||  49.0 infer      20.5     33 ||  45.7 infer      22.0     35 ||  45.4 infer      22.2     49
+  soak-npu-tags       30.2 infer      19.0     24 ||  30.2 infer      19.2     24 ||  30.2 infer      19.9     35 ||  30.2 infer      19.9     32
+  soak-rec-lenovo        - encode      0.6      2 ||     - encode      0.6      3 ||     - encode      0.8      6 ||     - encode      0.8      4
+  soak-rec-stereo        - encode      0.8      8 ||     - encode      0.8      8 ||     - encode      1.0      9 ||     - encode      1.0      9
+  soak-stereo         60.4 decode-hw   2.2      6 ||  60.4 decode-hw   2.3      8 ||  60.4 decode-hw   2.9     11 ||  60.4 decode-hw   3.0     13
+  soak-stereo left    60.4               -      - ||  60.4               -      - ||  60.4               -      - ||  60.4               -      -
+  soak-stereo right   60.4               -      - ||  60.4               -      - ||  60.4               -      - ||  60.4               -      -
+  soak-vk-tags        60.4 detect      2.4     16 ||  60.4 detect      2.7     13 ||  60.4 detect      4.5     18 ||  60.4 detect      4.8     20
+  soak-webrtc            - encode      2.3      7 ||     - encode      2.3      9 ||     - encode      2.5     11 ||     - encode      2.5     13
+
+MJPEG pollers: frames [418543, 418666], empty [0, 0], bad [0, 0]; snapshots ok 718, failed 0; recordings now 16484 MB in 434 files, disk free 212 GB
+errors: journal lines 21 (in 7 minutes), service log errors/warnings 1, kernel messages 164 (in 11 minutes)
+
+event kinds (numbers masked; the soak logs at most 5 lines of each source a minute):
+      9  kernel:  rk_vcodec: mpp_task_dump_mem_region:N: --- dump task N mem region ---
+      9  kernel:  mpp_rkvenc2 fdbd0000.rkvenc-core: no memory region mapped
+      7  journal: mpp[N]: mpp_buffer: Assertion fd >= N failed at mpp_buffer_get_fd_with_caller:N
+      6  journal: mpp_buffer: Assertion fd >= N failed at mpp_buffer_get_fd_with_caller:N
+      6  kernel:  mpp_dma_import_fd:N: dma_buf_get fd N failed(-N)
+      6  kernel:  rk_vcodec: mpp_task_attach_fd:N: can't import dma-buf N
+      3  kernel:  rk_vcodec: mpp_translate_reg_address:N: reg[  N]: 0xffffffff fd -N failed
+      3  kernel:  rk_vcodec: mpp_process_task_default:N: alloc_task failed.
+      2  kernel:  rga: N   N  : RGA_MMU unsupported memory larger than 4G!
+      2  kernel:  rga: N   N  : ID[N]: job buffer map failed!
+      2  kernel:  rga: N   N  : ID[N]: src channel map job buffer failed!
+      2  kernel:  rga: N   N  : ID[N]: failed to map buffer
+      1  built graph {"sources": [N, N, N], "sinks": {"soak-cpu-tags": N, "soak-vk-tags": N, "soak-npu-coco": N, "soak-npu-tags": N, "soak-rec-stereo": N, "soa
+      1  journal: mpp[N]: mpp_enc: Warning: invalid cabac_en N for h264 profile N, set to N.
+      1  journal: mpp[N]: mpp_enc: Warning: invalid cabac_init_idc N for h264 profile N, set to -N.
+
+WebRTC viewer: 723 minutes, connected 723, frames/min mean 1661 (min 113), reconnects 2, packets lost 0, freezes 0

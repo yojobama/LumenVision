@@ -1,0 +1,130 @@
+
+Dma-buf Objects:
+size    	flags   	mode    	count   	exp_name	ino     	name
+02306048	00000002	00080007	00000001	system-uncached	00019105	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+04608000	00000002	00080007	00000001	system-uncached	00018489	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00015843	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00015391	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00013540	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00012400	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00012162	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+04608000	00000002	00080007	00000001	system-uncached	00011804	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00011005	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00008094	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00007206	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00006972	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00006680	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00006548	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00006024	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00001814	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00000830	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+00217088	00000002	00080007	00000002	system-uncached	00000583	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+02306048	00000002	00080007	00000001	system-uncached	00000511	<none>
+	Attached Devices:
+	fdbd0000.rkvenc-core
+Total 1 devices attached
+
+06144000	00000002	00080007	00000002	system-uncached	00000499	<none>
+	Attached Devices:
+	fdba0000.jpege-core
+Total 1 devices attached
+
+06144000	00000002	00080007	00000006	system-uncached	00000494	<none>
+	Attached Devices:
+	fdba0000.jpege-core
+Total 1 devices attached
+
+03686400	00000002	00080007	00000002	system	00000093	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+03686400	00000002	00080007	00000002	system	00000091	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+03686400	00000002	00080007	00000002	system	00000089	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+00004096	00000002	00080007	00000003	system-uncached	00000087	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+
+Total 25 objects, 69681152 bytes

@@ -185,3 +185,11 @@ options and records them in the model's manifest. The input size is the lever th
 
 See `CPU_TUNING.md`. `-DLUMEN_TARGET_CPU=cortex-a76.cortex-a55` builds the tree for the RK3588's cores. On the board it measured within 1% of the generic build on
 every workload: the hot code is vkapriltag's scalar quad fit (64% of the service's CPU), which the new instructions do not help. The option stays off in release builds.
+
+## 12-hour soak
+
+See `SOAK_12H.md`. Every accelerator and pipeline loaded at once for 12 hours: no restart, no API error, no throttling, every stream at full rate,
+the WebRTC preview connected throughout. It found two bugs, both fixed and re-checked in a 2-hour run. Recording tore its H.264 encoder down every
+60 s segment, which corrupted MPP's frame pool, leaked encoder buffers (dma-buf +4.8 MB/h) and caused 9 bursts of failed encode jobs; the encoder
+now lives for the whole recording and segments rotate on a forced keyframe. RGA jobs on memory above 4 GB failed on the RGA2 core; they are now
+kept on the RGA3 cores.

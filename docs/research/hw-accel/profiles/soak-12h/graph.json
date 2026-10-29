@@ -1,0 +1,1 @@
+{"sources": [1185212963, 1482040418, 188331562], "sinks": {"soak-cpu-tags": 1387139437, "soak-vk-tags": 1556059076, "soak-npu-coco": 633796984, "soak-npu-tags": 1952831599, "soak-rec-stereo": 1793287367, "soak-rec-lenovo": 1214418932, "soak-mjpeg-cpu": 1940886798, "soak-mjpeg-npu": 193665723, "soak-webrtc": 1242225560}, "lenovo": 1783280464}

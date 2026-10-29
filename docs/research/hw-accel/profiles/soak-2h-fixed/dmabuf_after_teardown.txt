@@ -1,0 +1,30 @@
+
+Dma-buf Objects:
+size    	flags   	mode    	count   	exp_name	ino     	name
+00176128	00000002	00080007	00000002	system-uncached	00019341	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+03686400	00000002	00080007	00000002	system	00019339	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+03686400	00000002	00080007	00000002	system	00019338	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+03686400	00000002	00080007	00000002	system	00019337	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+00004096	00000002	00080007	00000003	system-uncached	00019335	<none>
+	Attached Devices:
+	fdb90000.jpegd
+Total 1 devices attached
+
+
+Total 5 objects, 11239424 bytes
