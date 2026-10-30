@@ -1,0 +1,182 @@
+{
+  "formatVersion": "1.1",
+  "component": {
+    "group": "org.lumenvision",
+    "module": "lumenlib-java",
+    "version": "0.0.0-imagetest40",
+    "attributes": {
+      "org.gradle.status": "release"
+    }
+  },
+  "createdBy": {
+    "gradle": {
+      "version": "8.11"
+    }
+  },
+  "variants": [
+    {
+      "name": "apiElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-api"
+      },
+      "dependencies": [
+        {
+          "group": "edu.wpi.first.wpimath",
+          "module": "wpimath-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.ntcore",
+          "module": "ntcore-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.apriltag",
+          "module": "apriltag-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumenlib-java-0.0.0-imagetest40.jar",
+          "url": "lumenlib-java-0.0.0-imagetest40.jar",
+          "size": 91825,
+          "sha512": "4519fb79ff9dde07d5463a65615e8b5a24ffe99982f2de4ac7e77b98a28c01e3da72bde4f302f522342347af1b6ab4f4e52b3684ae9d963b0ebac024a624bdd4",
+          "sha256": "70683ad5e86ac55a792a6a84aa21bf96db4485060044eb29ba0cc3abca01a41e",
+          "sha1": "d87074746c38d19f05e329d9965cc91e8954d420",
+          "md5": "a56ff61631791f7a2879fcfc45a2e80e"
+        }
+      ]
+    },
+    {
+      "name": "runtimeElements",
+      "attributes": {
+        "org.gradle.category": "library",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.jvm.version": 17,
+        "org.gradle.libraryelements": "jar",
+        "org.gradle.usage": "java-runtime"
+      },
+      "dependencies": [
+        {
+          "group": "edu.wpi.first.wpiutil",
+          "module": "wpiutil-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.wpilibj",
+          "module": "wpilibj-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.wpiunits",
+          "module": "wpiunits-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "org.ejml",
+          "module": "ejml-simple",
+          "version": {
+            "requires": "0.44.0"
+          }
+        },
+        {
+          "group": "com.fasterxml.jackson.core",
+          "module": "jackson-annotations",
+          "version": {
+            "requires": "2.19.2"
+          }
+        },
+        {
+          "group": "com.fasterxml.jackson.core",
+          "module": "jackson-core",
+          "version": {
+            "requires": "2.19.2"
+          }
+        },
+        {
+          "group": "com.fasterxml.jackson.core",
+          "module": "jackson-databind",
+          "version": {
+            "requires": "2.19.2"
+          }
+        },
+        {
+          "group": "us.hebi.quickbuf",
+          "module": "quickbuf-runtime",
+          "version": {
+            "requires": "1.4"
+          }
+        },
+        {
+          "group": "edu.wpi.first.wpimath",
+          "module": "wpimath-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.ntcore",
+          "module": "ntcore-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        },
+        {
+          "group": "edu.wpi.first.apriltag",
+          "module": "apriltag-java",
+          "version": {
+            "requires": "2026.2.1"
+          }
+        }
+      ],
+      "files": [
+        {
+          "name": "lumenlib-java-0.0.0-imagetest40.jar",
+          "url": "lumenlib-java-0.0.0-imagetest40.jar",
+          "size": 91825,
+          "sha512": "4519fb79ff9dde07d5463a65615e8b5a24ffe99982f2de4ac7e77b98a28c01e3da72bde4f302f522342347af1b6ab4f4e52b3684ae9d963b0ebac024a624bdd4",
+          "sha256": "70683ad5e86ac55a792a6a84aa21bf96db4485060044eb29ba0cc3abca01a41e",
+          "sha1": "d87074746c38d19f05e329d9965cc91e8954d420",
+          "md5": "a56ff61631791f7a2879fcfc45a2e80e"
+        }
+      ]
+    },
+    {
+      "name": "sourcesElements",
+      "attributes": {
+        "org.gradle.category": "documentation",
+        "org.gradle.dependency.bundling": "external",
+        "org.gradle.docstype": "sources",
+        "org.gradle.usage": "java-runtime"
+      },
+      "files": [
+        {
+          "name": "lumenlib-java-0.0.0-imagetest40-sources.jar",
+          "url": "lumenlib-java-0.0.0-imagetest40-sources.jar",
+          "size": 59051,
+          "sha512": "28c9348d295fa5858016213e8ba117aa1881a40d3e1be0e598ff4c42f0baa1577aa916d03f7ff185b5f6436b1b995097f47815b521ce6a7e06f7b94e4b8eb12e",
+          "sha256": "62f0dca9210c86bcc1be9ee52ef7dc5d102c8097d5493171b710d04acec87569",
+          "sha1": "6973e2de1550647da300589261b07cc7a51b4244",
+          "md5": "341626af988ce5e1862ac8f12c12c8cf"
+        }
+      ]
+    }
+  ]
+}
