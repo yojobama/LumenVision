@@ -13,8 +13,22 @@ public class LumenMultiTagResult {
     private final Pose3d fieldToCamera;
     private final List<Integer> fiducialIds;
     private final double reprojectionErrorPixels;
+    private final double timestampSeconds;
+    private final long latencyMicros;
 
+    /** A result with no capture time ({@link #getTimestampSeconds()} 0), e.g. for a test. */
     public LumenMultiTagResult(Pose3d fieldToCamera, List<Integer> fiducialIds, double reprojectionErrorPixels) {
+        this(fieldToCamera, fiducialIds, reprojectionErrorPixels, 0.0, 0);
+    }
+
+    /**
+     * @param timestampSeconds the frame's capture time (see {@link #getTimestampSeconds()})
+     * @param latencyMicros its capture-to-publish latency
+     */
+    public LumenMultiTagResult(Pose3d fieldToCamera, List<Integer> fiducialIds, double reprojectionErrorPixels, double timestampSeconds,
+            long latencyMicros) {
+        this.timestampSeconds = timestampSeconds;
+        this.latencyMicros = latencyMicros;
         this.fieldToCamera = fieldToCamera;
         this.fiducialIds = Collections.unmodifiableList(fiducialIds);
         this.reprojectionErrorPixels = reprojectionErrorPixels;
@@ -41,5 +55,18 @@ public class LumenMultiTagResult {
     /** RMS reprojection error in pixels across the contributing tags' corners; well above ~1px on a calibrated camera suggests noisy corners. */
     public double getReprojectionErrorPixels() {
         return reprojectionErrorPixels;
+    }
+
+    /**
+     * When the frame this came from was captured, in seconds on the NetworkTables server clock (the roboRIO's FPGA time): the value
+     * {@code addVisionMeasurement} wants. Same as the {@link LumenPipelineResult} it came with; 0 for one built without a time.
+     */
+    public double getTimestampSeconds() {
+        return timestampSeconds;
+    }
+
+    /** Capture-to-publish latency of that frame in milliseconds; 0 for one built without a time. */
+    public double getLatencyMillis() {
+        return latencyMicros / 1000.0;
     }
 }

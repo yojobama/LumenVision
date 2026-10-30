@@ -7,9 +7,12 @@ import edu.wpi.first.networktables.IntegerSubscriber;
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.networktables.StringSubscriber;
+import edu.wpi.first.networktables.TimestampedString;
+
+import java.util.Optional;
 
 /**
- * Coprocessor-wide controls over NetworkTables: match recording, the vision LED and the node graph.
+ * Coprocessor-wide controls and state over NetworkTables: match recording, the vision LED, the node graph and the board's status.
  *
  * <p>Unlike {@link LumenCoprocessorControl} (HTTP, blocking), every call here is a non-blocking
  * NT4 publish or cached read, so it is safe from periodic robot code:
@@ -38,6 +41,10 @@ public class LumenCoprocessor {
     private final IntegerSubscriber ledModeSub;
     private final StringSubscriber graphSub;
     private final IntegerSubscriber protocolSub;
+    private final StringSubscriber statusSub;
+    // the last status parsed and the NT timestamp it was published with, so a loop reading it every 20 ms parses each one once
+    private long statusTimestamp = 0;
+    private Optional<LumenBoardStatus> status = Optional.empty();
 
     /** Uses the coprocessor's default root table, {@value #DEFAULT_ROOT_TABLE}. */
     public LumenCoprocessor(NetworkTableInstance instance) {
@@ -56,6 +63,7 @@ public class LumenCoprocessor {
         ledModeSub = root.getSubTable("status").getIntegerTopic("ledMode").subscribe(-1);
         graphSub = root.getStringTopic(".graph").subscribe("");
         protocolSub = root.getIntegerTopic(".protocol").subscribe(-1);
+        statusSub = root.getStringTopic(".status").subscribe("");
     }
 
     /** Asks the coprocessor to start recording every camera. */
@@ -93,6 +101,19 @@ public class LumenCoprocessor {
     /** The coprocessor's node graph; empty until it has published one. */
     public LumenGraph getGraph() {
         return LumenGraph.parse(graphSub.get());
+    }
+
+    /**
+     * The board's latest status (temperatures, throttling, CPU, RAM, disk, uptime); empty until the coprocessor has published one. Check
+     * {@link LumenBoardStatus#getTimestampSeconds()} for its age: the coprocessor publishes about five times a second.
+     */
+    public Optional<LumenBoardStatus> getBoardStatus() {
+        TimestampedString latest = statusSub.getAtomic();
+        if (latest.timestamp != statusTimestamp) {
+            statusTimestamp = latest.timestamp;
+            status = latest.timestamp == 0 ? Optional.empty() : LumenBoardStatus.parse(latest.value, latest.timestamp / 1_000_000.0);
+        }
+        return status;
     }
 
     /** The topic-layout version the coprocessor reports, or -1 before it has published one. */

@@ -386,10 +386,12 @@ entirely on it:
 LumenCoprocessor coprocessor = new LumenCoprocessor(NetworkTableInstance.getDefault());
 LumenGraph graph = coprocessor.getGraph();            // every node, its table, kind, state and input
 coprocessor.startRecording();  coprocessor.setLed(LumenLedMode.AUTO);
+coprocessor.getBoardStatus();   // Optional<LumenBoardStatus>: temperatures, throttling, CPU, RAM, disk, uptime, publish time
 
 LumenDetector tags = new LumenDetector("front");      // a detector node, by its table
 LumenPipelineResult r = tags.getAllUnreadResults().get(0);   // or getLatestResult()
 r.hasTargets();  r.getBestTarget();  r.getTimestampSeconds();  r.getMultiTagResult();
+r.getMultiTagResult().get().getTimestampSeconds();  // targets, multi-tag and constrained results carry the capture time too
 
 tags.setEnabled(false);  tags.takeSnapshot();  tags.setFpsLimit(30);  // any node: LumenNode
 tags.getCameraMatrix();                                // Optional<Matrix<N3,N3>>

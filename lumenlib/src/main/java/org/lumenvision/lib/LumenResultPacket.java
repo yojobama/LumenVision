@@ -43,8 +43,16 @@ final class LumenResultPacket {
         }
     }
 
-    /** @return empty for a truncated packet or one from another schema version */
+    /** {@link #decode(byte[], double)} without a capture time: every object's timestamp is 0. */
     static Optional<Decoded> decode(byte[] bytes) {
+        return decode(bytes, 0.0);
+    }
+
+    /**
+     * @param timestampSeconds the frame's capture time (the topic's NT timestamp), given to the targets and solves along with the packet's latency
+     * @return empty for a truncated packet or one from another schema version
+     */
+    static Optional<Decoded> decode(byte[] bytes, double timestampSeconds) {
         if (bytes == null || bytes.length < 2) return Optional.empty();
         ByteBuffer in = ByteBuffer.wrap(bytes); // big-endian by default
         try {
@@ -69,7 +77,8 @@ final class LumenResultPacket {
                 double yaw = in.getDouble();
                 double reprojError = in.getFloat();
                 int tagCount = in.get() & 0xFF;
-                constrained = Optional.of(new LumenConstrainedResult(new Pose2d(x, y, new Rotation2d(yaw)), reprojError, tagCount));
+                constrained = Optional.of(new LumenConstrainedResult(new Pose2d(x, y, new Rotation2d(yaw)), reprojError, tagCount,
+                        timestampSeconds, latencyMicros));
             }
 
             int idCount = in.get() & 0xFF;
@@ -78,11 +87,11 @@ final class LumenResultPacket {
 
             int targetCount = in.getShort() & 0xFFFF;
             List<LumenTrackedTarget> targets = new ArrayList<>(targetCount);
-            for (int i = 0; i < targetCount; i++) targets.add(readTarget(in));
+            for (int i = 0; i < targetCount; i++) targets.add(readTarget(in, timestampSeconds, latencyMicros));
             targets.sort(Comparator.comparingDouble(LumenTrackedTarget::getArea).reversed());
 
             Optional<LumenMultiTagResult> multiTag = hasMultiTag
-                    ? Optional.of(new LumenMultiTagResult(fieldToCamera, ids, multiTagReprojError))
+                    ? Optional.of(new LumenMultiTagResult(fieldToCamera, ids, multiTagReprojError, timestampSeconds, latencyMicros))
                     : Optional.empty();
             return Optional.of(new Decoded(sequenceId, latencyMicros, multiTag, constrained, targets));
         } catch (BufferUnderflowException e) {
@@ -90,7 +99,7 @@ final class LumenResultPacket {
         }
     }
 
-    private static LumenTrackedTarget readTarget(ByteBuffer in) {
+    private static LumenTrackedTarget readTarget(ByteBuffer in, double timestampSeconds, long latencyMicros) {
         int fiducialId = in.getShort();
         int objectClassId = in.getShort();
         float objectConfidence = in.getFloat();
@@ -108,7 +117,7 @@ final class LumenResultPacket {
         double[] minAreaRect = new double[8];
         for (int i = 0; i < 8; i++) minAreaRect[i] = in.getFloat();
         return new LumenTrackedTarget(fiducialId, objectClassId, objectConfidence, yaw, pitch, area, skew, ambiguity,
-                best, alternate, bestReprojError, altReprojError, corners, minAreaRect);
+                best, alternate, bestReprojError, altReprojError, corners, minAreaRect, timestampSeconds, latencyMicros);
     }
 
     private static Transform3d readTransform(ByteBuffer in) {

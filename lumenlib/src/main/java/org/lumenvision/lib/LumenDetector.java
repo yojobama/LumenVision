@@ -113,14 +113,16 @@ public class LumenDetector extends LumenNode {
         return results;
     }
 
-    /** The multi-tag result of the latest frame, if the coprocessor solved one. */
+    /** The multi-tag result of the latest frame, if the coprocessor solved one; it carries that frame's capture time. */
     public Optional<LumenMultiTagResult> getMultiTagResult() {
         return getLatestResult().getMultiTagResult();
     }
 
     private Optional<LumenPipelineResult> decode(TimestampedRaw sample) {
         if (sample.timestamp == 0 || sample.value.length == 0) return Optional.empty();
-        Optional<LumenResultPacket.Decoded> decoded = LumenResultPacket.decode(sample.value);
+        // the coprocessor stamps the topic with the frame's capture time; NT converts it into this instance's clock
+        final double timestampSeconds = sample.timestamp / 1_000_000.0;
+        Optional<LumenResultPacket.Decoded> decoded = LumenResultPacket.decode(sample.value, timestampSeconds);
         if (decoded.isEmpty()) {
             if (!schemaWarned) {
                 schemaWarned = true;
@@ -129,8 +131,7 @@ public class LumenDetector extends LumenNode {
             return Optional.empty();
         }
         LumenResultPacket.Decoded packet = decoded.get();
-        // the coprocessor stamps the topic with the frame's capture time; NT converts it into this instance's clock
-        return Optional.of(new LumenPipelineResult(packet.targets, sample.timestamp / 1_000_000.0, packet.sequenceId,
+        return Optional.of(new LumenPipelineResult(packet.targets, timestampSeconds, packet.sequenceId,
                 packet.latencyMicros, packet.multiTag, packet.constrained));
     }
 

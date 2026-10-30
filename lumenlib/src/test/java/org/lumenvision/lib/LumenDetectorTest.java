@@ -130,6 +130,64 @@ class LumenDetectorTest {
     }
 
     @Test
+    void everyPartOfAResultCarriesTheFramesCaptureTime() throws IOException {
+        try (RawPublisher pub = resultPublisher("front")) {
+            pub.set(golden(), NetworkTablesJNI.now() - 250_000);
+
+            assertTrue(waitFor(() -> camera.getLatestResult().getSequenceId() == 42));
+            LumenPipelineResult result = camera.getLatestResult();
+            double captured = result.getTimestampSeconds();
+            assertTrue(captured > 0);
+
+            LumenMultiTagResult multiTag = camera.getMultiTagResult().orElseThrow();
+            assertEquals(captured, multiTag.getTimestampSeconds());
+            assertEquals(12.345, multiTag.getLatencyMillis(), 1e-9);
+            LumenConstrainedResult constrained = result.getConstrainedResult().orElseThrow();
+            assertEquals(captured, constrained.getTimestampSeconds());
+            assertEquals(12.345, constrained.getLatencyMillis(), 1e-9);
+            for (LumenTrackedTarget target : result.getTargets()) {
+                assertEquals(captured, target.getTimestampSeconds());
+                assertEquals(12.345, target.getLatencyMillis(), 1e-9);
+            }
+        }
+    }
+
+    @Test
+    void theBoardStatusIsReadWithTheTimeItWasPublished() {
+        assertTrue(lumenCoprocessor.getBoardStatus().isEmpty());
+
+        try (StringPublisher pub = coprocessor.getStringTopic("/" + ROOT + "/.status").publish()) {
+            long publishedMicros = NetworkTablesJNI.now();
+            pub.set("{\"uptimeSeconds\":12.5,\"nodeCount\":2,\"serverTimeOffsetUs\":-1234,\"cpuUsagePercent\":37.5,"
+                    + "\"cpuTemperatureC\":61.2,\"temperaturesC\":{\"soc-thermal\":61.2,\"npu-thermal\":66.5},\"throttled\":true,"
+                    + "\"ramUsedMB\":4096,\"ramTotalMB\":16384,\"diskUsedPercent\":42,\"diskFreeMB\":51200,\"boardUptimeSeconds\":3600}",
+                    publishedMicros);
+
+            assertTrue(waitFor(() -> lumenCoprocessor.getBoardStatus().isPresent()));
+            LumenBoardStatus status = lumenCoprocessor.getBoardStatus().orElseThrow();
+            assertEquals(publishedMicros / 1e6, status.getTimestampSeconds(), 0.15);
+            assertEquals(37.5, status.getCpuUsagePercent());
+            assertEquals(61.2, status.getCpuTemperatureCelsius());
+            assertEquals(List.of("soc-thermal", "npu-thermal"), new ArrayList<>(status.getTemperaturesCelsius().keySet()));
+            assertEquals(66.5, status.getMaxTemperatureCelsius());
+            assertTrue(status.isThrottled());
+            assertEquals(4096, status.getRamUsedMegabytes());
+            assertEquals(16384, status.getRamTotalMegabytes());
+            assertEquals(25.0, status.getRamUsagePercent(), 1e-9);
+            assertEquals(42, status.getDiskUsedPercent());
+            assertEquals(51200, status.getDiskFreeMegabytes());
+            assertEquals(3600, status.getBoardUptimeSeconds());
+            assertEquals(12.5, status.getServiceUptimeSeconds());
+            assertEquals(2, status.getActiveNodeCount());
+            assertEquals(-1234, status.getServerTimeOffsetMicros().orElseThrow());
+
+            // a newer value replaces it
+            pub.set("{\"uptimeSeconds\":13.0,\"nodeCount\":0,\"serverTimeOffsetUs\":null}");
+            assertTrue(waitFor(() -> lumenCoprocessor.getBoardStatus().orElseThrow().getServiceUptimeSeconds() == 13.0));
+        }
+    }
+
+    @Test
     void noResultYetIsAnEmptyResult() {
         LumenPipelineResult result = camera.getLatestResult();
 

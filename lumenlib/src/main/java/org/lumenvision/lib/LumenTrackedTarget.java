@@ -30,10 +30,27 @@ public class LumenTrackedTarget {
     private final float altReprojError;
     private final List<LumenTargetCorner> detectedCorners;
     private final List<LumenTargetCorner> minAreaRectCorners;
+    private final double timestampSeconds;
+    private final long latencyMicros;
 
+    /** A target with no capture time ({@link #getTimestampSeconds()} 0), e.g. for a test. */
     public LumenTrackedTarget(int fiducialId, int objectClassId, float objectConfidence, double yaw, double pitch, double area,
             double skew, double poseAmbiguity, Transform3d bestCameraToTarget, Transform3d alternateCameraToTarget,
             float bestReprojError, float altReprojError, double[] corners, double[] minAreaRectCorners) {
+        this(fiducialId, objectClassId, objectConfidence, yaw, pitch, area, skew, poseAmbiguity, bestCameraToTarget, alternateCameraToTarget,
+                bestReprojError, altReprojError, corners, minAreaRectCorners, 0.0, 0);
+    }
+
+    /**
+     * @param timestampSeconds the frame's capture time (see {@link #getTimestampSeconds()})
+     * @param latencyMicros its capture-to-publish latency
+     */
+    public LumenTrackedTarget(int fiducialId, int objectClassId, float objectConfidence, double yaw, double pitch, double area,
+            double skew, double poseAmbiguity, Transform3d bestCameraToTarget, Transform3d alternateCameraToTarget,
+            float bestReprojError, float altReprojError, double[] corners, double[] minAreaRectCorners, double timestampSeconds,
+            long latencyMicros) {
+        this.timestampSeconds = timestampSeconds;
+        this.latencyMicros = latencyMicros;
         this.fiducialId = fiducialId;
         this.objectClassId = objectClassId;
         this.objectConfidence = objectConfidence;
@@ -124,5 +141,18 @@ public class LumenTrackedTarget {
     /** The minimum-area rectangle around the detected corners, in image pixels. */
     public List<LumenTargetCorner> getMinAreaRectCorners() {
         return minAreaRectCorners;
+    }
+
+    /**
+     * When the frame this came from was captured, in seconds on the NetworkTables server clock (the roboRIO's FPGA time): the value
+     * {@code addVisionMeasurement} wants. Same as the {@link LumenPipelineResult} it came with; 0 for one built without a time.
+     */
+    public double getTimestampSeconds() {
+        return timestampSeconds;
+    }
+
+    /** Capture-to-publish latency of that frame in milliseconds; 0 for one built without a time. */
+    public double getLatencyMillis() {
+        return latencyMicros / 1000.0;
     }
 }
