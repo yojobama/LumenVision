@@ -22,6 +22,13 @@ struct FakeThermal {
         std::ofstream(zone / "type") << type << "\n";
         if (withTemp) std::ofstream(zone / "temp") << milliC << "\n";
     }
+    int coolingCount = 0;
+    void AddCooling(const std::string& type, int state) {
+        const auto device = root / ("cooling_device" + std::to_string(coolingCount++));
+        std::filesystem::create_directories(device);
+        std::ofstream(device / "type") << type << "\n";
+        std::ofstream(device / "cur_state") << state << "\n";
+    }
     std::string Path() const { return root.string(); }
 };
 
@@ -57,6 +64,44 @@ TEST_CASE("no thermal zones is -1, never a throw", "[system][temperature]") {
     FakeThermal thermal;
     REQUIRE(ReadCpuTemperatureMilliC(thermal.Path()) == -1);
     REQUIRE(ReadCpuTemperatureMilliC((thermal.root / "missing").string()) == -1);
+}
+
+TEST_CASE("every readable thermal zone is listed by type, in zone order", "[system][temperature]") {
+    FakeThermal thermal;
+    thermal.Add("soc-thermal", 48500);
+    thermal.Add("broken-thermal", 0, false);
+    thermal.Add("gpu-thermal", 47000);
+    thermal.Add("npu-thermal", 66000);
+
+    const auto zones = ReadThermalZonesMilliC(thermal.Path());
+    REQUIRE(zones.size() == 3);
+    REQUIRE(zones[0] == std::pair<std::string, int>{"soc-thermal", 48500});
+    REQUIRE(zones[1] == std::pair<std::string, int>{"gpu-thermal", 47000});
+    REQUIRE(zones[2] == std::pair<std::string, int>{"npu-thermal", 66000});
+    REQUIRE(ReadThermalZonesMilliC((thermal.root / "missing").string()).empty());
+}
+
+TEST_CASE("a clock is throttled when a CPU or GPU cooling device is engaged, not when only a fan runs", "[system][temperature]") {
+    // one fake directory at a time: every FakeThermal uses the same path
+    {
+        FakeThermal fanOnly;
+        fanOnly.AddCooling("pwm-fan", 3);
+        fanOnly.AddCooling("cpufreq-cpu0", 0);
+        fanOnly.AddCooling("cpufreq-cpu4", 0);
+        fanOnly.AddCooling("devfreq-fb000000.gpu", 0);
+        REQUIRE_FALSE(ReadClockThrottled(fanOnly.Path()));
+    }
+    {
+        FakeThermal cpuHeld;
+        cpuHeld.AddCooling("pwm-fan", 0);
+        cpuHeld.AddCooling("cpufreq-cpu4", 2);
+        REQUIRE(ReadClockThrottled(cpuHeld.Path()));
+    }
+    {
+        FakeThermal gpuHeld;
+        gpuHeld.AddCooling("devfreq-fb000000.gpu", 1);
+        REQUIRE(ReadClockThrottled(gpuHeld.Path()));
+    }
 }
 
 #include "CameraMode.h"

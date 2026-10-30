@@ -108,6 +108,7 @@ void ISink::ProcessingThreadLoop()
             ScopedStage processing(m_Profile.get(), "process");
             Process(sources);
         }
+        OnPoll();
     }
     m_ShouldTerminate = false;
 }

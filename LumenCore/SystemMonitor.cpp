@@ -29,29 +29,31 @@ void SystemMonitor::StopMonitoring()
 
 void SystemMonitor::m_MonitorThreadLoop()
 {
+    const std::string thermalRoot = "/sys/class/thermal";
     // CPU usage is the busy share between two /proc/stat samples one interval apart
     CPU_STATS previousCpu = m_ReadCPUData();
     while (m_ThreadWantedAlive)
     {
-        {
-            std::lock_guard<std::mutex> guard(m_CPUTemperatureMutex);
-            m_cpu_Temperature = ReadCpuTemperatureMilliC("/sys/class/thermal");
-        }
-        {
-            std::lock_guard<std::mutex> guard(m_DiskMutex);
-            m_diskUsage = m_GetDiskUsage("/");
-        }
-        {
-            std::lock_guard<std::mutex> guard(m_RAMUsageMutex);
-            m_ramUsage = m_ReadMemoryData().get_memory_usage();
-        }
 		std::this_thread::sleep_for(std::chrono::milliseconds(m_TimeoutMilliseconds));
-        {
-            const CPU_STATS currentCpu = m_ReadCPUData();
-            std::lock_guard<std::mutex> guard(m_CPUUsageMutex);
-            m_cpuUsage = m_GetCPUUsage(previousCpu, currentCpu);
-            previousCpu = currentCpu;
-        }
+
+        SystemSnapshot snapshot;
+        const CPU_STATS currentCpu = m_ReadCPUData();
+        snapshot.cpuUsagePercent = m_GetCPUUsage(previousCpu, currentCpu) * 100.0f;
+        previousCpu = currentCpu;
+
+        const int cpuMilliC = ReadCpuTemperatureMilliC(thermalRoot);
+        snapshot.cpuTemperatureC = cpuMilliC < 0 ? -1.0 : cpuMilliC / 1000.0;
+        for (const auto& [type, milliC] : ReadThermalZonesMilliC(thermalRoot)) snapshot.temperaturesC.emplace_back(type, milliC / 1000.0);
+        snapshot.throttled = ReadClockThrottled(thermalRoot);
+
+        const MEMORY_STATS memory = m_ReadMemoryData();
+        snapshot.ramTotalMB = memory.total_memory / 1024.0;
+        snapshot.ramUsedMB = (memory.total_memory - memory.available_memory) / 1024.0;
+        m_ReadDisk("/", snapshot);
+        snapshot.uptimeSeconds = m_ReadUptimeSeconds();
+
+        std::lock_guard<std::mutex> guard(m_SnapshotMutex);
+        m_Snapshot = std::move(snapshot);
     }
 }
 
@@ -121,26 +123,34 @@ float SystemMonitor::m_GetCPUUsage(const CPU_STATS& first, const CPU_STATS& seco
 }
 
 #ifdef __linux__
-float SystemMonitor::m_GetDiskUsage(const std::string& disk)
+void SystemMonitor::m_ReadDisk(const std::string& mountPoint, SystemSnapshot& snapshot)
 {
     struct statvfs diskData;
+    if (statvfs(mountPoint.c_str(), &diskData) != 0 || diskData.f_blocks == 0) return;
 
-    statvfs(disk.c_str(), &diskData);
+    const double total = static_cast<double>(diskData.f_blocks);
+    snapshot.diskUsedPercent = (total - static_cast<double>(diskData.f_bfree)) / total * 100.0;
+    snapshot.diskFreeMB = static_cast<double>(diskData.f_bavail) * diskData.f_frsize / (1024.0 * 1024.0);
+}
 
-    auto total = diskData.f_blocks;
-    auto free = diskData.f_bfree;
-    auto diff = total - free;
-
-    float result = static_cast<float>(diff) / total;
-
-    return result;
+double SystemMonitor::m_ReadUptimeSeconds()
+{
+    std::ifstream uptime("/proc/uptime");
+    double seconds = 0.0;
+    uptime >> seconds;
+    return uptime ? seconds : 0.0;
 }
 #else
 // LUMEN_TODO(windows-system-monitor): statvfs has no Windows equivalent; a real implementation belongs on
 // GetDiskFreeSpaceExW(). Stubbed like m_ReadCPUData.
-float SystemMonitor::m_GetDiskUsage(const std::string&)
+void SystemMonitor::m_ReadDisk(const std::string&, SystemSnapshot&)
 {
-    return 0.0f;
+}
+
+// LUMEN_TODO(windows-system-monitor): GetTickCount64() is the Windows equivalent of /proc/uptime.
+double SystemMonitor::m_ReadUptimeSeconds()
+{
+    return 0.0;
 }
 #endif
 
@@ -176,6 +186,37 @@ int ReadCpuTemperatureMilliC(const std::string& thermalRoot)
         }
     }
     return preferredRank >= 0 ? preferredValue : hottest;
+}
+
+std::vector<std::pair<std::string, int>> ReadThermalZonesMilliC(const std::string& thermalRoot)
+{
+    std::vector<std::pair<std::string, int>> zones;
+    // the same 20-zone scan as ReadCpuTemperatureMilliC
+    for (int i = 0; i < 20; ++i) {
+        const std::string zone = thermalRoot + "/thermal_zone" + std::to_string(i);
+        std::string type, temp;
+        if (!ReadFirstLine(zone + "/temp", temp) || !ReadFirstLine(zone + "/type", type)) continue;
+        int value = 0;
+        try { value = std::stoi(temp); } catch (...) { continue; }
+        if (value <= 0) continue;
+        zones.emplace_back(type, value);
+    }
+    return zones;
+}
+
+bool ReadClockThrottled(const std::string& thermalRoot)
+{
+    for (int i = 0; i < 32; ++i) {
+        const std::string device = thermalRoot + "/cooling_device" + std::to_string(i);
+        std::string type, state;
+        if (!ReadFirstLine(device + "/type", type) || !ReadFirstLine(device + "/cur_state", state)) continue;
+        if (type.rfind("cpufreq", 0) != 0 && type.rfind("devfreq", 0) != 0) continue;
+        try {
+            if (std::stoi(state) > 0) return true;
+        } catch (...) {
+        }
+    }
+    return false;
 }
 
 #ifdef __linux__
@@ -214,27 +255,32 @@ MEMORY_STATS SystemMonitor::m_ReadMemoryData()
 }
 #endif
 
-// get ram usage in megabytes
+SystemSnapshot SystemMonitor::GetSnapshot()
+{
+    std::lock_guard<std::mutex> guard(m_SnapshotMutex);
+    return m_Snapshot;
+}
+
 int SystemMonitor::GetRAMUsage()
 {
-    std::lock_guard<std::mutex> guard(m_RAMUsageMutex);
-	return static_cast<int>(m_ramUsage * 1000);
+    std::lock_guard<std::mutex> guard(m_SnapshotMutex);
+	return static_cast<int>(m_Snapshot.ramUsedMB);
 }
 
 int SystemMonitor::GetCPUTemperature()
 {
-    std::lock_guard<std::mutex> guard(m_CPUTemperatureMutex);
-    return m_cpu_Temperature / 1000; // Convert from millidegrees to degrees
+    std::lock_guard<std::mutex> guard(m_SnapshotMutex);
+    return m_Snapshot.cpuTemperatureC < 0.0 ? 0 : static_cast<int>(m_Snapshot.cpuTemperatureC);
 }
 
 float SystemMonitor::GetCPUUsage()
 {
-    std::lock_guard<std::mutex> guard(m_CPUUsageMutex);
-    return m_cpuUsage * 100; // Convert to percentage
+    std::lock_guard<std::mutex> guard(m_SnapshotMutex);
+    return m_Snapshot.cpuUsagePercent;
 }
 
 float SystemMonitor::GetDiskUsage()
 {
-    std::lock_guard<std::mutex> guard(m_DiskMutex);
-    return m_diskUsage * 100; // Convert to percentage
+    std::lock_guard<std::mutex> guard(m_SnapshotMutex);
+    return static_cast<float>(m_Snapshot.diskUsedPercent);
 }

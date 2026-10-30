@@ -484,6 +484,7 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 	}
 	stats.lastCaptureTimeUs = result.captureTimeUs;
 	stats.lastFrameNumber = result.frameNumber;
+	stats.lastPublishedUs = SourceResult::NowUs();
 	putNumber("fps", stats.fps);
 }
 
@@ -500,27 +501,53 @@ void NetworkTablesSink::Process(const std::vector<SourceResult>& results)
 	auto rootTable = m_Instance.GetTable(m_Config.rootTable);
 	rootTable->PutNumber("heartbeat", static_cast<double>(m_Heartbeat++));
 
-	// re-published every tick: a value Set() before the NT4 client first connects doesn't reliably reach the server (as with heartbeat/.status)
+	// re-published every tick: a value Set() before the NT4 client first connects doesn't reliably reach the server (as with heartbeat)
 	rootTable->PutString(".version", LUMEN_VERSION_STRING);
 	rootTable->PutNumber(".protocol", kNetworkTablesProtocol);
 	{
 		std::lock_guard<std::mutex> lock(m_ConfigMutex);
 		if (!m_GraphJson.empty()) rootTable->PutString(".graph", m_GraphJson);
 	}
+}
+
+void NetworkTablesSink::OnPoll()
+{
+	const uint64_t now = SourceResult::NowUs();
+	if (m_LastStatusUs != 0 && now - m_LastStatusUs < kStatusIntervalUs) return;
+	m_LastStatusUs = now;
+	PublishStatus();
+}
+
+void NetworkTablesSink::PublishStatus()
+{
+	const uint64_t now = SourceResult::NowUs();
+	int nodeCount = 0;
+	for (const auto& [sourceId, stats] : m_StreamStats) {
+		if (stats.lastPublishedUs != 0 && now - stats.lastPublishedUs < 1'000'000) nodeCount++;
+	}
 
 	// server time offset (nt::GetServerTimeOffset), surfaced as-is so a robot program can tell when its addVisionMeasurement() timestamps can't be trusted yet
 	std::optional<int64_t> serverTimeOffsetUs = m_Instance.GetServerTimeOffset();
 	nlohmann::json statusJson{
-		{"uptimeSeconds", static_cast<double>(SourceResult::NowUs() - m_ConstructedAtUs) / 1'000'000.0},
-		{"nodeCount", static_cast<int>(results.size())},
+		{"uptimeSeconds", static_cast<double>(now - m_ConstructedAtUs) / 1'000'000.0},
+		{"nodeCount", nodeCount},
 		{"serverTimeOffsetUs", serverTimeOffsetUs.has_value() ? nlohmann::json(serverTimeOffsetUs.value()) : nlohmann::json(nullptr)},
 	};
 	if (m_SystemMonitor != nullptr) {
-		statusJson["cpuUsage"] = m_SystemMonitor->GetCPUUsage();
-		statusJson["cpuTemperature"] = m_SystemMonitor->GetCPUTemperature();
-		statusJson["ramUsage"] = m_SystemMonitor->GetRAMUsage();
+		const SystemSnapshot board = m_SystemMonitor->GetSnapshot();
+		nlohmann::json temperatures = nlohmann::json::object();
+		for (const auto& [zone, celsius] : board.temperaturesC) temperatures[zone] = celsius;
+		statusJson["cpuUsagePercent"] = board.cpuUsagePercent;
+		statusJson["cpuTemperatureC"] = board.cpuTemperatureC < 0.0 ? nlohmann::json(nullptr) : nlohmann::json(board.cpuTemperatureC);
+		statusJson["temperaturesC"] = temperatures;
+		statusJson["throttled"] = board.throttled;
+		statusJson["ramUsedMB"] = board.ramUsedMB;
+		statusJson["ramTotalMB"] = board.ramTotalMB;
+		statusJson["diskUsedPercent"] = board.diskUsedPercent;
+		statusJson["diskFreeMB"] = board.diskFreeMB;
+		statusJson["boardUptimeSeconds"] = board.uptimeSeconds;
 	}
-	rootTable->PutString(".status", statusJson.dump());
+	m_Instance.GetTable(m_Config.rootTable)->PutString(".status", statusJson.dump());
 }
 
 #endif // LUMEN_WITH_NT4

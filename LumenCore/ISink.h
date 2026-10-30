@@ -46,6 +46,9 @@ protected:
     // called once Toggle(false) has stopped and joined this sink's processing thread (so it never races Process()); default no-op.
     // RecordSink overrides it to finalise the open segment so the file is playable immediately.
     virtual void OnStopped() {}
+    // called on the processing thread after every wake-up, with or without new results (at least every 100 ms while running), so a sink can
+    // publish on a clock of its own; default no-op. NetworkTablesSink publishes the board's status from it.
+    virtual void OnPoll() {}
 private:
     std::shared_ptr<Logger> m_Logger;
 

@@ -3,6 +3,7 @@
 #include "CameraCalibrationResult.h"
 #include "NetworkTablesSink.h"
 #include "ResultPacket.h"
+#include "SystemMonitor.h"
 #include <networktables/RawTopic.h>
 #include <chrono>
 #include <thread>
@@ -461,6 +462,61 @@ TEST_CASE("a NetworkTablesSink rebuilt under the same id keeps publishing the bo
 	static_cast<ISink&>(*ntSink).Toggle(false);
 	static_cast<ISink&>(*detector).Toggle(false);
 	imageSource->Toggle(false);
+	client.StopClient();
+	server.StopServer();
+	nt::NetworkTableInstance::Destroy(client);
+	nt::NetworkTableInstance::Destroy(server);
+}
+
+TEST_CASE("NetworkTablesSink publishes the board's status on its own clock, with no node producing results", "[nt4][e2e]") {
+	constexpr unsigned int NT3_PORT = 17861;
+	constexpr unsigned int NT4_PORT = 17862;
+	nt::NetworkTableInstance server = nt::NetworkTableInstance::Create();
+	server.StartServer("", "127.0.0.1", NT3_PORT, NT4_PORT);
+	nt::NetworkTableInstance client = nt::NetworkTableInstance::Create();
+	client.SetServer("127.0.0.1", NT4_PORT);
+	client.StartClient4("status-reader");
+	auto clientTable = client.GetTable("lumenvision");
+
+	SystemMonitor monitor(100);
+	monitor.StartMonitoring();
+	auto logger = std::make_shared<Logger>("LumenCoreTests-nt4-status.log");
+	NetworkTablesConfig config;
+	config.serverAddress = "127.0.0.1";
+	config.port = NT4_PORT;
+	config.rootTable = "lumenvision";
+	config.clientIdentity = "status-sink";
+	// no source is bound: the status must not depend on results arriving
+	auto ntSink = std::make_shared<NetworkTablesSink>(logger, "status-sink", config, &monitor);
+	static_cast<ISink&>(*ntSink).Toggle(true);
+
+	auto status = [&] { return nlohmann::json::parse(clientTable->GetString(".status", "{}"), nullptr, false); };
+	// the monitor's first reading lands after one interval; until then its fields are zero
+	REQUIRE(WaitUntil([&] { nlohmann::json s = status(); return s.is_object() && s.contains("throttled") && s.value("uptimeSeconds", 0.0) > 0.3; }));
+	nlohmann::json s = status();
+	REQUIRE(s.value("nodeCount", -1) == 0);
+	REQUIRE(s["temperaturesC"].is_object());
+	REQUIRE(s["throttled"].is_boolean());
+	REQUIRE((s["cpuTemperatureC"].is_null() || s["cpuTemperatureC"].is_number()));
+	for (const char* key : { "cpuUsagePercent", "ramUsedMB", "ramTotalMB", "diskUsedPercent", "diskFreeMB", "boardUptimeSeconds" }) {
+		INFO(key);
+		REQUIRE(s[key].is_number());
+	}
+#ifdef __linux__
+	REQUIRE(s.value("ramTotalMB", 0.0) > 0.0);
+	REQUIRE(s.value("ramUsedMB", 0.0) > 0.0);
+	REQUIRE(s.value("ramUsedMB", 0.0) <= s.value("ramTotalMB", 0.0));
+	REQUIRE(s.value("diskFreeMB", 0.0) > 0.0);
+	REQUIRE(s.value("boardUptimeSeconds", 0.0) > 0.0);
+#endif
+
+	// published on a timer: a later read shows a later sink uptime
+	const double first = s.value("uptimeSeconds", 0.0);
+	REQUIRE(WaitUntil([&] { return status().value("uptimeSeconds", 0.0) > first; }));
+
+	static_cast<ISink&>(*ntSink).Toggle(false);
+	ntSink.reset();
+	monitor.StopMonitoring();
 	client.StopClient();
 	server.StopServer();
 	nt::NetworkTableInstance::Destroy(client);

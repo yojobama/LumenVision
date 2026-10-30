@@ -32,6 +32,8 @@ struct NetworkTablesStreamStats {
 	uint64_t lastCaptureTimeUs = 0;
 	// last NT timestamp a frame's topics were written with; keeps them monotonic
 	int64_t lastNtCaptureUs = 0;
+	// when this sink last published the source's result (SourceResult::NowUs); ".status" nodeCount counts the recent ones
+	uint64_t lastPublishedUs = 0;
 	double fps = 0.0;
 };
 
@@ -41,7 +43,7 @@ class NetworkTablesSink : public ISink
 {
 public:
 	// Non-owning pointer to Manager's shared SystemMonitor; must outlive this sink.
-	// May be null, in which case ".status" omits the cpu/temperature/ram fields.
+	// May be null, in which case ".status" omits the board fields (see PublishStatus).
 	NetworkTablesSink(std::shared_ptr<Logger> logger, std::string id, NetworkTablesConfig config,
 		SystemMonitor* systemMonitor = nullptr);
 	~NetworkTablesSink();
@@ -88,6 +90,15 @@ private:
 	// per-node config writes out of the topic name.
 	void OnConfigValueChanged(const nt::Event& event);
 	void Process(const std::vector<SourceResult>& results) override;
+	// publishes ".status" every kStatusIntervalUs, whether or not any node is producing results
+	void OnPoll() override;
+	// "<rootTable>/.status", a JSON object: uptimeSeconds (this sink's), nodeCount (nodes whose results it published in the last second),
+	// serverTimeOffsetUs (null until NT has synchronised the clocks), and from the SystemMonitor: cpuUsagePercent, cpuTemperatureC (null when
+	// unreadable), temperaturesC ({zone type: degrees}), throttled, ramUsedMB, ramTotalMB, diskUsedPercent, diskFreeMB, boardUptimeSeconds.
+	// Read by lumenlib's LumenCoprocessor.getBoardStatus().
+	void PublishStatus();
+	static constexpr uint64_t kStatusIntervalUs = 200'000;
+	uint64_t m_LastStatusUs = 0;
 
 	// Writes one source's JSON to its NT subtable: legacy parallel arrays, flattened best-target scalars and
 	// the binary "result" packet (see BuildResultPacket). Non-AprilTag JSON falls back to a "raw" string topic.

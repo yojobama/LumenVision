@@ -346,7 +346,7 @@ REST stays, for configuration from the WebUI only.
 
 ```
 /<Root>/.version                (string)   coprocessor version, for the handshake
-/<Root>/.status                 (string)   json: uptime, temp, cpu, node count, clock offset
+/<Root>/.status                 (string)   json, ~5 Hz: uptime, node count, clock offset, board temps/throttling/cpu/ram/disk
 /<Root>/<node>/result           (raw)      canonical versioned packet — what the vendordep reads
 /<Root>/<node>/hasTargets       (boolean)  \
 /<Root>/<node>/targetYaw        (double)    |  best target, flattened,
