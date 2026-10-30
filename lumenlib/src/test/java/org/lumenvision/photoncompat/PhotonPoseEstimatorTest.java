@@ -106,6 +106,26 @@ class PhotonPoseEstimatorTest {
     }
 
     @Test
+    void aTagWithOnlyOneSolutionOffersNoAlternate() {
+        // a tag at the camera's height, solved a little high (as a real solve is), with no second solution: the coprocessor sends an
+        // identity alternate and a -1 reprojection error, which as a hypothesis would put the camera on the tag at exactly its mount height
+        Pose3d tag = new Pose3d(8.0, 1.0, ROBOT_TO_CAMERA.getZ(), new Rotation3d(0, 0, Math.PI));
+        PhotonPoseEstimator heightEstimator = new PhotonPoseEstimator(new AprilTagFieldLayout(List.of(new AprilTag(3, tag)), 16.0, 8.0),
+                PoseStrategy.CLOSEST_TO_CAMERA_HEIGHT, ROBOT_TO_CAMERA);
+        PhotonPoseEstimator referenceEstimator = new PhotonPoseEstimator(new AprilTagFieldLayout(List.of(new AprilTag(3, tag)), 16.0, 8.0),
+                PoseStrategy.CLOSEST_TO_REFERENCE_POSE, ROBOT_TO_CAMERA);
+        Pose3d solved = new Pose3d(ROBOT.getX(), ROBOT.getY(), 0.05, ROBOT.getRotation());
+        Transform3d best = new Transform3d(solved.transformBy(ROBOT_TO_CAMERA), tag);
+        LumenTrackedTarget single = new LumenTrackedTarget(3, -1, -1, 0, 0, 1.0, 0, 0.0, best, new Transform3d(), 0.2f, -1.0f, new double[8],
+                new double[8]);
+
+        assertPose(solved, heightEstimator.update(result(Optional.empty(), single)).orElseThrow().estimatedPose, 1e-6);
+        // a reference pose beside the tag does not draw the estimate there either
+        referenceEstimator.setReferencePose(tag.transformBy(ROBOT_TO_CAMERA.inverse()));
+        assertPose(solved, referenceEstimator.update(result(Optional.empty(), single)).orElseThrow().estimatedPose, 1e-6);
+    }
+
+    @Test
     void closestToLastPoseStartsFromLowestAmbiguityThenFollowsThePreviousEstimate() {
         LumenTrackedTarget first = target(1, TAG1, ROBOT, 0.1, 1.0, mirroredAlternate(TAG1));
         PhotonPoseEstimator estimator = estimator(PoseStrategy.CLOSEST_TO_LAST_POSE);

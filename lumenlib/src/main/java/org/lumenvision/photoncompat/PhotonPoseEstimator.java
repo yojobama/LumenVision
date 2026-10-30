@@ -310,7 +310,10 @@ public class PhotonPoseEstimator {
         for (LumenTrackedTarget target : result.getTargets()) {
             Optional<Pose3d> tagPose = tagPose(target);
             if (tagPose.isEmpty() || target.getPoseAmbiguity() < 0) continue;
-            for (Transform3d cameraToTarget : new Transform3d[] { target.getBestCameraToTarget(), target.getAlternateCameraToTarget() }) {
+            // without a second solution the alternate is an identity placeholder (the camera on the tag), not a hypothesis
+            Transform3d[] hypotheses = target.getAltReprojError() < 0 ? new Transform3d[] { target.getBestCameraToTarget() }
+                    : new Transform3d[] { target.getBestCameraToTarget(), target.getAlternateCameraToTarget() };
+            for (Transform3d cameraToTarget : hypotheses) {
                 Pose3d cameraPose = tagPose.get().transformBy(cameraToTarget.inverse());
                 Candidate candidate = new Candidate(target, cameraPose, cameraPose.transformBy(robotToCamera.inverse()));
                 double s = score.apply(candidate);
