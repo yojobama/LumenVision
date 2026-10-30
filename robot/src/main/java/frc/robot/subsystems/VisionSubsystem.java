@@ -12,7 +12,7 @@ import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
 import java.util.Optional;
-import org.lumenvision.lib.LumenDetector;
+import org.lumenvision.lib.LumenAprilTagDetector;
 import org.lumenvision.lib.LumenPoseEstimator;
 import org.lumenvision.lib.LumenRobotPose;
 import org.lumenvision.photoncompat.sim.PhotonCameraSim;
@@ -20,11 +20,11 @@ import org.lumenvision.photoncompat.sim.SimCameraProperties;
 import org.lumenvision.photoncompat.sim.VisionSystemSim;
 
 /**
- * Reads a LumenVision detector node and estimates the robot's field pose from it. In simulation a simulated camera stands in for the
+ * Reads a LumenVision AprilTag detector node and estimates the robot's field pose from it. In simulation a simulated camera stands in for the
  * coprocessor, publishing to the same NetworkTables topics, so this code runs unchanged.
  */
 public class VisionSubsystem extends SubsystemBase {
-  // the detector node's name in the LumenVision web UI, and where its camera sits on the robot
+  // the AprilTag detector node's name in the LumenVision web UI, and where its camera sits on the robot
   private static final String kDetectorName = "front";
   private static final Transform3d kRobotToCamera =
       new Transform3d(
@@ -32,7 +32,7 @@ public class VisionSubsystem extends SubsystemBase {
           new Rotation3d(0, Units.degreesToRadians(-15), 0));
 
   private final AprilTagFieldLayout m_layout = AprilTagFieldLayout.loadField(AprilTagFields.kDefaultField);
-  private final LumenDetector m_detector = new LumenDetector(kDetectorName);
+  private final LumenAprilTagDetector m_detector = new LumenAprilTagDetector(kDetectorName);
   private final LumenPoseEstimator m_estimator = new LumenPoseEstimator(m_layout, kRobotToCamera);
   private final Field2d m_field = new Field2d();
 
