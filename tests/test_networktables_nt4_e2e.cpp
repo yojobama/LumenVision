@@ -2,6 +2,7 @@
 #include "ApriltagDetector.h"
 #include "CameraCalibrationResult.h"
 #include "NetworkTablesSink.h"
+#include "ObjectDetectionSink.h"
 #include "ResultPacket.h"
 #include "SystemMonitor.h"
 #include <networktables/RawTopic.h>
@@ -28,6 +29,27 @@ protected:
 
 private:
 	cv::Mat m_Frame;
+};
+
+// An object detector's output without a model: the same detections every frame, and the calibration it reports to a sink that asks.
+class FakeObjectDetector : public ISource {
+public:
+	FakeObjectDetector(std::shared_ptr<Logger> logger, std::string id, nlohmann::json detections, std::optional<CameraCalibrationResult> calibration)
+		: ISource(logger, id), m_Detections(std::move(detections)), m_Calibration(std::move(calibration))
+	{
+	}
+
+	std::optional<CameraCalibrationResult> GetCalibration() override { return m_Calibration; }
+
+protected:
+	void CaptureFrame() override {
+		SetLatestResult(SourceResult(m_Detections, std::nullopt));
+		std::this_thread::sleep_for(std::chrono::milliseconds(20));
+	}
+
+private:
+	nlohmann::json m_Detections;
+	std::optional<CameraCalibrationResult> m_Calibration;
 };
 
 // Polls until the condition holds or a timeout expires.
@@ -521,4 +543,77 @@ TEST_CASE("NetworkTablesSink publishes the board's status on its own clock, with
 	server.StopServer();
 	nt::NetworkTableInstance::Destroy(client);
 	nt::NetworkTableInstance::Destroy(server);
+}
+
+TEST_CASE("an object detector's calibration is published as its camera intrinsics, with or without detections", "[nt4][e2e]") {
+	constexpr unsigned int NT3_PORT = 17871;
+	constexpr unsigned int NT4_PORT = 17872;
+	nt::NetworkTableInstance server = nt::NetworkTableInstance::Create();
+	server.StartServer("", "127.0.0.1", NT3_PORT, NT4_PORT);
+	nt::NetworkTableInstance client = nt::NetworkTableInstance::Create();
+	client.SetServer("127.0.0.1", NT4_PORT);
+	client.StartClient4("intrinsics-reader");
+	auto root = client.GetTable("lumenvision");
+
+	auto logger = std::make_shared<Logger>("LumenCoreTests-nt4-object-intrinsics.log");
+	const nlohmann::json fuel = nlohmann::json::array({ { {"classId", 0}, {"className", "fuel"}, {"confidence", 0.9},
+		{"box", {100, 120, 40, 40}}, {"frameWidth", 640}, {"frameHeight", 480}, {"yawDeg", 12.5}, {"pitchDeg", -3.0} } });
+	CameraCalibrationResult calibration(600.0, 610.0, 320.0, 240.0, 0.3, { 0.1, -0.2, 0.0, 0.0, 0.05 }, 640, 480);
+	auto calibrated = std::make_shared<FakeObjectDetector>(logger, "fuel-detector", fuel, calibration);
+	// no detections at all: the result is an empty array, which the sink cannot tell from zero tags
+	auto calibratedIdle = std::make_shared<FakeObjectDetector>(logger, "idle-detector", nlohmann::json::array(), calibration);
+	auto uncalibrated = std::make_shared<FakeObjectDetector>(logger, "plain-detector", fuel, std::nullopt);
+
+	NetworkTablesConfig config;
+	config.serverAddress = "127.0.0.1";
+	config.port = NT4_PORT;
+	config.rootTable = "lumenvision";
+	config.clientIdentity = "intrinsics-sink";
+	auto ntSink = std::make_shared<NetworkTablesSink>(logger, "intrinsics-sink", config);
+	REQUIRE(ntSink->BindSource(calibrated));
+	REQUIRE(ntSink->BindSource(calibratedIdle));
+	REQUIRE(ntSink->BindSource(uncalibrated));
+	calibrated->Toggle(true);
+	calibratedIdle->Toggle(true);
+	uncalibrated->Toggle(true);
+	static_cast<ISink&>(*ntSink).Toggle(true);
+
+	const std::vector<double> expected{ 600.0, 0, 320.0, 0, 610.0, 240.0, 0, 0, 1 };
+	for (const char* table : { "fuel-detector", "idle-detector" }) {
+		INFO(table);
+		auto node = root->GetSubTable(table);
+		// two topics, each arriving on its own
+		REQUIRE(WaitUntil([&] { return node->GetNumberArray("cameraIntrinsics", {}) == expected; }));
+		REQUIRE(WaitUntil([&] { return node->GetNumberArray("cameraDistortion", {}) == calibration.distCoeffs; }));
+	}
+	// the detections themselves still arrive, and a detector without a calibration publishes no intrinsics
+	auto plain = root->GetSubTable("plain-detector");
+	REQUIRE(WaitUntil([&] { return plain->GetBoolean("hasTargets", false); }));
+	REQUIRE_FALSE(plain->GetEntry("cameraIntrinsics").Exists());
+
+	static_cast<ISink&>(*ntSink).Toggle(false);
+	calibrated->Toggle(false);
+	calibratedIdle->Toggle(false);
+	uncalibrated->Toggle(false);
+	client.StopClient();
+	server.StopServer();
+	nt::NetworkTableInstance::Destroy(client);
+	nt::NetworkTableInstance::Destroy(server);
+}
+
+TEST_CASE("an object detector reports the calibration it was given, and none after an empty one", "[nt4]") {
+	auto logger = std::make_shared<Logger>("LumenCoreTests-object-calibration.log");
+	ObjectDetectionSink detector(logger, "calibration-detector", nullptr);
+	REQUIRE_FALSE(detector.GetCalibration().has_value());
+
+	detector.SetCalibration(CameraCalibrationResult(600.0, 610.0, 320.0, 240.0, 0.3, { 0.1, -0.2 }, 640, 480));
+	std::optional<CameraCalibrationResult> reported = detector.GetCalibration();
+	REQUIRE(reported.has_value());
+	REQUIRE(reported->fx == 600.0);
+	REQUIRE(reported->cy == 240.0);
+	REQUIRE(reported->distCoeffs == std::vector<double>{ 0.1, -0.2 });
+
+	// the server sends an empty calibration when the camera has none at its resolution
+	detector.SetCalibration(CameraCalibrationResult());
+	REQUIRE_FALSE(detector.GetCalibration().has_value());
 }

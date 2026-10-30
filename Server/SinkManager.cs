@@ -83,6 +83,7 @@ namespace Server
             DeletePreviewsOf(sinkId);
             ManagerWrapper.Instance.DeleteSink(sinkId);
             sinks.RemoveAll(sink => sink.Id == sinkId);
+            appliedObjectDetectionCalibrations.Remove(sinkId);
             DB.Instance.Save();
         }
 
@@ -507,6 +508,7 @@ namespace Server
             int id = ManagerWrapper.Instance.CreateObjectDetectionSink(
                 model.Provider, model.ModelPath, model.LabelsPath, model.Variant,
                 confThreshold ?? model.ConfThreshold, nmsThreshold ?? model.NmsThreshold, model.InputSize);
+            appliedObjectDetectionCalibrations.Remove(id); // a new native detector starts uncalibrated
             sinks.Add(new Sink(id, name, SinkType.ObjectDetectionSink)
             {
                 ObjectDetectionModelId = modelId,
@@ -528,6 +530,7 @@ namespace Server
             int id = ManagerWrapper.Instance.CreateObjectDetectionSink(persisted.Id, model.Provider, model.ModelPath, model.LabelsPath,
                 model.Variant, persisted.ObjectDetectionConfThreshold ?? model.ConfThreshold, persisted.ObjectDetectionNmsThreshold ?? model.NmsThreshold,
                 model.InputSize);
+            appliedObjectDetectionCalibrations.Remove(id); // a new native detector starts uncalibrated
             sinks.Add(new Sink(id, persisted.Name, SinkType.ObjectDetectionSink)
             {
                 ObjectDetectionModelId = model.Id,
@@ -566,9 +569,13 @@ namespace Server
                 sink.ObjectDetectionModelId);
         }
 
-        // Gives every AprilTag detector fed by this camera its saved calibration at the camera's current resolution.
+        // object detector id -> the calibration last given to it; the native object detector has no getter to compare with
+        private readonly Dictionary<int, CameraCalibrationResult> appliedObjectDetectionCalibrations = new();
+
+        // Gives every AprilTag and object detector fed by this camera its saved calibration at the camera's current resolution: the tags'
+        // poses and both kinds' yaw/pitch come from it, and an object detector's is published to the robot as its cameraIntrinsics.
         // A camera with none at that resolution leaves its detectors uncalibrated.
-        public void RefreshApriltagCalibrations(int sourceId)
+        public void RefreshDetectorCalibrations(int sourceId)
         {
             Source? source = SourceManager.Instance.GetSourceById(sourceId);
             if (source?.CameraHardwareInfo == null) return; // only a camera has a calibration to look up; a file source keeps what it was given
@@ -588,7 +595,16 @@ namespace Server
                     && current.imageWidth == calibration.imageWidth && current.imageHeight == calibration.imageHeight;
                 if (!same) ManagerWrapper.Instance.SetApriltagDetectorCalibration(sink.Id, calibration);
             }
+            foreach (Sink sink in sinks.Where(s => s.Type == SinkType.ObjectDetectionSink && s.Source?.Id == sourceId).ToList())
+            {
+                if (appliedObjectDetectionCalibrations.TryGetValue(sink.Id, out CameraCalibrationResult? current) && SameCalibration(current, calibration)) continue;
+                ManagerWrapper.Instance.SetObjectDetectionCalibration(sink.Id, calibration);
+                appliedObjectDetectionCalibrations[sink.Id] = calibration;
+            }
         }
+
+        private static bool SameCalibration(CameraCalibrationResult a, CameraCalibrationResult b) =>
+            a.fx == b.fx && a.fy == b.fy && a.cx == b.cx && a.cy == b.cy && a.imageWidth == b.imageWidth && a.imageHeight == b.imageHeight;
 
         // A camera's mode is not always known the moment a detector is bound (a restart opens the camera in the background), so a slow
         // check also brings every camera-fed detector in line with the saved calibration of its camera's current resolution.
@@ -599,8 +615,9 @@ namespace Server
             {
                 try
                 {
-                    foreach (int sourceId in sinks.Where(s => s.Type == SinkType.ApriltagSink && s.Source != null).Select(s => s.Source!.Id).Distinct().ToList())
-                        RefreshApriltagCalibrations(sourceId);
+                    foreach (int sourceId in sinks.Where(s => (s.Type == SinkType.ApriltagSink || s.Type == SinkType.ObjectDetectionSink) && s.Source != null)
+                                 .Select(s => s.Source!.Id).Distinct().ToList())
+                        RefreshDetectorCalibrations(sourceId);
                 }
                 catch (Exception)
                 {
@@ -971,7 +988,7 @@ namespace Server
                     ManagerWrapper.Instance.BindSourceToSink(sourceId, sinkId);
                     // Only a SourceManager-tracked source has an enable/disable lifecycle here; a dual-role sink is toggled via EnableSinkById.
                     if (isRealSource) SourceManager.Instance.EnableSourceById(source.Id);
-                    if (isRealSource) RefreshApriltagCalibrations(source.Id);
+                    if (isRealSource) RefreshDetectorCalibrations(source.Id);
                     StartCalibrationReconciler();
                     DB.Instance.Save();
                     break;

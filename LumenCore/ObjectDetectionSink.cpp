@@ -21,11 +21,19 @@ void ObjectDetectionSink::SetCalibration(const CameraCalibrationResult& calibrat
 	std::lock_guard<std::mutex> lock(m_CalibrationMutex);
 	m_HasCalibration = calibration.fx > 0.0 && calibration.fy > 0.0;
 	if (!m_HasCalibration) return;
+	m_Calibration = calibration;
 	m_CameraMatrix = (cv::Mat_<double>(3, 3) <<
 		calibration.fx, 0, calibration.cx,
 		0, calibration.fy, calibration.cy,
 		0, 0, 1);
 	m_DistCoeffs = calibration.HasDistortion() ? cv::Mat(calibration.distCoeffs, true) : cv::Mat::zeros(5, 1, CV_64F);
+}
+
+std::optional<CameraCalibrationResult> ObjectDetectionSink::GetCalibration()
+{
+	std::lock_guard<std::mutex> lock(m_CalibrationMutex);
+	if (!m_HasCalibration) return std::nullopt;
+	return m_Calibration;
 }
 
 void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)

@@ -1,4 +1,5 @@
 #include "ISource.h"
+#include "CameraCalibrationResult.h"
 #include "SourceResult.h"
 #include "CpuAffinity.h"
 
@@ -16,6 +17,11 @@ ISource::~ISource()
 		m_ShouldTerminate = true;
 		m_Thread.join();
 	}
+}
+
+std::optional<CameraCalibrationResult> ISource::GetCalibration()
+{
+	return std::nullopt;
 }
 
 std::string ISource::GetID()

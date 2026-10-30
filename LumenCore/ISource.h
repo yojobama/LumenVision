@@ -8,10 +8,14 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <queue>
 #include <thread>
 #include <unordered_map>
 #include <vector>
+
+// declared only: its header pulls in apriltag.h, and with it windows.h on Windows, into everything that includes ISource.h
+class CameraCalibrationResult;
 
 class ISource
 {
@@ -22,6 +26,10 @@ public:
 	// returns whatever the source last produced, without gating on which fields are present
 	SourceResult GetLatestResult();
 	std::string GetID();
+
+	// The camera calibration a node's results were computed with, for a sink that passes it on (NetworkTablesSink publishes it as the node's
+	// cameraIntrinsics) when the results do not carry it themselves; none by default. ObjectDetectionSink reports the one it was given.
+	virtual std::optional<CameraCalibrationResult> GetCalibration();
 
 	void Toggle(bool threadWantedAlive);
 	uint64_t GetCurrentFrameCount();

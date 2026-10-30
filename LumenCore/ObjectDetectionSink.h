@@ -23,6 +23,8 @@ public:
 	// With a calibration each detection also reports the yaw/pitch of its box centre (degrees, positive left / up, as the
 	// AprilTag targets); without one they are omitted.
 	void SetCalibration(const CameraCalibrationResult& calibration);
+	// the calibration given with SetCalibration, or none; NetworkTablesSink publishes it as this node's cameraIntrinsics
+	std::optional<CameraCalibrationResult> GetCalibration() override;
 
 private:
 	void Process(const std::vector<SourceResult>& results) override;
@@ -32,6 +34,7 @@ private:
 
 	std::mutex m_CalibrationMutex;
 	bool m_HasCalibration = false;
+	CameraCalibrationResult m_Calibration;
 	cv::Mat m_CameraMatrix;
 	cv::Mat m_DistCoeffs;
 };

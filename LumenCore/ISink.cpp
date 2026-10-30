@@ -153,6 +153,13 @@ bool ISink::IsBoundTo(const std::string& sourceID) const {
     return false;
 }
 
+std::shared_ptr<ISource> ISink::FindBoundSource(const std::string& sourceID) const {
+    for (const auto& bound : m_Sources) {
+        if (bound.first->GetID() == sourceID) return bound.first;
+    }
+    return nullptr;
+}
+
 bool ISink::UnbindSource(std::string sourceID) {
     if (m_Logger) m_Logger->EnterLog("ISink::UnbindSource called");
 

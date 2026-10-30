@@ -317,7 +317,7 @@ namespace Server
             ManagerWrapper.Instance.SetCameraTransform(sourceId, transform.ToNative());
             source.Transform = transform.IsIdentity ? null : transform;
             DB.Instance.Save();
-            SinkManager.Instance.RefreshApriltagCalibrations(sourceId); // a calibration is carried across a transform
+            SinkManager.Instance.RefreshDetectorCalibrations(sourceId); // a calibration is carried across a transform
         }
 
         public FrameTransformDto GetCameraTransform(int sourceId)
@@ -338,7 +338,7 @@ namespace Server
                 DB.Instance.Save();
                 RefitCrops(sourceId);
             }
-            SinkManager.Instance.RefreshApriltagCalibrations(sourceId); // the saved calibration is per resolution
+            SinkManager.Instance.RefreshDetectorCalibrations(sourceId); // the saved calibration is per resolution
             return applied;
         }
 

@@ -1,5 +1,6 @@
 #ifdef LUMEN_WITH_NT4
 #include "NetworkTablesSink.h"
+#include "CameraCalibrationResult.h"
 #include "CoordinateFrames.h"
 #include "ResultPacket.h"
 #include "SystemMonitor.h"
@@ -443,6 +444,17 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 		putString("raw", json.dump());
 	} else {
 		putString("raw", json.dump());
+	}
+
+	// an object detector's result is a bare array with no calibration in it (an empty one, no detections, looks like zero tags), so the node is
+	// asked for the calibration it computed yaw/pitch with
+	if (!calibration.is_object()) {
+		if (std::shared_ptr<ISource> node = FindBoundSource(sourceId)) {
+			if (std::optional<CameraCalibrationResult> nodeCalibration = node->GetCalibration()) {
+				putNumberArray("cameraIntrinsics", std::vector<double>{nodeCalibration->fx, 0, nodeCalibration->cx, 0, nodeCalibration->fy, nodeCalibration->cy, 0, 0, 1});
+				putNumberArray("cameraDistortion", nodeCalibration->distCoeffs);
+			}
+		}
 	}
 
 	if (looksLikeTags || looksLikeObjects) {
