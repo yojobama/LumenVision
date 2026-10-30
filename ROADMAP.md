@@ -375,7 +375,7 @@ entirely on it:
 - The coprocessor timestamps captures with `nt::Now()` (offset-corrected against the NT4 server
   once connected), not raw wall clock, and puts that in the packet.
 - The vendordep converts to the RIO's FPGA timebase and exposes
-  `LumenPipelineResult.getTimestampSeconds()` in exactly the units
+  `LumenResult.getTimestampSeconds()` in exactly the units
   `SwerveDrivePoseEstimator.addVisionMeasurement()` wants.
 - Expose the measured offset and a round-trip estimate in `.status`, so a bad clock is visible
   rather than silently wrong.
@@ -388,10 +388,16 @@ LumenGraph graph = coprocessor.getGraph();            // every node, its table, 
 coprocessor.startRecording();  coprocessor.setLed(LumenLedMode.AUTO);
 coprocessor.getBoardStatus();   // Optional<LumenBoardStatus>: temperatures, throttling, CPU, RAM, disk, uptime, publish time
 
-LumenDetector tags = new LumenDetector("front");      // a detector node, by its table
-LumenPipelineResult r = tags.getAllUnreadResults().get(0);   // or getLatestResult()
-r.hasTargets();  r.getBestTarget();  r.getTimestampSeconds();  r.getMultiTagResult();
+LumenAprilTagDetector tags = new LumenAprilTagDetector("front");   // an AprilTag detector node, by its name or table
+LumenAprilTagResult r = tags.getAllUnreadResults().get(0);   // or getLatestResult()
+r.hasTargets();  r.getBestTarget();  r.getTimestampSeconds();  r.getMultiTagResult();  r.getConstrainedResult();
+r.getBestTarget().get().getFiducialId();  hasPose();  getBestCameraToTarget();  getPoseAmbiguity();
 r.getMultiTagResult().get().getTimestampSeconds();  // targets, multi-tag and constrained results carry the capture time too
+
+LumenObjectDetector notes = new LumenObjectDetector("intake");     // an object-detection node
+LumenObjectDetectionResult o = notes.getLatestResult();
+o.getTargetsOfClass(0);  o.getBestTarget().get().getClassId();  getConfidence();  getBoxWidthPixels();  getYaw();
+// the graph names each node's kind: a node opened as the other kind, or a name the graph lacks, is a driver-station warning
 
 tags.setEnabled(false);  tags.takeSnapshot();  tags.setFpsLimit(30);  // any node: LumenNode
 tags.getCameraMatrix();                                // Optional<Matrix<N3,N3>>

@@ -9,9 +9,9 @@ import java.util.List;
 public class LumenRobotPose {
     private final Pose3d pose;
     private final double timestampSeconds;
-    private final List<LumenTrackedTarget> targetsUsed;
+    private final List<LumenAprilTagTarget> targetsUsed;
 
-    LumenRobotPose(Pose3d pose, double timestampSeconds, List<LumenTrackedTarget> targetsUsed) {
+    LumenRobotPose(Pose3d pose, double timestampSeconds, List<LumenAprilTagTarget> targetsUsed) {
         this.pose = pose;
         this.timestampSeconds = timestampSeconds;
         this.targetsUsed = Collections.unmodifiableList(targetsUsed);
@@ -22,13 +22,13 @@ public class LumenRobotPose {
         return pose;
     }
 
-    /** The frame's capture time, same clock as {@link LumenPipelineResult#getTimestampSeconds()}; pass to {@code addVisionMeasurement}. */
+    /** The frame's capture time, same clock as {@link LumenAprilTagResult#getTimestampSeconds()}; pass to {@code addVisionMeasurement}. */
     public double getTimestampSeconds() {
         return timestampSeconds;
     }
 
-    /** The targets that contributed to the estimate. */
-    public List<LumenTrackedTarget> getTargetsUsed() {
+    /** The tags that contributed to the estimate. */
+    public List<LumenAprilTagTarget> getTargetsUsed() {
         return targetsUsed;
     }
 }

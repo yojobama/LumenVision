@@ -59,7 +59,7 @@ public class LumenMultiTagResult {
 
     /**
      * When the frame this came from was captured, in seconds on the NetworkTables server clock (the roboRIO's FPGA time): the value
-     * {@code addVisionMeasurement} wants. Same as the {@link LumenPipelineResult} it came with; 0 for one built without a time.
+     * {@code addVisionMeasurement} wants. Same as the {@link LumenAprilTagResult} it came with; 0 for one built without a time.
      */
     public double getTimestampSeconds() {
         return timestampSeconds;

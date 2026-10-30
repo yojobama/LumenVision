@@ -1,6 +1,8 @@
 package org.lumenvision.photoncompat;
 
 import edu.wpi.first.math.Matrix;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.numbers.N1;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.numbers.N8;
@@ -9,6 +11,7 @@ import org.lumenvision.lib.LumenCoprocessor;
 import org.lumenvision.lib.LumenDetector;
 import org.lumenvision.lib.LumenGraph;
 import org.lumenvision.lib.LumenNode;
+import org.lumenvision.lib.LumenPipelineResult;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,7 +32,7 @@ public class PhotonCamera implements AutoCloseable {
     private final String rootTable;
     private final String cameraName;
     private final LumenCoprocessor coprocessor;
-    private final Map<String, LumenDetector> detectors = new HashMap<>();
+    private final Map<String, PipelineDetector> detectors = new HashMap<>();
     private final Map<String, LumenNode> nodes = new HashMap<>();
 
     private String[] pipelineNames;
@@ -69,8 +72,8 @@ public class PhotonCamera implements AutoCloseable {
         return found;
     }
 
-    private LumenDetector detector(String table) {
-        return detectors.computeIfAbsent(table, t -> new LumenDetector(instance, rootTable, t));
+    private PipelineDetector detector(String table) {
+        return detectors.computeIfAbsent(table, t -> new PipelineDetector(instance, rootTable, t));
     }
 
     private LumenNode node(String table) {
@@ -183,14 +186,22 @@ public class PhotonCamera implements AutoCloseable {
         detector(currentTable()).verifyVersion();
     }
 
-    /** The current pipeline's detector node, for features with no PhotonVision equivalent. */
-    public LumenDetector getLumenDetector() {
+    /**
+     * The current pipeline's detector node, for features with no PhotonVision equivalent. Its results are the packet's combined form, as a
+     * pipeline may be of either kind; robot code that knows the kind opens the node as a LumenAprilTagDetector or LumenObjectDetector.
+     */
+    public LumenDetector<LumenPipelineResult> getLumenDetector() {
         return detector(currentTable());
+    }
+
+    // the floor-constrained solve's seed, for PhotonPoseEstimator's CONSTRAINED_SOLVEPNP
+    void setConstrainedSeed(Pose2d robotPoseInLayoutFrame, Transform3d robotToCamera) {
+        detector(currentTable()).setConstrainedSeed(robotPoseInLayoutFrame, robotToCamera);
     }
 
     @Override
     public void close() {
-        detectors.values().forEach(LumenDetector::close);
+        detectors.values().forEach(PipelineDetector::close);
         nodes.values().forEach(LumenNode::close);
     }
 }

@@ -20,8 +20,12 @@ import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.lumenvision.lib.LumenAprilTagDetector;
+import org.lumenvision.lib.LumenAprilTagResult;
 import org.lumenvision.lib.LumenDetector;
 import org.lumenvision.lib.LumenPipelineResult;
+import org.lumenvision.lib.LumenPoseEstimator;
+import org.lumenvision.lib.LumenRobotPose;
 import org.lumenvision.lib.LumenTrackedTarget;
 import org.lumenvision.photoncompat.EstimatedRobotPose;
 import org.lumenvision.photoncompat.PhotonCamera;
@@ -41,7 +45,7 @@ class VisionSystemSimTest {
 
     private NetworkTableInstance nt;
     private PhotonCamera camera;
-    private LumenDetector detector;
+    private LumenDetector<LumenPipelineResult> detector;
     private PhotonCameraSim cameraSim;
     private VisionSystemSim system;
 
@@ -143,6 +147,27 @@ class VisionSystemSimTest {
         assertEquals(PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR, estimate.strategy);
         assertEquals(robot.getX(), estimate.estimatedPose.getX(), 1e-6);
         assertEquals(robot.getY(), estimate.estimatedPose.getY(), 1e-6);
+    }
+
+    @Test
+    void anAprilTagDetectorReadsTheSimulationAndItsEstimatorGivesTheRobotPose() {
+        system.addAprilTags(LAYOUT);
+        Pose2d robot = new Pose2d(3.0, 1.2, Rotation2d.fromDegrees(10));
+        try (LumenAprilTagDetector tags = new LumenAprilTagDetector(nt, ROOT, "front")) {
+            step(robot);
+            assertTrue(waitFor(() -> tags.getLatestResult().getMultiTagResult().isPresent()));
+            LumenAprilTagResult result = tags.getLatestResult();
+            assertEquals(List.of(1, 2), result.getTargets().stream().map(t -> t.getFiducialId()).sorted().toList());
+            assertTrue(result.getTargets().stream().allMatch(t -> t.hasPose()));
+            // the simulation publishes the node as an AprilTag detector in its graph
+            assertEquals(Optional.of("ApriltagSink"), tags.getNodeKind());
+
+            LumenRobotPose pose = new LumenPoseEstimator(LAYOUT, ROBOT_TO_CAMERA).estimateMultiTag(result).orElseThrow();
+            assertEquals(robot.getX(), pose.getPose().getX(), 1e-6);
+            assertEquals(robot.getY(), pose.getPose().getY(), 1e-6);
+            assertEquals(result.getTimestampSeconds(), pose.getTimestampSeconds());
+            assertEquals(2, pose.getTargetsUsed().size());
+        }
     }
 
     @Test

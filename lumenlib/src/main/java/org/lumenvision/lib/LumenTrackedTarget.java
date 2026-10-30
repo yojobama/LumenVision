@@ -2,36 +2,25 @@ package org.lumenvision.lib;
 
 import edu.wpi.first.math.geometry.Transform3d;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-
 /**
- * One detection, in the shape photonlib's PhotonTrackedTarget has (same member names) so a team migrating from PhotonVision
- * changes an import line, not call sites. A target is either an AprilTag ({@link #getFiducialId()} &gt;= 0) or an object
- * detection ({@link #getDetectedObjectClassID()} &gt;= 0).
+ * One detection as the result packet carries it, in the shape photonlib's PhotonTrackedTarget has (same member names), which the
+ * {@code photoncompat} layer is built on. A target is either an AprilTag ({@link #getFiducialId()} &gt;= 0) or an object detection
+ * ({@link #getDetectedObjectClassID()} &gt;= 0), so half its fields mean nothing for any one target: robot code reads
+ * {@link LumenAprilTagTarget} from a {@link LumenAprilTagDetector} and {@link LumenDetectedObject} from a {@link LumenObjectDetector}.
  *
  * <p>Transforms are camera-to-target in WPILib frames: the camera frame is X forward, Y left, Z up and the target frame is the
  * one a field-layout tag pose describes (X out of the tag's face), so {@code tagFieldPose.transformBy(cameraToTarget.inverse())}
  * is the camera's field pose.
  */
-public class LumenTrackedTarget {
+public class LumenTrackedTarget extends LumenTarget {
     private final int fiducialId;
     private final int objectClassId;
     private final float objectConfidence;
-    private final double yaw;
-    private final double pitch;
-    private final double area;
-    private final double skew;
     private final double poseAmbiguity;
     private final Transform3d bestCameraToTarget;
     private final Transform3d alternateCameraToTarget;
     private final float bestReprojError;
     private final float altReprojError;
-    private final List<LumenTargetCorner> detectedCorners;
-    private final List<LumenTargetCorner> minAreaRectCorners;
-    private final double timestampSeconds;
-    private final long latencyMicros;
 
     /** A target with no capture time ({@link #getTimestampSeconds()} 0), e.g. for a test. */
     public LumenTrackedTarget(int fiducialId, int objectClassId, float objectConfidence, double yaw, double pitch, double area,
@@ -49,28 +38,15 @@ public class LumenTrackedTarget {
             double skew, double poseAmbiguity, Transform3d bestCameraToTarget, Transform3d alternateCameraToTarget,
             float bestReprojError, float altReprojError, double[] corners, double[] minAreaRectCorners, double timestampSeconds,
             long latencyMicros) {
-        this.timestampSeconds = timestampSeconds;
-        this.latencyMicros = latencyMicros;
+        super(yaw, pitch, area, skew, corners, minAreaRectCorners, timestampSeconds, latencyMicros);
         this.fiducialId = fiducialId;
         this.objectClassId = objectClassId;
         this.objectConfidence = objectConfidence;
-        this.yaw = yaw;
-        this.pitch = pitch;
-        this.area = area;
-        this.skew = skew;
         this.poseAmbiguity = poseAmbiguity;
         this.bestCameraToTarget = bestCameraToTarget;
         this.alternateCameraToTarget = alternateCameraToTarget;
         this.bestReprojError = bestReprojError;
         this.altReprojError = altReprojError;
-        this.detectedCorners = toCorners(corners);
-        this.minAreaRectCorners = toCorners(minAreaRectCorners);
-    }
-
-    private static List<LumenTargetCorner> toCorners(double[] xy) {
-        List<LumenTargetCorner> out = new ArrayList<>(xy.length / 2);
-        for (int i = 0; i + 1 < xy.length; i += 2) out.add(new LumenTargetCorner(xy[i], xy[i + 1]));
-        return Collections.unmodifiableList(out);
     }
 
     /** The decoded AprilTag ID, or -1 for an object detection. */
@@ -86,26 +62,6 @@ public class LumenTrackedTarget {
     /** The detected object's confidence (0 to 1), or -1 for an AprilTag. */
     public float getDetectedObjectConfidence() {
         return objectConfidence;
-    }
-
-    /** Horizontal angle to the target in degrees, positive to the left. With a calibration it is the target's centre; without one 0. */
-    public double getYaw() {
-        return yaw;
-    }
-
-    /** Vertical angle to the target in degrees, positive up. */
-    public double getPitch() {
-        return pitch;
-    }
-
-    /** Percentage (0 to 100) of the image the target's bounding quad covers; 0 without a calibration (the frame size is unknown). */
-    public double getArea() {
-        return area;
-    }
-
-    /** Rotation of the target's minimum-area rectangle in degrees, as OpenCV reports it. */
-    public double getSkew() {
-        return skew;
     }
 
     /** 0 (unambiguous) to 1 (two equally good pose hypotheses); -1 when no pose was solved. */
@@ -131,28 +87,5 @@ public class LumenTrackedTarget {
     /** RMS reprojection error in pixels of the alternate pose; -1 when there is none. */
     public double getAltReprojError() {
         return altReprojError;
-    }
-
-    /** The detected corners in image pixels (an AprilTag's four, or an object's bounding box). */
-    public List<LumenTargetCorner> getDetectedCorners() {
-        return detectedCorners;
-    }
-
-    /** The minimum-area rectangle around the detected corners, in image pixels. */
-    public List<LumenTargetCorner> getMinAreaRectCorners() {
-        return minAreaRectCorners;
-    }
-
-    /**
-     * When the frame this came from was captured, in seconds on the NetworkTables server clock (the roboRIO's FPGA time): the value
-     * {@code addVisionMeasurement} wants. Same as the {@link LumenPipelineResult} it came with; 0 for one built without a time.
-     */
-    public double getTimestampSeconds() {
-        return timestampSeconds;
-    }
-
-    /** Capture-to-publish latency of that frame in milliseconds; 0 for one built without a time. */
-    public double getLatencyMillis() {
-        return latencyMicros / 1000.0;
     }
 }

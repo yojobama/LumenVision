@@ -32,12 +32,13 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-// A NetworkTables server, a simulated coprocessor client and the robot-side LumenDetector, all in this JVM.
+// A NetworkTables server, a simulated coprocessor client and the robot-side detectors, all in this JVM.
 class LumenDetectorTest {
     private static final int NT3_PORT = 18809;
     private static final int NT4_PORT = 18810;
@@ -46,7 +47,7 @@ class LumenDetectorTest {
     private NetworkTableInstance server;
     private NetworkTableInstance coprocessor;
     private NetworkTableInstance robot;
-    private LumenDetector camera;
+    private LumenAprilTagDetector camera;
     private LumenCoprocessor lumenCoprocessor;
 
     @BeforeEach
@@ -60,7 +61,7 @@ class LumenDetectorTest {
         robot.setServer("127.0.0.1", NT4_PORT);
         robot.startClient4("robot");
         LumenDetector.setVersionCheckEnabled(false);
-        camera = new LumenDetector(robot, ROOT, "front");
+        camera = new LumenAprilTagDetector(robot, ROOT, "front");
         lumenCoprocessor = new LumenCoprocessor(robot, ROOT);
         // timestamps are only meaningful across instances once each has synchronised its clock with the server
         assertTrue(waitFor(() -> robot.isConnected() && coprocessor.isConnected()
@@ -116,9 +117,10 @@ class LumenDetectorTest {
             pub.set(golden(), captureMicros);
 
             assertTrue(waitFor(() -> camera.getLatestResult().getSequenceId() == 42));
-            LumenPipelineResult result = camera.getLatestResult();
+            LumenAprilTagResult result = camera.getLatestResult();
 
-            assertEquals(2, result.getTargets().size());
+            // the golden packet holds a tag and an object detection; an AprilTag detector reads the tag
+            assertEquals(1, result.getTargets().size());
             assertEquals(12.345, result.getLatencyMillis(), 1e-9);
             assertTrue(result.getMultiTagResult().isPresent());
             // the robot's clock matches the coprocessor's to within the sync error; it is well before "now", unlike an arrival stamp
@@ -135,7 +137,7 @@ class LumenDetectorTest {
             pub.set(golden(), NetworkTablesJNI.now() - 250_000);
 
             assertTrue(waitFor(() -> camera.getLatestResult().getSequenceId() == 42));
-            LumenPipelineResult result = camera.getLatestResult();
+            LumenAprilTagResult result = camera.getLatestResult();
             double captured = result.getTimestampSeconds();
             assertTrue(captured > 0);
 
@@ -145,7 +147,7 @@ class LumenDetectorTest {
             LumenConstrainedResult constrained = result.getConstrainedResult().orElseThrow();
             assertEquals(captured, constrained.getTimestampSeconds());
             assertEquals(12.345, constrained.getLatencyMillis(), 1e-9);
-            for (LumenTrackedTarget target : result.getTargets()) {
+            for (LumenAprilTagTarget target : result.getTargets()) {
                 assertEquals(captured, target.getTimestampSeconds());
                 assertEquals(12.345, target.getLatencyMillis(), 1e-9);
             }
@@ -188,8 +190,71 @@ class LumenDetectorTest {
     }
 
     @Test
+    void eachKindOfDetectorReadsItsOwnKindOfTarget() throws IOException {
+        try (LumenObjectDetector objects = new LumenObjectDetector(robot, ROOT, "front"); RawPublisher pub = resultPublisher("front")) {
+            pub.set(golden(), NetworkTablesJNI.now());
+            assertTrue(waitFor(() -> camera.getLatestResult().getSequenceId() == 42 && objects.getLatestResult().getSequenceId() == 42));
+
+            LumenAprilTagTarget tag = camera.getLatestResult().getBestTarget().orElseThrow();
+            assertEquals(3, tag.getFiducialId());
+            assertTrue(tag.hasPose());
+            assertEquals(0.125, tag.getPoseAmbiguity(), 1e-9);
+            assertEquals(0.5, tag.getBestCameraToTarget().getX(), 1e-6);
+
+            LumenObjectDetectionResult result = objects.getLatestResult();
+            assertEquals(1, result.getTargets().size());
+            LumenDetectedObject object = result.getBestTarget().orElseThrow();
+            assertEquals(5, object.getClassId());
+            assertEquals(0.875f, object.getConfidence(), 1e-6);
+            assertEquals(3.0, object.getYaw(), 1e-9);
+            assertEquals(6.25, object.getArea(), 1e-9);
+            assertEquals(110.0, object.getBoundingBox().get(1).x, 1e-6);
+            assertEquals(List.of(object), result.getTargetsOfClass(5));
+            assertTrue(result.getTargetsOfClass(4).isEmpty());
+        }
+    }
+
+    @Test
+    void anObjectsBoundingBoxIsMeasuredFromItsCorners() {
+        LumenDetectedObject object = new LumenDetectedObject(2, 0.9f, 0, 0, 1.0, new double[] { 10, 20, 50, 20, 50, 80, 10, 80 }, 0, 0);
+        assertEquals(10, object.getBoxX(), 1e-12);
+        assertEquals(20, object.getBoxY(), 1e-12);
+        assertEquals(40, object.getBoxWidthPixels(), 1e-12);
+        assertEquals(60, object.getBoxHeightPixels(), 1e-12);
+
+        LumenDetectedObject noBox = new LumenDetectedObject(2, 0.9f, 0, 0, 1.0, new double[0], 0, 0);
+        assertEquals(0, noBox.getBoxWidthPixels());
+        assertEquals(0, noBox.getBoxY());
+    }
+
+    @Test
+    void theNodesKindIsReadFromTheGraph() {
+        String graph = "{\"nodes\":[{\"id\":1,\"name\":\"front\",\"table\":\"front-cam\",\"kind\":\"Camera\",\"input\":null},"
+                + "{\"id\":2,\"name\":\"front\",\"table\":\"front\",\"kind\":\"ObjectDetectionSink\",\"input\":1}]}";
+        try (LumenObjectDetector objects = new LumenObjectDetector(robot, ROOT, "front");
+                LumenAprilTagDetector elsewhere = new LumenAprilTagDetector(robot, ROOT, "rear");
+                StringPublisher graphPub = coprocessor.getStringTopic("/" + ROOT + "/.graph").publish()) {
+            assertTrue(camera.getNodeKind().isEmpty());
+
+            graphPub.set(graph);
+            // read as results are read: an AprilTag detector opened on an object detector (warned about), and the object detector itself
+            assertTrue(waitFor(() -> {
+                camera.getLatestResult();
+                objects.getAllUnreadResults();
+                elsewhere.getLatestResult();
+                return camera.getNodeKind().isPresent() && objects.getNodeKind().isPresent();
+            }));
+            assertEquals(Optional.of(LumenGraph.OBJECT_DETECTOR), camera.getNodeKind());
+            assertEquals(Optional.of(LumenGraph.OBJECT_DETECTOR), objects.getNodeKind());
+            // a name the graph does not have (warned about) has no kind
+            assertTrue(elsewhere.getNodeKind().isEmpty());
+            assertTrue(lumenCoprocessor.getGraph().findByTable("front").orElseThrow().isObjectDetector());
+        }
+    }
+
+    @Test
     void noResultYetIsAnEmptyResult() {
-        LumenPipelineResult result = camera.getLatestResult();
+        LumenAprilTagResult result = camera.getLatestResult();
 
         assertFalse(result.hasTargets());
         assertEquals(0, result.getSequenceId());
@@ -235,7 +300,7 @@ class LumenDetectorTest {
     @Test
     void cameraNamesMapToSanitisedTables() throws IOException {
         assertEquals("Front_Cam__1", LumenNode.tableName("Front Cam #1"));
-        try (LumenDetector named = new LumenDetector(robot, ROOT, "Front Cam"); RawPublisher pub = resultPublisher("Front_Cam")) {
+        try (LumenAprilTagDetector named = new LumenAprilTagDetector(robot, ROOT, "Front Cam"); RawPublisher pub = resultPublisher("Front_Cam")) {
             pub.set(golden(), NetworkTablesJNI.now());
 
             assertTrue(waitFor(() -> named.getLatestResult().getSequenceId() == 42));
@@ -331,7 +396,7 @@ class LumenDetectorTest {
 
             // a coprocessor with another protocol version: its results are ignored
             LumenDetector.setVersionCheckEnabled(true);
-            try (LumenDetector checked = new LumenDetector(robot, ROOT, "front")) {
+            try (LumenAprilTagDetector checked = new LumenAprilTagDetector(robot, ROOT, "front")) {
                 versionPub.set("9.9.9");
                 protocolPub.set(LumenCoprocessor.PROTOCOL_VERSION + 1);
                 pub.set(golden(), NetworkTablesJNI.now());

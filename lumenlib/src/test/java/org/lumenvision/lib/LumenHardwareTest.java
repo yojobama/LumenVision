@@ -17,13 +17,13 @@ class LumenHardwareTest {
         NetworkTableInstance server = NetworkTableInstance.create();
         server.startServer("", "0.0.0.0", 1735, 5810);
         LumenDetector.setVersionCheckEnabled(false);
-        LumenDetector camera = new LumenDetector(server, "lumenvision", "front");
+        LumenAprilTagDetector camera = new LumenAprilTagDetector(server, "lumenvision", "front");
         LumenCoprocessor coprocessor = new LumenCoprocessor(server, "lumenvision");
         try {
             long deadline = System.currentTimeMillis() + 40_000;
-            LumenPipelineResult result = null;
+            LumenAprilTagResult result = null;
             while (System.currentTimeMillis() < deadline) {
-                LumenPipelineResult latest = camera.getLatestResult();
+                LumenAprilTagResult latest = camera.getLatestResult();
                 if (latest.getSequenceId() > 0 && latest.hasTargets()) {
                     result = latest;
                     break;
@@ -34,12 +34,12 @@ class LumenHardwareTest {
                 StringBuilder topics = new StringBuilder();
                 for (edu.wpi.first.networktables.TopicInfo info : server.getTopicInfo()) topics.append(info.name).append(' ');
                 System.out.println("HIL: no result with a target; topics seen: " + topics);
-                LumenPipelineResult any = camera.getLatestResult();
+                LumenAprilTagResult any = camera.getLatestResult();
                 System.out.println("HIL: latest sequence " + any.getSequenceId() + ", targets " + any.getTargets().size());
             }
             assertTrue(result != null, "no result with a target arrived from the coprocessor");
 
-            LumenTrackedTarget target = result.getBestTarget().orElseThrow();
+            LumenAprilTagTarget target = result.getBestTarget().orElseThrow();
             double nowSeconds = server.getServerTimeOffset().isPresent() ? edu.wpi.first.networktables.NetworkTablesJNI.now() / 1e6 : 0;
             System.out.printf("HIL: sequence %d, %d targets, best id %d, area %.3f%%, yaw %.2f, pitch %.2f, latency %.1f ms, capture age %.3f s%n",
                     result.getSequenceId(), result.getTargets().size(), target.getFiducialId(), target.getArea(), target.getYaw(), target.getPitch(),
@@ -78,7 +78,7 @@ class LumenHardwareTest {
         server.startServer("", "0.0.0.0", 1735, 5810);
         LumenDetector.setVersionCheckEnabled(false);
         LumenCoprocessor coprocessor = new LumenCoprocessor(server, "lumenvision");
-        LumenDetector detector = null;
+        LumenDetector<?> detector = null;
         try {
             long deadline = System.currentTimeMillis() + 40_000;
             while (System.currentTimeMillis() < deadline && coprocessor.getGraph().getNodes().isEmpty()) Thread.sleep(200);
@@ -91,7 +91,8 @@ class LumenHardwareTest {
                     .filter(n -> n.isDetector() && (wanted == null ? n.isEnabled() : n.getTable().equals(wanted)))
                     .findFirst().orElseThrow();
             System.out.println("HIL: graph has " + graph.getNodes().size() + " nodes; using detector " + node.getName() + " at table " + node.getTable());
-            detector = new LumenDetector(server, "lumenvision", node.getTable());
+            detector = node.isObjectDetector() ? new LumenObjectDetector(server, "lumenvision", node.getTable())
+                    : new LumenAprilTagDetector(server, "lumenvision", node.getTable());
 
             long first = awaitAdvance(detector, 0, 15_000);
             assertTrue(first > 0, "the detector should publish results");
@@ -122,7 +123,7 @@ class LumenHardwareTest {
         }
     }
 
-    private static long awaitAdvance(LumenDetector detector, long after, long timeoutMillis) throws InterruptedException {
+    private static long awaitAdvance(LumenDetector<?> detector, long after, long timeoutMillis) throws InterruptedException {
         long deadline = System.currentTimeMillis() + timeoutMillis;
         while (System.currentTimeMillis() < deadline) {
             long sequence = detector.getLatestResult().getSequenceId();

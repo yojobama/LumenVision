@@ -116,9 +116,10 @@ between the C++ encoder and the Java decoder.
 ### Robot code: the `lumenlib` vendordep
 
 `lumenlib/` is one Java artefact with two packages. `org.lumenvision.lib` is LumenVision's own API: `LumenCoprocessor`
-(recording, the LED, the node graph), `LumenNode` (start, stop and snapshot any node by name), `LumenDetector` (results,
-calibration, FPS limit, the constrained-solve seed) and `LumenPoseEstimator` (the coprocessor's multi-tag and constrained
-solves). `org.lumenvision.photoncompat` maps PhotonLib's classes onto it (`PhotonCamera`, `PhotonPoseEstimator`, `PhotonUtils`,
+(recording, the LED, the node graph), `LumenNode` (start, stop and snapshot any node by name), `LumenAprilTagDetector` (tags
+with their poses, the multi-tag and constrained solves, the constrained-solve seed), `LumenObjectDetector` (objects with their
+class, confidence and bounding box), both with calibration and the FPS limit, and `LumenPoseEstimator` (the coprocessor's
+multi-tag and constrained solves as the robot's pose). A node opened as the wrong kind is reported as a driver-station warning. `org.lumenvision.photoncompat` maps PhotonLib's classes onto it (`PhotonCamera`, `PhotonPoseEstimator`, `PhotonUtils`,
 the simulation), so a team migrating changes its imports:
 
 - A PhotonVision pipeline is a detector node fed by the camera. `setPipelineIndex` runs that node and stops the camera's other

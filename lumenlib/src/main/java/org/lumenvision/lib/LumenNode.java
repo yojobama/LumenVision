@@ -7,7 +7,7 @@ import edu.wpi.first.networktables.NetworkTableInstance;
 
 /**
  * A node of the coprocessor's graph, addressed by the name its topics are published under. Any node can be started and stopped and asked
- * to save its latest frame; {@link LumenDetector} adds results.
+ * to save its latest frame; {@link LumenAprilTagDetector} and {@link LumenObjectDetector} add results.
  *
  * <p>Writes go to {@code <rootTable>/<node>/config/*} and the state in effect is read back from {@code status/*}.
  */

@@ -20,18 +20,24 @@ import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.RawSubscriber;
 import edu.wpi.first.networktables.StringSubscriber;
 import edu.wpi.first.networktables.TimestampedRaw;
+import edu.wpi.first.networktables.TimestampedString;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 /**
- * A detector node (AprilTag or object detection) of the coprocessor's graph: its results, calibration and tuning.
+ * What every detector node of the coprocessor's graph has: its results, connection, calibration and frame-rate cap. Open a node as the
+ * kind it is, {@link LumenAprilTagDetector} or {@link LumenObjectDetector}; each gives its own kind of result.
  *
  * <p>Results come from the binary {@code <rootTable>/<node>/result} packet (see {@link LumenResultPacket}); controls are written to
  * {@code config/*} topics over NetworkTables. {@link LumenNode#setEnabled} and {@link LumenNode#takeSnapshot} apply as for any node.
+ * Once the coprocessor's graph lists the node, a node opened as the other kind, or a name the graph does not have, is reported as a
+ * driver-station warning.
+ *
+ * @param <R> the kind of result
  */
-public class LumenDetector extends LumenNode {
+public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode {
     // the results a readQueue() can hold between calls; older ones are dropped
     private static final int UNREAD_QUEUE_DEPTH = 30;
     // heartbeat is refreshed each time the coprocessor publishes a result; no change for this long means it is gone
@@ -43,9 +49,10 @@ public class LumenDetector extends LumenNode {
     private final RawSubscriber resultSub;
 
     private final IntegerPublisher fpsLimitPub;
-    private final DoubleArrayPublisher constrainedSeedPub;
-    private final DoubleArrayPublisher robotToCameraPub;
     private final IntegerSubscriber fpsLimitSub;
+    // created on the first seed, so only a detector that is sent one publishes the topics
+    private DoubleArrayPublisher constrainedSeedPub;
+    private DoubleArrayPublisher robotToCameraPub;
 
     private final DoubleArraySubscriber intrinsicsSub;
     private final DoubleArraySubscriber distortionSub;
@@ -57,13 +64,24 @@ public class LumenDetector extends LumenNode {
     private boolean protocolRefused = false;
     private boolean schemaWarned = false;
 
-    /** The default NT4 instance and root table "lumenvision". */
-    public LumenDetector(String name) {
-        this(NetworkTableInstance.getDefault(), LumenCoprocessor.DEFAULT_ROOT_TABLE, name);
-    }
+    // the coprocessor's kind for the node (LumenGraph.Node#getKind) this class reads, or null to read either
+    private final String expectedKind;
+    private final StringSubscriber graphSub;
+    private long graphTimestamp = 0;
+    private String nodeKind = null;
+    private boolean missingWarned = false;
 
-    public LumenDetector(NetworkTableInstance instance, String rootTable, String name) {
+    /**
+     * @param instance the NetworkTableInstance to use (injectable for simulation)
+     * @param rootTable must match the coprocessor's NetworkTablesConfig.rootTable (default "lumenvision")
+     * @param name the NT table the node's topics are under, which is its name in the LumenVision UI with characters outside
+     *     {@code [A-Za-z0-9_.-]} replaced by {@code _} (see {@link LumenGraph.Node#getTable()})
+     * @param expectedKind the kind of node this class reads, as the coprocessor's graph names it ({@link LumenGraph#APRILTAG_DETECTOR},
+     *     {@link LumenGraph#OBJECT_DETECTOR}); null for a reader of either kind
+     */
+    protected LumenDetector(NetworkTableInstance instance, String rootTable, String name, String expectedKind) {
         super(instance, rootTable, name);
+        this.expectedKind = expectedKind;
         String base = "/" + rootTable + "/" + tableName(name) + "/";
         String root = "/" + rootTable + "/";
 
@@ -72,8 +90,6 @@ public class LumenDetector extends LumenNode {
                 PubSubOption.pollStorage(UNREAD_QUEUE_DEPTH), PubSubOption.keepDuplicates(true), PubSubOption.sendAll(true));
 
         fpsLimitPub = instance.getIntegerTopic(base + "config/fpsLimit").publish();
-        constrainedSeedPub = instance.getDoubleArrayTopic(base + "config/constrainedSeed").publish();
-        robotToCameraPub = instance.getDoubleArrayTopic(base + "config/robotToCamera").publish();
         fpsLimitSub = instance.getIntegerTopic(base + "status/fpsLimit").subscribe(-1);
 
         intrinsicsSub = instance.getDoubleArrayTopic(base + "cameraIntrinsics").subscribe(new double[0]);
@@ -81,6 +97,7 @@ public class LumenDetector extends LumenNode {
         heartbeatSub = instance.getDoubleTopic(root + "heartbeat").subscribe(0.0);
         versionSub = instance.getStringTopic(root + ".version").subscribe("");
         protocolSub = instance.getIntegerTopic(root + ".protocol").subscribe(-1);
+        graphSub = instance.getStringTopic(root + ".graph").subscribe("");
     }
 
     /** Whether to compare this library's version and protocol with the coprocessor's and warn on a mismatch (default on). */
@@ -97,25 +114,33 @@ public class LumenDetector extends LumenNode {
      * The most recent result. Never null; with no targets and sequence id 0 before the coprocessor has published anything, when
      * its result schema is unsupported, or when it speaks another protocol version.
      */
-    public LumenPipelineResult getLatestResult() {
+    public R getLatestResult() {
         verifyVersionOnce();
-        if (protocolRefused) return emptyResult();
-        return decode(resultSub.getAtomic()).orElseGet(LumenDetector::emptyResult);
+        verifyKind();
+        if (protocolRefused) return toResult(emptyPacket());
+        return toResult(decode(resultSub.getAtomic()).orElseGet(LumenDetector::emptyPacket));
     }
 
     /** Every result published since the last call (oldest first; at most {@value #UNREAD_QUEUE_DEPTH}), so none is missed between loops. */
-    public List<LumenPipelineResult> getAllUnreadResults() {
+    public List<R> getAllUnreadResults() {
         verifyVersionOnce();
+        verifyKind();
         TimestampedRaw[] samples = resultSub.readQueue();
-        List<LumenPipelineResult> results = new ArrayList<>(samples.length);
+        List<R> results = new ArrayList<>(samples.length);
         if (protocolRefused) return results;
-        for (TimestampedRaw sample : samples) decode(sample).ifPresent(results::add);
+        for (TimestampedRaw sample : samples) decode(sample).map(this::toResult).ifPresent(results::add);
         return results;
     }
 
-    /** The multi-tag result of the latest frame, if the coprocessor solved one; it carries that frame's capture time. */
-    public Optional<LumenMultiTagResult> getMultiTagResult() {
-        return getLatestResult().getMultiTagResult();
+    /** This class's form of a decoded packet; the empty packet (no targets, sequence id 0) stands for no result. */
+    protected abstract R toResult(LumenPipelineResult packet);
+
+    /**
+     * The node's kind as the coprocessor's graph names it ({@link LumenGraph.Node#getKind()}), once a result has been read after the graph
+     * listed the node; empty before then, or for a node the graph does not list.
+     */
+    public Optional<String> getNodeKind() {
+        return Optional.ofNullable(nodeKind);
     }
 
     private Optional<LumenPipelineResult> decode(TimestampedRaw sample) {
@@ -135,8 +160,39 @@ public class LumenDetector extends LumenNode {
                 packet.latencyMicros, packet.multiTag, packet.constrained));
     }
 
-    private static LumenPipelineResult emptyResult() {
+    private static LumenPipelineResult emptyPacket() {
         return new LumenPipelineResult(new ArrayList<>(), 0.0, 0, 0, Optional.empty());
+    }
+
+    // reads the node's kind from the graph each time the graph changes, until the node is in it; warns once if it is not this class's kind
+    private void verifyKind() {
+        if (nodeKind != null) return;
+        TimestampedString graphValue = graphSub.getAtomic();
+        if (graphValue.timestamp == graphTimestamp) return;
+        graphTimestamp = graphValue.timestamp;
+        LumenGraph graph = LumenGraph.parse(graphValue.value);
+        if (graph.getNodes().isEmpty()) return;
+        Optional<LumenGraph.Node> node = graph.findByTable(tableName(getName())).filter(LumenGraph.Node::isDetector);
+        if (node.isEmpty()) {
+            if (expectedKind != null && !missingWarned) {
+                missingWarned = true;
+                LumenVersionCheck.report("LumenVision: the coprocessor has no detector named '" + getName() + "' (NT table '" + tableName(getName())
+                        + "'); check the name against the LumenVision UI.");
+            }
+            return;
+        }
+        nodeKind = node.get().getKind();
+        if (expectedKind != null && !expectedKind.equals(nodeKind)) {
+            LumenVersionCheck.report("LumenVision: node '" + getName() + "' is " + describe(nodeKind) + " but was opened as " + describe(expectedKind)
+                    + "; open it with " + (LumenGraph.OBJECT_DETECTOR.equals(nodeKind) ? "LumenObjectDetector" : "LumenAprilTagDetector")
+                    + " to read its results.");
+        }
+    }
+
+    private static String describe(String kind) {
+        if (LumenGraph.APRILTAG_DETECTOR.equals(kind)) return "an AprilTag detector";
+        if (LumenGraph.OBJECT_DETECTOR.equals(kind)) return "an object detector";
+        return "a " + kind;
     }
 
     private void verifyVersionOnce() {
@@ -175,12 +231,13 @@ public class LumenDetector extends LumenNode {
 
     // ---- control (written to config/*, read back from status/*) ----
 
-    /**
-     * Starts (and keeps current) the coprocessor's floor-constrained solve: the starting robot pose, in the coprocessor's field-layout
-     * frame, and where the camera is mounted on the robot. Call every loop with the latest estimate; the result appears in
-     * {@link LumenPipelineResult#getConstrainedResult()}.
-     */
-    public void setConstrainedSeed(Pose2d robotPoseInLayoutFrame, Transform3d robotToCamera) {
+    /** Publishes the floor-constrained solve's seed and camera mount (see {@link LumenAprilTagDetector#setConstrainedSeed}). */
+    protected void publishConstrainedSeed(Pose2d robotPoseInLayoutFrame, Transform3d robotToCamera) {
+        if (constrainedSeedPub == null) {
+            String base = "/" + getRootTable() + "/" + tableName(getName()) + "/";
+            constrainedSeedPub = getNetworkTableInstance().getDoubleArrayTopic(base + "config/constrainedSeed").publish();
+            robotToCameraPub = getNetworkTableInstance().getDoubleArrayTopic(base + "config/robotToCamera").publish();
+        }
         constrainedSeedPub.set(new double[] {
                 robotPoseInLayoutFrame.getX(), robotPoseInLayoutFrame.getY(), robotPoseInLayoutFrame.getRotation().getRadians() });
         Quaternion q = robotToCamera.getRotation().getQuaternion();
@@ -221,7 +278,8 @@ public class LumenDetector extends LumenNode {
         super.close();
         for (AutoCloseable closeable : new AutoCloseable[] {
                 resultSub, fpsLimitPub, constrainedSeedPub, robotToCameraPub, fpsLimitSub, intrinsicsSub, distortionSub,
-                heartbeatSub, versionSub, protocolSub }) {
+                heartbeatSub, versionSub, protocolSub, graphSub }) {
+            if (closeable == null) continue; // the seed publishers of a detector never sent one
             try {
                 closeable.close();
             } catch (Exception ignored) {

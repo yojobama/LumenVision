@@ -41,12 +41,12 @@ public class LumenPoseEstimator {
     }
 
     /** The coprocessor's multi-tag result composed with the camera mount; empty without one (fewer than 2 visible tags with known poses). */
-    public Optional<LumenRobotPose> estimateMultiTag(LumenPipelineResult result) {
+    public Optional<LumenRobotPose> estimateMultiTag(LumenAprilTagResult result) {
         return result.getMultiTagResult().map(multiTag -> {
             Pose3d cameraPose = multiTag.getFieldToCamera();
             if (fieldTags != null) cameraPose = cameraPose.relativeTo(fieldTags.getOrigin());
-            List<LumenTrackedTarget> used = new ArrayList<>();
-            for (LumenTrackedTarget target : result.getTargets()) {
+            List<LumenAprilTagTarget> used = new ArrayList<>();
+            for (LumenAprilTagTarget target : result.getTargets()) {
                 if (multiTag.getFiducialIds().contains(target.getFiducialId())) used.add(target);
             }
             return new LumenRobotPose(cameraPose.transformBy(robotToCamera.inverse()), result.getTimestampSeconds(), used);
@@ -54,7 +54,7 @@ public class LumenPoseEstimator {
     }
 
     /** The coprocessor's floor-constrained solve (one visible tag is enough); empty until a seed has been published with {@link #publishSeed}. */
-    public Optional<LumenRobotPose> estimateConstrained(LumenPipelineResult result) {
+    public Optional<LumenRobotPose> estimateConstrained(LumenAprilTagResult result) {
         return result.getConstrainedResult().map(constrained -> {
             Pose3d robotPose = new Pose3d(constrained.getRobotPoseInLayoutFrame());
             if (fieldTags != null) robotPose = robotPose.relativeTo(fieldTags.getOrigin());
@@ -63,7 +63,7 @@ public class LumenPoseEstimator {
     }
 
     /** Sends the detector the starting robot pose for the constrained solve, expressed in the layout's own frame. */
-    public void publishSeed(LumenDetector detector, Pose3d robotPose) {
+    public void publishSeed(LumenAprilTagDetector detector, Pose3d robotPose) {
         Pose3d seed = fieldTags != null ? fieldTags.getOrigin().plus(new Transform3d(new Pose3d(), robotPose)) : robotPose;
         detector.setConstrainedSeed(seed.toPose2d(), robotToCamera);
     }

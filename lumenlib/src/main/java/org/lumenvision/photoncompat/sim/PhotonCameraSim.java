@@ -20,6 +20,7 @@ import edu.wpi.first.networktables.RawPublisher;
 import edu.wpi.first.networktables.StringPublisher;
 import org.lumenvision.lib.LumenCoprocessor;
 import org.lumenvision.lib.LumenDetector;
+import org.lumenvision.lib.LumenGraph;
 import org.lumenvision.photoncompat.PhotonCamera;
 
 import java.util.ArrayList;
@@ -28,16 +29,16 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * A simulated LumenVision camera: given its pose in the field and the targets around it, it projects them through a pinhole model and
- * publishes the same NetworkTables topics the coprocessor would, so {@link LumenDetector} / {@code PhotonCamera} and the pose estimators
- * read it unchanged. Usually driven by a {@link VisionSystemSim}; {@link #update(long, Pose3d, Collection)} can be called directly.
+ * A simulated LumenVision AprilTag camera: given its pose in the field and the tags around it, it projects them through a pinhole model
+ * and publishes the same NetworkTables topics the coprocessor's AprilTag detector would, so {@link org.lumenvision.lib.LumenAprilTagDetector}
+ * / {@code PhotonCamera} and the pose estimators read it unchanged. Usually driven by a {@link VisionSystemSim}; {@link #update(long, Pose3d, Collection)} can be called directly.
  *
  * <p>Targets are detected when they face the camera and all their corners are inside the image with enough pixel area. Poses are
  * ground truth (zero ambiguity); the properties' pixel noise moves the reported corners only. Targets do not occlude each other.
  * Multi-tag and constrained results are published when their inputs are there, exactly as the coprocessor does.
  */
 public class PhotonCameraSim implements AutoCloseable {
-    private final LumenDetector camera;
+    private final LumenDetector<?> camera;
     private final SimCameraProperties properties;
     private final Random random = new Random();
 
@@ -65,7 +66,7 @@ public class PhotonCameraSim implements AutoCloseable {
     private long nextFrameMicros = 0;
     private long lastPublishedMicros = -1;
 
-    public PhotonCameraSim(LumenDetector camera, SimCameraProperties properties) {
+    public PhotonCameraSim(LumenDetector<?> camera, SimCameraProperties properties) {
         this.camera = camera;
         this.properties = properties.copy();
 
@@ -93,7 +94,7 @@ public class PhotonCameraSim implements AutoCloseable {
         this(camera.getLumenDetector(), properties);
     }
 
-    public LumenDetector getCamera() {
+    public LumenDetector<?> getCamera() {
         return camera;
     }
 
@@ -186,7 +187,7 @@ public class PhotonCameraSim implements AutoCloseable {
         protocolPub.set(LumenCoprocessor.PROTOCOL_VERSION);
         // a camera node (id 1) feeding this detector (id 2), which carries the camera's name as the coprocessor names it
         graphPub.set("{\"nodes\":[{\"id\":1,\"name\":\"" + camera.getName() + "\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
-                + "{\"id\":2,\"name\":\"" + camera.getName() + "\",\"table\":\"" + camera.getName() + "\",\"kind\":\"ApriltagSink\",\"enabled\":" + enabledConfigSub.get() + ",\"input\":1}]}");
+                + "{\"id\":2,\"name\":\"" + camera.getName() + "\",\"table\":\"" + LumenDetector.tableName(camera.getName()) + "\",\"kind\":\"" + LumenGraph.APRILTAG_DETECTOR + "\",\"enabled\":" + enabledConfigSub.get() + ",\"input\":1}]}");
         fpsStatusPub.set(fpsConfigSub.get());
         ledStatusPub.set(ledConfigSub.get());
     }

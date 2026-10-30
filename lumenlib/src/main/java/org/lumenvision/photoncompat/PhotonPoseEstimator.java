@@ -11,8 +11,6 @@ import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.interpolation.TimeInterpolatableBuffer;
 import org.lumenvision.lib.LumenPipelineResult;
-import org.lumenvision.lib.LumenPoseEstimator;
-import org.lumenvision.lib.LumenRobotPose;
 import org.lumenvision.lib.LumenTrackedTarget;
 
 import java.util.ArrayList;
@@ -23,11 +21,11 @@ import java.util.stream.Collectors;
 
 /**
  * photonlib's PhotonPoseEstimator: construct it with the field layout, a {@link PoseStrategy} and the camera mount offset, then pass
- * each result to {@link #update(PhotonPipelineResult)}. The multi-tag and constrained strategies come from the coprocessor
- * ({@link LumenPoseEstimator}); every other strategy runs here from the targets' camera-to-tag transforms and the layout's tag poses.
+ * each result to {@link #update(PhotonPipelineResult)}. The multi-tag and constrained strategies come from the coprocessor's own solves
+ * (as {@link org.lumenvision.lib.LumenPoseEstimator} reads them); every other strategy runs here from the targets' camera-to-tag
+ * transforms and the layout's tag poses.
  */
 public class PhotonPoseEstimator {
-    private final LumenPoseEstimator coprocessorEstimator;
     private final PhotonCamera camera;
     private AprilTagFieldLayout fieldTags;
     private PoseStrategy primaryStrategy;
@@ -49,7 +47,6 @@ public class PhotonPoseEstimator {
         this.primaryStrategy = strategy;
         this.camera = camera;
         this.robotToCamera = robotToCamera;
-        this.coprocessorEstimator = new LumenPoseEstimator(fieldTags, robotToCamera);
     }
 
     // ---- configuration ----
@@ -60,7 +57,6 @@ public class PhotonPoseEstimator {
 
     public void setFieldTags(AprilTagFieldLayout fieldTags) {
         this.fieldTags = fieldTags;
-        coprocessorEstimator.setFieldTags(fieldTags);
     }
 
     public PoseStrategy getPrimaryStrategy() {
@@ -86,7 +82,6 @@ public class PhotonPoseEstimator {
 
     public void setRobotToCameraTransform(Transform3d robotToCamera) {
         this.robotToCamera = robotToCamera;
-        coprocessorEstimator.setRobotToCameraTransform(robotToCamera);
     }
 
     /** The pose CLOSEST_TO_REFERENCE_POSE compares candidates with. */
@@ -122,7 +117,7 @@ public class PhotonPoseEstimator {
     public Optional<EstimatedRobotPose> update() {
         if (camera == null) throw new IllegalStateException("this estimator has no camera; pass a result to update(result)");
         if (primaryStrategy == PoseStrategy.CONSTRAINED_SOLVEPNP) {
-            coprocessorEstimator.publishSeed(camera.getLumenDetector(), lastPose != null ? lastPose : referencePose);
+            publishSeed(lastPose != null ? lastPose : referencePose);
         }
         return update(camera.getLatestResult());
     }
@@ -153,11 +148,11 @@ public class PhotonPoseEstimator {
                 return averageBestTargets(result);
             case MULTI_TAG_PNP_ON_COPROCESSOR:
             case MULTI_TAG_PNP_ON_RIO:
-                return coprocessorEstimator.estimateMultiTag(result).map(p -> from(p, strategy));
+                return coprocessorMultiTag(result, strategy);
             case PNP_DISTANCE_TRIG_SOLVE:
                 return pnpDistanceTrigSolve(result);
             case CONSTRAINED_SOLVEPNP:
-                return coprocessorEstimator.estimateConstrained(result).map(p -> from(p, strategy));
+                return coprocessorConstrained(result, strategy);
             default:
                 return Optional.empty();
         }
@@ -185,6 +180,34 @@ public class PhotonPoseEstimator {
 
     public Optional<EstimatedRobotPose> estimatePnpDistanceTrigSolvePose(PhotonPipelineResult result) {
         return pnpDistanceTrigSolve(result.getLumenPipelineResult());
+    }
+
+    // ---- strategies solved on the coprocessor ----
+
+    // the coprocessor solves in its field layout's own frame; these express its solves relative to this estimator's layout's origin
+
+    private Optional<EstimatedRobotPose> coprocessorMultiTag(LumenPipelineResult result, PoseStrategy strategy) {
+        return result.getMultiTagResult().map(multiTag -> {
+            Pose3d cameraPose = multiTag.getFieldToCamera();
+            if (fieldTags != null) cameraPose = cameraPose.relativeTo(fieldTags.getOrigin());
+            List<LumenTrackedTarget> used = result.getTargets().stream()
+                    .filter(target -> multiTag.getFiducialIds().contains(target.getFiducialId())).collect(Collectors.toList());
+            return pose(result, strategy, cameraPose.transformBy(robotToCamera.inverse()), used);
+        });
+    }
+
+    private Optional<EstimatedRobotPose> coprocessorConstrained(LumenPipelineResult result, PoseStrategy strategy) {
+        return result.getConstrainedResult().map(constrained -> {
+            Pose3d robotPose = new Pose3d(constrained.getRobotPoseInLayoutFrame());
+            if (fieldTags != null) robotPose = robotPose.relativeTo(fieldTags.getOrigin());
+            return pose(result, strategy, robotPose, result.getTargets());
+        });
+    }
+
+    // sends the camera's detector the starting robot pose for the constrained solve, in the layout's own frame
+    private void publishSeed(Pose3d robotPose) {
+        Pose3d seed = fieldTags != null ? fieldTags.getOrigin().plus(new Transform3d(new Pose3d(), robotPose)) : robotPose;
+        camera.setConstrainedSeed(seed.toPose2d(), robotToCamera);
     }
 
     // ---- strategies run on the roboRIO ----
@@ -313,11 +336,6 @@ public class PhotonPoseEstimator {
     private static EstimatedRobotPose pose(LumenPipelineResult result, PoseStrategy strategy, Pose3d robotPose, List<LumenTrackedTarget> targets) {
         return new EstimatedRobotPose(robotPose, result.getTimestampSeconds(),
                 targets.stream().map(PhotonTrackedTarget::new).collect(Collectors.toList()), strategy);
-    }
-
-    private static EstimatedRobotPose from(LumenRobotPose pose, PoseStrategy strategy) {
-        return new EstimatedRobotPose(pose.getPose(), pose.getTimestampSeconds(),
-                pose.getTargetsUsed().stream().map(PhotonTrackedTarget::new).collect(Collectors.toList()), strategy);
     }
 
     private static double dot(Quaternion a, Quaternion b) {

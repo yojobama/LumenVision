@@ -12,6 +12,11 @@ import java.util.Optional;
 public final class LumenGraph {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** {@link Node#getKind()} of an AprilTag detector, read with {@link LumenAprilTagDetector}. */
+    public static final String APRILTAG_DETECTOR = "ApriltagSink";
+    /** {@link Node#getKind()} of an object detector, read with {@link LumenObjectDetector}. */
+    public static final String OBJECT_DETECTOR = "ObjectDetectionSink";
+
     /** One node: {@code input} is the id of the node it reads from, or -1 for none. */
     public static final class Node {
         private final int id;
@@ -65,7 +70,15 @@ public final class LumenGraph {
         }
 
         public boolean isDetector() {
-            return kind.equals("ApriltagSink") || kind.equals("ObjectDetectionSink");
+            return isAprilTagDetector() || isObjectDetector();
+        }
+
+        public boolean isAprilTagDetector() {
+            return kind.equals(APRILTAG_DETECTOR);
+        }
+
+        public boolean isObjectDetector() {
+            return kind.equals(OBJECT_DETECTOR);
         }
 
         public boolean isCamera() {
@@ -111,6 +124,11 @@ public final class LumenGraph {
     /** The camera (or crop) with this name. */
     public Optional<Node> findCamera(String name) {
         return nodes.stream().filter(n -> n.isCamera() && n.name.equals(name)).findFirst();
+    }
+
+    /** The node whose topics are under this NT table (see {@link Node#getTable()}). */
+    public Optional<Node> findByTable(String table) {
+        return nodes.stream().filter(n -> n.table.equals(table)).findFirst();
     }
 
     /** Every detector fed directly by the given node, in id order. */
