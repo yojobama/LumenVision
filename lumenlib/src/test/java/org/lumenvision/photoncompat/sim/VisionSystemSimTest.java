@@ -22,6 +22,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.lumenvision.lib.LumenAprilTagDetector;
 import org.lumenvision.lib.LumenAprilTagResult;
+import org.lumenvision.lib.LumenCoprocessor;
 import org.lumenvision.lib.LumenDetector;
 import org.lumenvision.lib.LumenPipelineResult;
 import org.lumenvision.lib.LumenPoseEstimator;
@@ -167,6 +168,25 @@ class VisionSystemSimTest {
             assertEquals(robot.getY(), pose.getPose().getY(), 1e-6);
             assertEquals(result.getTimestampSeconds(), pose.getTimestampSeconds());
             assertEquals(2, pose.getTargetsUsed().size());
+        }
+    }
+
+    @Test
+    void severalSimulatedCamerasShareOneGraph() {
+        system.addAprilTags(LAYOUT);
+        try (LumenAprilTagDetector rear = new LumenAprilTagDetector(nt, ROOT, "rear cam");
+                PhotonCameraSim rearSim = new PhotonCameraSim(rear, new SimCameraProperties().setFPS(1000));
+                LumenAprilTagDetector front = new LumenAprilTagDetector(nt, ROOT, "front")) {
+            system.addCamera(rearSim, ROBOT_TO_CAMERA);
+            step(new Pose2d(3.0, 1.2, new Rotation2d()));
+            // both read their own node from the one graph, whichever camera published it last
+            assertTrue(waitFor(() -> {
+                front.getLatestResult();
+                rear.getLatestResult();
+                return front.getNodeKind().isPresent() && rear.getNodeKind().isPresent();
+            }));
+            assertEquals(2, new LumenCoprocessor(nt, ROOT).getGraph().getNodes().stream().filter(n -> n.isAprilTagDetector()).count());
+            system.removeCamera(rearSim);
         }
     }
 

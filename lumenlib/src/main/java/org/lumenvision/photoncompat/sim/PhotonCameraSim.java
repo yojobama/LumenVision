@@ -25,7 +25,9 @@ import org.lumenvision.photoncompat.PhotonCamera;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -38,6 +40,9 @@ import java.util.Random;
  * Multi-tag and constrained results are published when their inputs are there, exactly as the coprocessor does.
  */
 public class PhotonCameraSim implements AutoCloseable {
+    // every open simulated camera by NT instance and root table: they share the one .graph topic, so each publishes all of their nodes
+    private static final Map<String, List<PhotonCameraSim>> OPEN = new HashMap<>();
+
     private final LumenDetector<?> camera;
     private final SimCameraProperties properties;
     private final Random random = new Random();
@@ -88,6 +93,34 @@ public class PhotonCameraSim implements AutoCloseable {
         ledConfigSub = instance.getIntegerTopic(root + "config/ledMode").subscribe(-1);
         seedSub = instance.getDoubleArrayTopic(base + "config/constrainedSeed").subscribe(new double[0]);
         mountSub = instance.getDoubleArrayTopic(base + "config/robotToCamera").subscribe(new double[0]);
+        synchronized (OPEN) {
+            OPEN.computeIfAbsent(graphKey(), k -> new ArrayList<>()).add(this);
+        }
+    }
+
+    private String graphKey() {
+        return camera.getNetworkTableInstance().getHandle() + "/" + camera.getRootTable();
+    }
+
+    // each open camera on this NT instance and root as a camera node (odd id) feeding its detector (the next id), which carries the
+    // camera's name as the coprocessor names it
+    private String graphJson() {
+        StringBuilder json = new StringBuilder("{\"nodes\":[");
+        synchronized (OPEN) {
+            List<PhotonCameraSim> sims = OPEN.getOrDefault(graphKey(), List.of(this));
+            for (int i = 0; i < sims.size(); i++) {
+                PhotonCameraSim sim = sims.get(i);
+                String name = sim.camera.getName();
+                int cameraId = 2 * i + 1;
+                if (i > 0) json.append(',');
+                json.append("{\"id\":").append(cameraId).append(",\"name\":\"").append(name)
+                        .append("\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},")
+                        .append("{\"id\":").append(cameraId + 1).append(",\"name\":\"").append(name).append("\",\"table\":\"")
+                        .append(LumenDetector.tableName(name)).append("\",\"kind\":\"").append(LumenGraph.APRILTAG_DETECTOR)
+                        .append("\",\"enabled\":").append(sim.enabledConfigSub.get()).append(",\"input\":").append(cameraId).append('}');
+            }
+        }
+        return json.append("]}").toString();
     }
 
     public PhotonCameraSim(PhotonCamera camera, SimCameraProperties properties) {
@@ -185,9 +218,7 @@ public class PhotonCameraSim implements AutoCloseable {
         distortionPub.set(properties.getDistCoeffs());
         enabledStatusPub.set(enabledConfigSub.get());
         protocolPub.set(LumenCoprocessor.PROTOCOL_VERSION);
-        // a camera node (id 1) feeding this detector (id 2), which carries the camera's name as the coprocessor names it
-        graphPub.set("{\"nodes\":[{\"id\":1,\"name\":\"" + camera.getName() + "\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},"
-                + "{\"id\":2,\"name\":\"" + camera.getName() + "\",\"table\":\"" + LumenDetector.tableName(camera.getName()) + "\",\"kind\":\"" + LumenGraph.APRILTAG_DETECTOR + "\",\"enabled\":" + enabledConfigSub.get() + ",\"input\":1}]}");
+        graphPub.set(graphJson());
         fpsStatusPub.set(fpsConfigSub.get());
         ledStatusPub.set(ledConfigSub.get());
     }
@@ -330,6 +361,13 @@ public class PhotonCameraSim implements AutoCloseable {
 
     @Override
     public void close() {
+        synchronized (OPEN) {
+            List<PhotonCameraSim> sims = OPEN.get(graphKey());
+            if (sims != null) {
+                sims.remove(this);
+                if (sims.isEmpty()) OPEN.remove(graphKey());
+            }
+        }
         for (AutoCloseable closeable : new AutoCloseable[] {
                 resultPub, intrinsicsPub, distortionPub, heartbeatPub, versionPub, enabledStatusPub, graphPub, protocolPub, fpsStatusPub,
                 ledStatusPub, enabledConfigSub, fpsConfigSub, ledConfigSub, seedSub, mountSub }) {
