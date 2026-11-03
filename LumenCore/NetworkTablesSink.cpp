@@ -327,16 +327,30 @@ std::string NetworkTablesSink::GetConnectionStatus() const
 	return status.dump();
 }
 
+namespace {
+	// A class name from a labels file or a model can be bytes that are not UTF-8; json::dump() throws on them (and the node's thread dies with it),
+	// so such a byte is written as U+FFFD instead.
+	std::string DumpJson(const nlohmann::json& json)
+	{
+		return json.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+	}
+}
+
 void NetworkTablesSink::SetNodeAlias(const std::string& nodeId, const std::string& alias)
 {
 	std::lock_guard<std::mutex> lock(m_AliasMutex);
 	auto existing = m_NodeAliases.find(nodeId);
 	if (existing != m_NodeAliases.end()) {
-		m_AliasToNode.erase(existing->second);
+		// only the entry that is still this node's: another node may have taken the name over since (two cameras swapping names)
+		auto owner = m_AliasToNode.find(existing->second);
+		if (owner != m_AliasToNode.end() && owner->second == nodeId) m_AliasToNode.erase(owner);
 		m_NodeAliases.erase(existing);
 	}
 	std::string sanitised = SanitiseTableName(alias);
 	if (sanitised.empty()) return;
+	// a name belongs to one node: the one that held it before loses it (and publishes under its own id until it is given another)
+	auto holder = m_AliasToNode.find(sanitised);
+	if (holder != m_AliasToNode.end() && holder->second != nodeId) m_NodeAliases.erase(holder->second);
 	m_NodeAliases[nodeId] = sanitised;
 	m_AliasToNode[sanitised] = nodeId;
 }
@@ -441,9 +455,9 @@ void NetworkTablesSink::PublishSourceResult(const SourceResult& result)
 	} else if (looksLikeObjects) {
 		targets = ComputeObjectTargets(json);
 		// the object list stays readable as JSON for consumers that want class names
-		putString("raw", json.dump());
+		putString("raw", DumpJson(json));
 	} else {
-		putString("raw", json.dump());
+		putString("raw", DumpJson(json));
 	}
 
 	// an object detector's result is a bare array with no calibration in it (an empty one, no detections, looks like zero tags), so the node is

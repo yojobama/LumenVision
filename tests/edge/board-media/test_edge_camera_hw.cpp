@@ -3,6 +3,8 @@
 #ifdef __linux__
 #include <catch2/catch_test_macros.hpp>
 #include "CameraSource.h"
+#include "MjpegHwEncoder.h"
+#include "RecordSink.h"
 #include "RoiSource.h"
 #include "Frame.h"
 #include "Logger.h"
@@ -154,6 +156,84 @@ TEST_CASE("A5: a camera whose reads keep failing neither spins nor floods the lo
 	// plugged back in: the source reopens the device by itself (retry back-off is up to 10 s) and frames flow again
 	CHECK(waitForFrames(3, std::chrono::seconds(30)));
 	camera->Toggle(false);
+}
+
+// E2 on hardware. Every RecordSink numbered its segments from segment_000000, so a recording started again in the same folder (the service restarted,
+// or the user stopped and started it) overwrote the previous session's first segment.
+TEST_CASE("E2: a second recording from a camera into the same folder keeps the first one's footage", "[edge][board-media][v4l2][camera]")
+{
+	const std::vector<EdgeCamera> cameras = EdgeCameras();
+	if (cameras.empty()) SKIP("no camera attached");
+
+	const std::filesystem::path folder = std::filesystem::temp_directory_path() / "edge-e2-camera-records";
+	std::error_code ignored;
+	std::filesystem::remove_all(folder, ignored);
+	auto logger = std::make_shared<Logger>((std::filesystem::temp_directory_path() / "edge-e2-camera.log").string());
+	auto camera = std::make_shared<CameraFrameSource>(cameras[0].path, cameras[0].name, logger, "edge-e2-camera");
+	camera->Toggle(true);
+
+	RecordSinkConfig config;
+	config.dstFolder = folder.string();
+	config.segmentSeconds = 300;
+	auto recordFor = [&](const char* id, std::chrono::milliseconds duration) {
+		auto sink = std::make_shared<RecordSink>(logger, id, config);
+		REQUIRE(sink->BindSource(camera));
+		sink->Toggle(true);
+		std::this_thread::sleep_for(duration);
+		sink->Toggle(false);
+		return sink->ListSegments();
+	};
+
+	const std::vector<std::string> first = recordFor("edge-e2-first", std::chrono::seconds(3));
+	REQUIRE(first.size() == 1);
+	const uintmax_t firstSize = std::filesystem::file_size(folder / first[0]);
+	CHECK(firstSize > 0);
+
+	const std::vector<std::string> both = recordFor("edge-e2-second", std::chrono::seconds(3));
+	camera->Toggle(false);
+	INFO("segments after the second recording: " << both.size());
+	CHECK(both.size() == 2);
+	CHECK(std::filesystem::exists(folder / first[0]));
+	CHECK(std::filesystem::file_size(folder / first[0]) == firstSize); // the first session's file was not overwritten
+	std::filesystem::remove_all(folder, ignored);
+}
+
+// I2 on hardware: live frames from each camera, through the hardware JPEG encoder at every quality up to the slider's 100. A frame is either
+// encoded to a JPEG that decodes (and ends with its EOI marker), or refused so the caller falls back to the CPU encoder; never a broken JPEG.
+TEST_CASE("I2: live camera frames at every JPEG quality encode to a decodable JPEG or are refused", "[edge][board-media][v4l2][camera]")
+{
+	const std::vector<EdgeCamera> cameras = EdgeCameras();
+	if (cameras.empty()) SKIP("no camera attached");
+
+	int encoded = 0;
+	for (const EdgeCamera& info : cameras) {
+		auto logger = std::make_shared<Logger>((std::filesystem::temp_directory_path() / "edge-i2-camera.log").string());
+		auto camera = std::make_shared<CameraFrameSource>(info.path, info.name, logger, "edge-i2-camera");
+		camera->Toggle(true);
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		while (camera->GetCurrentFrameCount() < 3 && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		REQUIRE(camera->GetCurrentFrameCount() >= 3);
+
+		MjpegHwEncoder encoder;
+		for (int frameNumber = 0; frameNumber < 5; frameNumber++) {
+			const SourceResult result = camera->GetLatestResult();
+			REQUIRE(result.frame.has_value());
+			for (int quality : { 50, 90, 97, 98, 99, 100 }) {
+				std::vector<uint8_t> jpeg;
+				const bool ok = encoder.Encode(*result.frame, quality, 1, jpeg);
+				INFO(info.name << " quality " << quality << ": Encode " << (ok ? "true" : "false (" + encoder.LastError() + ")"));
+				if (!ok) continue;
+				encoded++;
+				CHECK(jpeg.size() >= 4);
+				CHECK((jpeg[jpeg.size() - 2] == 0xFF && jpeg[jpeg.size() - 1] == 0xD9));
+				const cv::Mat decoded = cv::imdecode(jpeg, cv::IMREAD_COLOR);
+				CHECK(decoded.size() == result.frame->size());
+			}
+			std::this_thread::sleep_for(std::chrono::milliseconds(60));
+		}
+		camera->Toggle(false);
+	}
+	if (encoded == 0) SKIP("the hardware JPEG encoder refused every live frame (none to check)");
 }
 
 #endif // __linux__

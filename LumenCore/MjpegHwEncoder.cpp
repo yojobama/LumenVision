@@ -99,6 +99,12 @@ bool MjpegHwEncoder::Encode(const Frame& src, int quality, int scaleDivisor, std
 		m_LastError = "frame too small";
 		return false;
 	}
+	// The JPEG encoder block takes 8176 pixels at most along either side; past that it reports success with a few hundred bytes of garbage.
+	constexpr int kMaxSide = 8176;
+	if (w > kMaxSide || h > kMaxSide) {
+		m_LastError = "frame too large for the hardware encoder";
+		return false;
+	}
 	const bool nv12 = src.IsNv12();
 	if (!impl.Open(w, h, nv12 ? AV_PIX_FMT_NV12 : AV_PIX_FMT_BGR0, quality, m_LastError)) return false;
 	if (av_frame_make_writable(impl.frame) < 0) {
@@ -133,7 +139,18 @@ bool MjpegHwEncoder::Encode(const Frame& src, int quality, int scaleDivisor, std
 		impl.Close();
 		return false;
 	}
-	jpeg.assign(impl.packet->data, impl.packet->data + impl.packet->size);
+	// A complete JPEG starts with SOI (FF D8) and ends with EOI (FF D9). At the top of the quality range a detailed frame outgrows the encoder's
+	// output buffer and comes back cut short, as a packet that reports success but does not decode: such a frame is left to the caller's CPU encoder.
+	const uint8_t* data = impl.packet->data;
+	const int size = impl.packet->size;
+	const bool complete = size >= 4 && data[0] == 0xFF && data[1] == 0xD8 && data[size - 2] == 0xFF && data[size - 1] == 0xD9;
+	if (!complete) {
+		av_packet_unref(impl.packet);
+		m_LastError = "the encoder returned an incomplete JPEG (output buffer overrun)";
+		impl.Close();
+		return false;
+	}
+	jpeg.assign(data, data + size);
 	av_packet_unref(impl.packet);
 	m_LastError.clear();
 	return true;

@@ -2033,7 +2033,7 @@ string Manager::GetSinkResult(int sinkId)
         return "{}";
     }
 
-    return result.json.value().dump();
+    return result.json.value().dump(-1, ' ', false, nlohmann::json::error_handler_t::replace); // a class name that is not UTF-8 must not throw
 }
 
 string Manager::GetAllSinkResults()
@@ -2053,7 +2053,7 @@ string Manager::GetAllSinkResults()
         }
     }
 
-    return allResults.dump();
+    return allResults.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
 }
 
 //bool Manager::SetSinkResult(int sinkId, string result)

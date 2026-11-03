@@ -39,6 +39,10 @@ struct WebRTCSinkConfig {
 // SDP with every candidate embedded; unsuitable for p2p links with asymmetric NAT that need trickle.
 class WebRTCSink : public ISink {
 public:
+	// The size a frame of `source` is encoded at for a 1/divisor stream: even on both sides, as the encoder's YUV 4:2:0 needs (a third of 1280x720 is 426x240,
+	// a sixth 212x120), and at least 2x2. Public so a test can ask what the sink would encode.
+	static cv::Size EncodedSizeFor(const cv::Size& source, int divisor);
+
 	WebRTCSink(std::shared_ptr<Logger> logger, std::string id, WebRTCSinkConfig config);
 	~WebRTCSink() override;
 

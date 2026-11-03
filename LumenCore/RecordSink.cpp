@@ -36,6 +36,16 @@ RecordSink::RecordSink(std::shared_ptr<Logger> logger, std::string id, RecordSin
 	if (ec && m_Logger) {
 		m_Logger->EnterLog(LogLevel::Error, "RecordSink: failed to create dstFolder " + config.dstFolder + ": " + ec.message());
 	}
+
+	// A new sink on a folder that already holds segments (a restarted recording, the service restarting) numbers its segments after the highest
+	// one there, so it never overwrites an earlier session's footage and the filename order stays chronological.
+	for (const auto& entry : std::filesystem::directory_iterator(config.dstFolder, ec)) {
+		const std::string stem = entry.path().stem().string();
+		if (stem.rfind("segment_", 0) != 0 || stem.size() <= 8) continue;
+		const std::string digits = stem.substr(8);
+		if (digits.find_first_not_of("0123456789") != std::string::npos || digits.size() > 9) continue;
+		m_SegmentIndex = std::max(m_SegmentIndex, std::stoi(digits) + 1);
+	}
 }
 
 RecordSink::~RecordSink()
@@ -94,14 +104,19 @@ void RecordSink::EnforceRetention()
 	uintmax_t totalSize = 0;
 	for (const auto& s : segments) totalSize += s.size;
 
-	// never evict the segment being written: it is the last entry after the ascending sort
-	size_t evictableCount = segments.empty() ? 0 : segments.size() - 1;
+	// Never evict the segment being written. It is found by its name: it is the last of the sort only when nothing in the folder is newer than it
+	// (a folder that still holds the files of an earlier session, with higher numbers, used to have the open segment deleted from under the muxer).
+	std::vector<SegmentInfo> evictable;
+	for (const SegmentInfo& segment : segments)
+		if (segment.filename != m_CurrentSegmentFile) evictable.push_back(segment);
+	const size_t evictableCount = evictable.size();
+	size_t remaining = segments.size();
 
 	size_t index = 0;
 	while (index < evictableCount &&
-		((m_Config.maxFileCount > 0 && static_cast<int>(segments.size() - index) > m_Config.maxFileCount) ||
+		((m_Config.maxFileCount > 0 && static_cast<int>(remaining) > m_Config.maxFileCount) ||
 		 (m_Config.maxFolderSizeBytes > 0 && totalSize > static_cast<uintmax_t>(m_Config.maxFolderSizeBytes)))) {
-		const SegmentInfo& oldest = segments[index];
+		const SegmentInfo& oldest = evictable[index];
 		std::filesystem::path videoPath = std::filesystem::path(m_Config.dstFolder) / oldest.filename;
 		std::filesystem::remove(videoPath, ec);
 		std::filesystem::path sidecarPath = videoPath;
@@ -109,6 +124,7 @@ void RecordSink::EnforceRetention()
 		std::filesystem::remove(sidecarPath, ec);
 		if (m_Logger) m_Logger->EnterLog("RecordSink: retention deleted " + oldest.filename);
 		totalSize -= oldest.size;
+		remaining--;
 		index++;
 	}
 }
@@ -186,6 +202,7 @@ void RecordSink::StartNewSegment(int width, int height)
 bool RecordSink::OpenSegmentFiles()
 {
 	std::string baseName = SegmentBaseName(m_SegmentIndex++);
+	m_CurrentSegmentFile = baseName + ".mp4";
 	std::filesystem::path videoPath = std::filesystem::path(m_Config.dstFolder) / (baseName + ".mp4");
 	std::filesystem::path sidecarPath = std::filesystem::path(m_Config.dstFolder) / (baseName + ".jsonl");
 
@@ -281,11 +298,23 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 	StageLap lap(SinkProfile());
 	// a camera's hardware-decoded NV12 picture is converted straight from its planes; anything else goes through BGR
 	const bool nv12 = frame.IsNv12();
-	const cv::Size size = nv12 ? cv::Size(frame.size().width & ~1, frame.size().height & ~1) : frame.AsBgr().size();
+	// even sides, as YUV 4:2:0 needs (libx264 refuses an odd one): an odd BGR frame loses its last column or row
+	const cv::Size size = nv12 ? cv::Size(frame.size().width & ~1, frame.size().height & ~1)
+		: cv::Size(frame.AsBgr().cols & ~1, frame.AsBgr().rows & ~1);
+	if (size.width < 2 || size.height < 2) return;
 	// a new encoder only for the first segment, after a failure, or when the frame size changes
 	if (!m_FormatContext || !m_CodecContext || m_EncoderWidth != size.width || m_EncoderHeight != size.height) {
+		// after a failed start for this size, the next try waits a few seconds instead of opening (and logging the failure of) an encoder per frame
+		const auto now = std::chrono::steady_clock::now();
+		if (m_StartFailedSize == size && now - m_StartFailedAt < std::chrono::seconds(5)) return;
 		StartNewSegment(size.width, size.height);
 		lap.Mark("segment-start");
+		if (!m_FormatContext || !m_CodecContext) {
+			m_StartFailedSize = size;
+			m_StartFailedAt = now;
+			return;
+		}
+		m_StartFailedSize = cv::Size();
 	}
 	if (!m_FormatContext || !m_CodecContext) return;
 	// a due segment asks for a keyframe now; the file changes when that keyframe comes out of the encoder (below), so every file starts on one
@@ -302,7 +331,7 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 		const cv::Mat& bgrFrame = frame.AsBgr();
 		const uint8_t* srcSlices[1] = { bgrFrame.data };
 		int srcStride[1] = { static_cast<int>(bgrFrame.step) };
-		sws_scale(m_SwsContext, srcSlices, srcStride, 0, bgrFrame.rows, m_YuvFrame->data, m_YuvFrame->linesize);
+		sws_scale(m_SwsContext, srcSlices, srcStride, 0, m_EncoderHeight, m_YuvFrame->data, m_YuvFrame->linesize);
 	}
 	m_YuvFrame->pts = m_FrameCounter++;
 	m_YuvFrame->pict_type = forceKeyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
@@ -339,7 +368,8 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 			{"json", result.json.has_value() ? result.json.value() : nlohmann::json(nullptr)},
 		};
 		// flushed about once a second (and on close) so the sidecar can still be tailed while recording without a write per frame
-		m_TelemetrySidecar << record.dump() << "\n";
+		// (a class name that is not UTF-8 would make dump() throw)
+		m_TelemetrySidecar << record.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) << "\n";
 		const auto now = std::chrono::steady_clock::now();
 		if (now - m_SidecarFlushedAt >= std::chrono::seconds(1)) {
 			m_TelemetrySidecar.flush();

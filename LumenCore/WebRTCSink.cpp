@@ -154,6 +154,12 @@ void WebRTCSink::AddIceCandidate(const std::string& candidate, const std::string
 	}
 }
 
+cv::Size WebRTCSink::EncodedSizeFor(const cv::Size& source, int divisor)
+{
+	const int d = std::max(1, divisor);
+	return cv::Size(std::max(2, (source.width / d) & ~1), std::max(2, (source.height / d) & ~1));
+}
+
 void WebRTCSink::SetSettings(int bitrateKbps, int fps, int scaleDivisor)
 {
 	std::lock_guard<std::mutex> lock(m_SettingsMutex);
@@ -319,14 +325,17 @@ void WebRTCSink::EncodeAndSend(const Frame& frame, uint64_t captureTimeUs)
 	cv::Size encodedSize;
 	if (nv12) {
 		// even, as NV12 and YUV420P need
-		encodedSize = cv::Size((frame.size().width / m_ScaleDivisor) & ~1, (frame.size().height / m_ScaleDivisor) & ~1);
+		encodedSize = EncodedSizeFor(frame.size(), m_ScaleDivisor);
 	} else {
 		const cv::Mat& sourceFrame = frame.AsBgr();
-		if (m_ScaleDivisor > 1) cv::resize(sourceFrame, scaled, cv::Size(), 1.0 / m_ScaleDivisor, 1.0 / m_ScaleDivisor, cv::INTER_AREA);
-		encodedSize = (m_ScaleDivisor > 1 ? scaled : sourceFrame).size();
-		if (m_ScaleDivisor > 1) lap.Mark("scale");
+		// even sides, as the encoder's YUV 4:2:0 needs: a third of 1280x720 is 426x240 and a sixth 213x120, and the encoder would never open for them
+		encodedSize = EncodedSizeFor(sourceFrame.size(), m_ScaleDivisor);
+		if (encodedSize != sourceFrame.size()) {
+			cv::resize(sourceFrame, scaled, encodedSize, 0, 0, cv::INTER_AREA);
+			lap.Mark("scale");
+		}
 	}
-	const cv::Mat& bgrFrame = nv12 ? scaled : (m_ScaleDivisor > 1 ? scaled : frame.AsBgr());
+	const cv::Mat& bgrFrame = nv12 ? scaled : (!scaled.empty() ? scaled : frame.AsBgr());
 	// a viewer that has just opened its track can only start decoding at a keyframe: the next frame is encoded as one, which the
 	// viewers already watching take in their stride (a restart of the encoder would reset the frame counter under them)
 	for (const auto& peer : openPeers) {

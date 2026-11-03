@@ -129,7 +129,8 @@ void MjpegSink::Process(const std::vector<SourceResult>& results)
 			const cv::Mat* image = &result.frame->AsBgr();
 			cv::Mat scaled;
 			if (divisor > 1) {
-				cv::resize(*image, scaled, cv::Size(), 1.0 / divisor, 1.0 / divisor, cv::INTER_AREA);
+				// at least a pixel each way: a narrow crop divided by 8 would otherwise be an empty target, which cv::resize throws for
+				cv::resize(*image, scaled, cv::Size(std::max(1, image->cols / divisor), std::max(1, image->rows / divisor)), 0, 0, cv::INTER_AREA);
 				image = &scaled;
 			}
 			lap.Mark("bgr+scale");

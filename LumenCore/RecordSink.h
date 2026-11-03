@@ -1,6 +1,7 @@
 #pragma once
 #ifdef LUMEN_WITH_RECORD
 
+#include <chrono>
 #include "ISink.h"
 #include "Nv12Convert.h"
 #include <opencv2/opencv.hpp>
@@ -90,7 +91,10 @@ private:
 	std::ofstream m_TelemetrySidecar;
 	std::chrono::steady_clock::time_point m_SegmentStartedAt;
 	std::chrono::steady_clock::time_point m_SidecarFlushedAt; // the sidecar is flushed about once a second, not per line
-	int m_SegmentIndex = 0; // monotonically increasing across this sink's whole lifetime, never reused
+	int m_SegmentIndex = 0; // monotonically increasing across this sink's whole lifetime and past anything already in the folder, never reused
+	std::string m_CurrentSegmentFile; // the MP4 being written ("segment_000007.mp4"): retention must never delete it
+	cv::Size m_StartFailedSize;       // the frame size the last encoder start failed for, and when
+	std::chrono::steady_clock::time_point m_StartFailedAt{};
 };
 
 #endif // LUMEN_WITH_RECORD
