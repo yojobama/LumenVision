@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include "ISource.h"
 #include "ISink.h"
 #include "IStereoRoleReceiver.h"
@@ -80,4 +81,6 @@ private:
 
 	std::optional<CameraCalibrationResult> m_PriorLeft, m_PriorRight;
 	std::optional<StereoCalibrationResult> m_LastResult;
+	// the last time a mismatch between the eyes' sizes was logged (it is checked on every pair)
+	std::chrono::steady_clock::time_point m_LastSizeWarning{};
 };

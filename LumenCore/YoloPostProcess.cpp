@@ -3,11 +3,21 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 
 namespace YoloPostProcess {
 
+bool LooksLikeEndToEndOutput(long long a, long long b)
+{
+	const long long channels = std::min(a, b), rows = std::max(a, b);
+	return channels == 6 && rows <= 1000;
+}
+
 cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo)
 {
+	if (bgrFrame.cols <= 0 || bgrFrame.rows <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+		throw std::invalid_argument("YoloPostProcess::Letterbox: the frame and the model input must have a positive size");
+	}
 	outInfo.originalWidth = bgrFrame.cols;
 	outInfo.originalHeight = bgrFrame.rows;
 
@@ -16,8 +26,9 @@ cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, Le
 		static_cast<float>(targetHeight) / bgrFrame.rows);
 	outInfo.scale = scale;
 
-	int unpaddedWidth = static_cast<int>(std::round(bgrFrame.cols * scale));
-	int unpaddedHeight = static_cast<int>(std::round(bgrFrame.rows * scale));
+	// at least one pixel each way: a very thin frame (1920x1) scales to a fraction of a pixel, and cv::resize throws for an empty target
+	int unpaddedWidth = std::max(1, static_cast<int>(std::round(bgrFrame.cols * scale)));
+	int unpaddedHeight = std::max(1, static_cast<int>(std::round(bgrFrame.rows * scale)));
 
 	cv::Mat resized;
 	cv::resize(bgrFrame, resized, cv::Size(unpaddedWidth, unpaddedHeight));
@@ -35,6 +46,9 @@ cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, Le
 
 cv::Rect LetterboxLayout(int srcWidth, int srcHeight, int targetWidth, int targetHeight, LetterboxInfo& outInfo)
 {
+	if (srcWidth <= 0 || srcHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+		throw std::invalid_argument("YoloPostProcess::LetterboxLayout: the frame and the model input must have a positive size");
+	}
 	outInfo.originalWidth = srcWidth;
 	outInfo.originalHeight = srcHeight;
 
@@ -43,8 +57,8 @@ cv::Rect LetterboxLayout(int srcWidth, int srcHeight, int targetWidth, int targe
 		static_cast<float>(targetHeight) / srcHeight);
 	outInfo.scale = scale;
 
-	int unpaddedWidth = static_cast<int>(std::round(srcWidth * scale));
-	int unpaddedHeight = static_cast<int>(std::round(srcHeight * scale));
+	int unpaddedWidth = std::max(1, static_cast<int>(std::round(srcWidth * scale)));
+	int unpaddedHeight = std::max(1, static_cast<int>(std::round(srcHeight * scale)));
 	outInfo.padLeft = (targetWidth - unpaddedWidth) / 2;
 	outInfo.padTop = (targetHeight - unpaddedHeight) / 2;
 	return cv::Rect(outInfo.padLeft, outInfo.padTop, unpaddedWidth, unpaddedHeight);
@@ -102,7 +116,8 @@ std::vector<ObjectDetection> DecodeAndNms(
 			}
 		}
 
-		if (bestScore < confThreshold) continue;
+		// bestClassId stays -1 when no class beat a score of 0 (a cutoff of 0 or less lets such an anchor through, and -1 indexes the labels)
+		if (bestClassId < 0 || bestScore < confThreshold) continue;
 
 		float cx = outputData[0 * numAnchors + anchor];
 		float cy = outputData[1 * numAnchors + anchor];
@@ -126,14 +141,31 @@ std::vector<ObjectDetection> NmsAndBuildDetections(
 	float confThreshold,
 	float nmsThreshold)
 {
+	// a box with a side or a score that is not a finite number (a corrupt output, or a size so large the arithmetic overflows) is no detection:
+	// NMS would keep it and the clipping below turns it into NaN coordinates
+	std::vector<cv::Rect2d> finiteBoxes;
+	std::vector<float> finiteScores;
+	std::vector<int> finiteClassIds;
+	finiteBoxes.reserve(boxesForNms.size());
+	for (size_t i = 0; i < boxesForNms.size(); i++) {
+		const cv::Rect2d& box = boxesForNms[i];
+		if (!std::isfinite(box.x) || !std::isfinite(box.y) || !std::isfinite(box.width) || !std::isfinite(box.height) || !std::isfinite(scores[i])) continue;
+		finiteBoxes.push_back(box);
+		finiteScores.push_back(scores[i]);
+		finiteClassIds.push_back(classIds[i]);
+	}
+	const std::vector<cv::Rect2d>& boxes = finiteBoxes;
+	const std::vector<float>& boxScores = finiteScores;
+	const std::vector<int>& boxClassIds = finiteClassIds;
+
 	std::vector<int> keptIndices;
-	cv::dnn::NMSBoxesBatched(boxesForNms, scores, classIds, confThreshold, nmsThreshold, keptIndices);
+	cv::dnn::NMSBoxesBatched(boxes, boxScores, boxClassIds, confThreshold, nmsThreshold, keptIndices);
 
 	std::vector<ObjectDetection> detections;
 	detections.reserve(keptIndices.size());
 
 	for (int idx : keptIndices) {
-		const cv::Rect2d& letterboxedBox = boxesForNms[idx];
+		const cv::Rect2d& letterboxedBox = boxes[idx];
 
 		// map the box out of letterbox space back into the original frame's pixel coordinates
 		double left = (letterboxedBox.x - letterbox.padLeft) / letterbox.scale;
@@ -148,13 +180,13 @@ std::vector<ObjectDetection> NmsAndBuildDetections(
 		double origTop = std::clamp(top, 0.0, frameHeight);
 		double origWidth = std::clamp(right, 0.0, frameWidth) - origLeft;
 		double origHeight = std::clamp(bottom, 0.0, frameHeight) - origTop;
-		if (origWidth <= 0.0 || origHeight <= 0.0) continue; // entirely in the padding
+		if (!(origWidth > 0.0 && origHeight > 0.0) || !std::isfinite(origLeft) || !std::isfinite(origTop)) continue; // entirely in the padding, or not a number
 
 		ObjectDetection detection;
 		detection.SetBoundingBox(cv::Rect2d(origLeft, origTop, origWidth, origHeight));
-		detection.SetConfidence(scores[idx]);
-		detection.SetClassId(classIds[idx]);
-		detection.SetClassName(classIds[idx] < static_cast<int>(labels.size()) ? labels[classIds[idx]] : std::to_string(classIds[idx]));
+		detection.SetConfidence(boxScores[idx]);
+		detection.SetClassId(boxClassIds[idx]);
+		detection.SetClassName(boxClassIds[idx] >= 0 && boxClassIds[idx] < static_cast<int>(labels.size()) ? labels[boxClassIds[idx]] : std::to_string(boxClassIds[idx]));
 		detections.push_back(detection);
 	}
 
@@ -308,7 +340,7 @@ std::vector<ObjectDetection> DecodeDflMultiScaleAndNms(
 					}
 				}
 				float bestScore = classScoresAreProbabilities ? bestLogit : Sigmoid(bestLogit);
-				if (bestScore < confThreshold) continue;
+				if (bestClassId < 0 || bestScore < confThreshold) continue;
 
 				// DFL: each of the 4 sides (left, top, right, bottom) is a softmax distribution over regMax bins;
 				// distance = sum(bin_index * softmax(logits)[bin_index]), the expected value rather than an argmax.

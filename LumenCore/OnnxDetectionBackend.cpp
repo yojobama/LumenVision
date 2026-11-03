@@ -60,6 +60,15 @@ bool OnnxDetectionBackend::Load(const DetectionBackendConfig& config)
 		if (inputShape[3] > 0) m_InputWidth = static_cast<int>(inputShape[3]);
 	}
 
+	// a dynamic axis with no size configured would give a 0-pixel model input: every frame would throw in the letterbox
+	if (m_InputWidth <= 0 || m_InputHeight <= 0) return false;
+
+	// an end-to-end export ([1, 300, 6] rows of x1, y1, x2, y2, score, class) would be read as a two-class raw head: refuse it at upload
+	const std::vector<int64_t> outputShape = m_Session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
+	if (outputShape.size() == 3 && outputShape[1] > 0 && outputShape[2] > 0 && YoloPostProcess::LooksLikeEndToEndOutput(outputShape[1], outputShape[2])) {
+		return false;
+	}
+
 	Ort::AllocatorWithDefaultOptions allocator;
 	m_InputName = m_Session->GetInputNameAllocated(0, allocator).get();
 	m_OutputName = m_Session->GetOutputNameAllocated(0, allocator).get();
@@ -132,6 +141,9 @@ std::vector<ObjectDetection> OnnxDetectionBackend::Infer(const cv::Mat& bgrFrame
 	if (outputShape.size() != 3 || outputShape[0] != 1) {
 		return {}; // not the [1, 4+numClasses, numAnchors] shape this decoder expects
 	}
+
+	// a model whose output only has its shape at run time (dynamic axes) is checked here instead of at Load
+	if (YoloPostProcess::LooksLikeEndToEndOutput(outputShape[1], outputShape[2])) return {};
 
 	int channelCount = static_cast<int>(outputShape[1]);
 	int numAnchors = static_cast<int>(outputShape[2]);

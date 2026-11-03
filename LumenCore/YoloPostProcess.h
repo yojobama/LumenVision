@@ -18,6 +18,12 @@ namespace YoloPostProcess {
 
 	// resizes+pads bgrFrame to exactly targetWidth x targetHeight (YOLO convention: 114,114,114
 	// fill), preserving aspect ratio, and returns the bookkeeping needed to undo it afterwards
+	// Whether an output tensor of [1, a, b] looks like an end-to-end export ([1, max_det, 6] rows of x1, y1, x2, y2, score, class: YOLOv10, YOLO26,
+	// ultralytics `nms=True`) rather than a raw head ([1, 4+classes, anchors] or its transpose). A raw head has far more anchors than channels
+	// (8400 at 640x640) and a class count; six channels with few rows is the end-to-end layout, which these decoders would misread as a
+	// two-class head (every box shifted by half its size, the class id ignored).
+	bool LooksLikeEndToEndOutput(long long a, long long b);
+
 	cv::Mat Letterbox(const cv::Mat& bgrFrame, int targetWidth, int targetHeight, LetterboxInfo& outInfo);
 
 	// Where a frame of srcWidth x srcHeight lands in a targetWidth x targetHeight letterbox canvas: fills `outInfo` as Letterbox does and returns the

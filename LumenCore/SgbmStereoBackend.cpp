@@ -13,6 +13,7 @@ SgbmStereoBackend::SgbmStereoBackend(int blockW, int blockH, int minDisparity, i
 	int searchNumDisparities = (m_NumDisparities + m_Downscale - 1) / m_Downscale;
 	if (searchNumDisparities % 16 != 0) searchNumDisparities += 16 - (searchNumDisparities % 16);
 	if (searchNumDisparities < 16) searchNumDisparities = 16;
+	m_SearchNumDisparities = searchNumDisparities;
 
 	// blockSize must be odd for SGBM; block_w/h here describe the OUTPUT aggregation grid, not
 	// SGBM's own matching window, so a small fixed window is used regardless of block_w/h.
@@ -29,6 +30,10 @@ bool SgbmStereoBackend::Compute(const cv::Mat& rectLeft, const cv::Mat& rectRigh
 	std::vector<float>& disparityOut, int& cols, int& rows)
 {
 	if (rectLeft.empty() || rectRight.empty() || rectLeft.size() != rectRight.size()) return false;
+	// A picture no wider than the disparity search range has nothing to match (a narrow valid region after rectifying, with a near minimum depth):
+	// cv::StereoSGBM does not check and sizes its buffers from a negative width, which asks the allocator for 2^64 bytes.
+	const int matchedWidth = m_Downscale == 2 ? rectLeft.cols / 2 : rectLeft.cols;
+	if (matchedWidth <= m_SearchMinDisparity + m_SearchNumDisparities) return false;
 
 	cv::Mat rawDisparity; // CV_16S, fixed-point: real disparity = raw / 16.0, in the matched image's pixels
 	if (m_Downscale == 2) {

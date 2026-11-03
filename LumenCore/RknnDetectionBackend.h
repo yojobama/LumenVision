@@ -35,6 +35,7 @@ private:
 
 	rknn_context m_Context = 0;
 	bool Initialise(const DetectionBackendConfig& config);
+	void FreeContextAfterThrow();
 
 	bool m_Loaded = false;
 	std::vector<std::pair<std::string, double>> m_LastStageUs; // written by Infer(), read by the same thread right after
@@ -63,6 +64,15 @@ private:
 	// scales and converts the frame into the canvas on the RGA; after a failure the CPU path takes over for good
 	RgaLetterbox m_Rga;
 	bool m_RgaFailed = false;
+	// The RGA declines some frame shapes (an odd letterbox offset, a layout it cannot address). That shape is then prepared on the CPU, frame
+	// after frame, without asking the RGA again; any other shape still goes to the RGA. (It used to turn the RGA off for good.)
+	struct RgaDeclinedShape {
+		cv::Size frame;
+		cv::Rect picture;
+		bool nv12 = false;
+		bool operator==(const RgaDeclinedShape& other) const { return frame == other.frame && picture == other.picture && nv12 == other.nv12; }
+	};
+	std::optional<RgaDeclinedShape> m_RgaDeclined;
 #endif
 
 	// whether the class tensors hold probabilities or logits, decided from the first frame and kept (it is a property of the model)

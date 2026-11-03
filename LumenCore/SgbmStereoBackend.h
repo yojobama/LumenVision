@@ -20,6 +20,7 @@ public:
 private:
 	int m_BlockW, m_BlockH;
 	int m_MinDisparity, m_NumDisparities; // as given, in full-resolution pixels
+	int m_SearchNumDisparities = 16; // what the matcher searches, in the matched image's own pixels
 	int m_Downscale;
 	int m_SearchMinDisparity;             // what SGBM actually searches: the above divided by m_Downscale
 	cv::Ptr<cv::StereoSGBM> m_Sgbm;

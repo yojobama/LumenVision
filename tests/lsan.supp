@@ -6,3 +6,7 @@ leak:libonnxruntime
 leak:_dl_init
 leak:libvulkan
 leak:libmali
+# librknnrt's rknn_init allocates before it has parsed a model's metadata and, for a model it then rejects (corrupt metadata: it throws its JSON parser's
+# exception), never frees that: about a kilobyte per rejected load. RknnDetectionBackend::Load returns false for such a file and releases its own
+# context; rknn_destroy does not return the runtime's allocation.
+leak:rknn_init

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <chrono>
 #include <stdexcept>
+#include "DistortionCoefficients.h"
 
 namespace {
 	// codec-stereo's default (the H.264 16x16 macroblock of lavc_sw); rkmpp_hwenc is forced by hardware to 32x16
@@ -33,6 +34,11 @@ StereoDepthNode::StereoDepthNode(std::shared_ptr<Logger> logger, std::string id,
 
 	if (minDepthMeters <= 0.0 || maxDepthMeters <= minDepthMeters) {
 		throw std::runtime_error("StereoDepthNode: minDepthMeters must be > 0 and < maxDepthMeters");
+	}
+
+	// the rectifier reads R1/R2 as 9 numbers and P1/P2 as 12: refuse a calibration whose arrays are shorter (it would read past them)
+	if (calibration.IsValid() && !calibration.HasWellFormedMatrices()) {
+		throw std::runtime_error("StereoDepthNode: the calibration's rectification arrays have the wrong sizes (R1 and R2 need 9 numbers, P1 and P2 12, Q 16)");
 	}
 
 	int blockW, blockH;
@@ -134,6 +140,9 @@ void StereoDepthNode::EnsureRectifyMaps(const cv::Size& sourceSize)
 {
 	if (sourceSize == m_RectifiedSourceSize && !m_MapLx.empty()) return;
 
+	if (!m_Calibration.HasWellFormedMatrices()) {
+		throw std::runtime_error("StereoDepthNode: the calibration's rectification arrays have the wrong sizes");
+	}
 	if (sourceSize.width != m_Calibration.imageWidth || sourceSize.height != m_Calibration.imageHeight) {
 		throw std::runtime_error(
 			"StereoDepthNode: source frame is " + std::to_string(sourceSize.width) + "x" + std::to_string(sourceSize.height) +
@@ -148,7 +157,9 @@ void StereoDepthNode::EnsureRectifyMaps(const cv::Size& sourceSize)
 		return k;
 	};
 	auto vecToD = [](const CameraCalibrationResult& c) {
-		return cv::Mat(c.distCoeffs, true).reshape(1, (int)c.distCoeffs.size());
+		// a count of coefficients OpenCV rejects is brought to one it takes (k1 and k2 alone, say)
+		const std::vector<double> coefficients = NormalisedDistortionCoefficients(c.distCoeffs);
+		return cv::Mat(coefficients, true).reshape(1, (int)coefficients.size());
 	};
 	auto vec9ToMat = [](const std::vector<double>& v) {
 		cv::Mat m(3, 3, CV_64F);
@@ -175,8 +186,10 @@ void StereoDepthNode::EnsureRectifyMaps(const cv::Size& sourceSize)
 	// black (a synthetic border attracts motion vectors)
 	cv::Rect roiL(m_Calibration.roiLeftX, m_Calibration.roiLeftY, m_Calibration.roiLeftW, m_Calibration.roiLeftH);
 	cv::Rect roiR(m_Calibration.roiRightX, m_Calibration.roiRightY, m_Calibration.roiRightW, m_Calibration.roiRightH);
-	cv::Rect roi = (roiL.width > 0 && roiR.width > 0) ? (roiL & roiR) : cv::Rect(0, 0, sourceSize.width, sourceSize.height);
-	if (roi.width <= 0 || roi.height <= 0) roi = cv::Rect(0, 0, sourceSize.width, sourceSize.height);
+	const cv::Rect frameRect(0, 0, sourceSize.width, sourceSize.height);
+	// a stored ROI that reaches past the picture (or starts before it) is cut to it: the maps are sliced to the crop, so it must fit them
+	cv::Rect roi = (roiL.width > 0 && roiR.width > 0) ? (roiL & roiR & frameRect) : frameRect;
+	if (roi.width <= 0 || roi.height <= 0) roi = frameRect;
 
 	int blockW = m_Backend->BlockW(), blockH = m_Backend->BlockH();
 	m_CropW = (roi.width / blockW) * blockW;
@@ -240,6 +253,14 @@ void StereoDepthNode::Process(const std::vector<SourceResult>& results)
 		EnsureRectifyMaps(left.frame->size());
 	} catch (const std::exception& e) {
 		if (m_Logger) m_Logger->EnterLog(LogLevel::Error, std::string("StereoDepthNode: ") + e.what());
+		return;
+	}
+
+	// the rectification maps belong to one picture size, the calibration's, and both eyes must be that size
+	if (right.frame->size() != left.frame->size()) {
+		if (m_Logger) m_Logger->EnterLog(LogLevel::Error, "StereoDepthNode: the left eye is " + std::to_string(left.frame->size().width) + "x" +
+			std::to_string(left.frame->size().height) + " but the right is " + std::to_string(right.frame->size().width) + "x" +
+			std::to_string(right.frame->size().height) + ": a pair at different sizes is not rectified");
 		return;
 	}
 

@@ -46,4 +46,7 @@ public:
 	StereoCalibrationResult() = default;
 
 	bool IsValid() const { return !Q.empty() && baselineMeters > 0.0; }
+	// whether the rectification arrays have the sizes the rectifier reads (R1/R2 3x3, P1/P2 3x4, Q 4x4); a calibration that arrives in a
+	// request body or a hand-edited file can carry short ones
+	bool HasWellFormedMatrices() const { return R1.size() == 9 && R2.size() == 9 && P1.size() == 12 && P2.size() == 12 && Q.size() == 16; }
 };

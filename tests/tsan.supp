@@ -19,3 +19,6 @@ race:CpuAffinity.cpp
 mutex:nptl_deallocate_tsd
 # the Vulkan loader (prebuilt) initialises its instance structures on a stack slot an earlier thread used
 race:libvulkan.so
+# libx264 is prebuilt and uninstrumented too: its frame-thread pool hands pictures between threads with primitives TSan cannot see, which is
+# reported as races inside the library whenever RecordSink encodes (the same reason as OpenCV above)
+race:libx264.so

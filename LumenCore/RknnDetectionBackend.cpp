@@ -16,9 +16,27 @@ RknnDetectionBackend::~RknnDetectionBackend()
 	if (m_Loaded) rknn_destroy(m_Context);
 }
 
+void RknnDetectionBackend::FreeContextAfterThrow()
+{
+	// rknn_init threw after it had allocated a context (and it leaks that context unless it is destroyed): release it if it handed one out
+	if (!m_Loaded && m_Context != 0) {
+		try { rknn_destroy(m_Context); } catch (...) {}
+	}
+	m_Context = 0;
+}
+
 bool RknnDetectionBackend::Load(const DetectionBackendConfig& config)
 {
-	if (Initialise(config)) return true;
+	// librknnrt's rknn_init throws its JSON parser's exception for a model with corrupt metadata: Load() reports a bad model by returning false
+	try {
+		if (Initialise(config)) return true;
+	} catch (const std::exception& e) {
+		std::fprintf(stderr, "RKNN: loading %s failed: %s\n", config.modelPath.c_str(), e.what());
+		FreeContextAfterThrow();
+	} catch (...) {
+		std::fprintf(stderr, "RKNN: loading %s failed\n", config.modelPath.c_str());
+		FreeContextAfterThrow();
+	}
 	// a half-built backend must not answer Infer() with a missing or wrongly-shaped model
 	if (m_Loaded) rknn_destroy(m_Context);
 	m_Loaded = false;
@@ -39,12 +57,21 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 	std::ifstream modelFile(config.modelPath, std::ios::binary | std::ios::ate);
 	if (!modelFile) return false;
 	std::streamsize modelSize = modelFile.tellg();
+	if (modelSize <= 0) return false;
 	modelFile.seekg(0, std::ios::beg);
-	std::vector<char> modelBuffer(static_cast<size_t>(modelSize));
+	// librknnrt copies the metadata tail of a model from where the header says it is: for a file that was cut short inside that tail it reads past
+	// the buffer. The padding (zeros, never part of the size it is told) keeps that read inside memory this buffer owns; the zeros then fail the parse.
+	constexpr size_t kReadAheadPadding = 16 * 1024;
+	std::vector<char> modelBuffer(static_cast<size_t>(modelSize) + kReadAheadPadding, 0);
 	if (!modelFile.read(modelBuffer.data(), modelSize)) return false;
 
+	m_Context = 0;
 	int ret = rknn_init(&m_Context, modelBuffer.data(), static_cast<uint32_t>(modelSize), 0, nullptr);
-	if (ret != RKNN_SUCC) return false;
+	if (ret != RKNN_SUCC) {
+		if (m_Context != 0) rknn_destroy(m_Context); // what the runtime allocated before it refused the model
+		m_Context = 0;
+		return false;
+	}
 	m_Loaded = true;
 
 	// Each detector gets its own NPU core in turn (the default, AUTO, can queue two detectors behind one another); a failure here just
@@ -78,6 +105,8 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 		m_InputHeight = static_cast<int>(m_InputAttr.dims[2]);
 		m_InputWidth = static_cast<int>(m_InputAttr.dims[3]);
 	}
+	// an image input is four-dimensional with a size: a model that takes a vector (or anything else) has no picture to be given
+	if (m_InputAttr.n_dims != 4 || m_InputWidth <= 0 || m_InputHeight <= 0) return false;
 
 	if (m_NumOutputs == 1) {
 		m_IsMultiScaleDfl = false;
@@ -102,6 +131,21 @@ bool RknnDetectionBackend::Initialise(const DetectionBackendConfig& config)
 			rknn_tensor_attr clsAttr{};
 			clsAttr.index = static_cast<uint32_t>(s * 3 + 1);
 			if (rknn_query(m_Context, RKNN_QUERY_OUTPUT_ATTR, &clsAttr, sizeof(clsAttr)) != RKNN_SUCC) return false;
+
+			rknn_tensor_attr sumAttr{};
+			sumAttr.index = static_cast<uint32_t>(s * 3 + 2);
+			if (rknn_query(m_Context, RKNN_QUERY_OUTPUT_ATTR, &sumAttr, sizeof(sumAttr)) != RKNN_SUCC) return false;
+
+			// The three outputs of a scale describe ONE grid: box [1, 4*regMax, H, W], class [1, classes, H, W] and score sum [1, 1, H, W]. A
+			// YOLOv5-style export also has three outputs (a head per scale, [1, 255, H, W] each, on three different grids); read as one scale, its
+			// "class" tensor is smaller than the box grid says and the decoder reads past it.
+			if (boxAttr.n_dims != 4 || clsAttr.n_dims != 4 || sumAttr.n_dims != 4) return false;
+			if (clsAttr.dims[2] != boxAttr.dims[2] || clsAttr.dims[3] != boxAttr.dims[3]) return false;
+			if (sumAttr.dims[1] != 1 || sumAttr.dims[2] != boxAttr.dims[2] || sumAttr.dims[3] != boxAttr.dims[3]) return false;
+			if (boxAttr.dims[1] % 4 != 0) return false;
+			if (boxAttr.dims[2] == 0 || boxAttr.dims[3] == 0) return false;
+			if (m_InputHeight % static_cast<int>(boxAttr.dims[2]) != 0 || m_InputWidth % static_cast<int>(boxAttr.dims[3]) != 0 ||
+				m_InputHeight / static_cast<int>(boxAttr.dims[2]) != m_InputWidth / static_cast<int>(boxAttr.dims[3])) return false;
 
 			// dims are [N, C, H, W] for these outputs regardless of the input tensor's NHWC layout
 			int gridH = static_cast<int>(boxAttr.dims[2]);
@@ -174,11 +218,14 @@ std::vector<ObjectDetection> RknnDetectionBackend::Infer(const Frame& frame)
 	bool prepared = false;
 #ifdef LUMEN_WITH_RGA
 	// the RGA scales and converts the frame (NV12 or BGR) into its place in the canvas in one pass
-	if (!m_RgaFailed) {
+	const RgaDeclinedShape shape{ frame.size(), picture, frame.IsNv12() };
+	if (!m_RgaFailed && !(m_RgaDeclined.has_value() && *m_RgaDeclined == shape)) {
 		prepared = m_Rga.Run(frame, m_Canvas.data, m_InputWidth, m_InputHeight, picture);
 		if (!prepared) {
-			m_RgaFailed = true;
-			std::fprintf(stderr, "RKNN: the RGA could not prepare the detector input for this frame, preparing it on the CPU from now on\n");
+			// this shape goes to the CPU from now on; the RGA stays on for the other shapes
+			m_RgaDeclined = shape;
+			std::fprintf(stderr, "RKNN: the RGA could not prepare a %dx%d %s frame, preparing frames of that shape on the CPU\n",
+				frame.size().width, frame.size().height, frame.IsNv12() ? "NV12" : "BGR");
 		}
 	}
 	if (prepared) lap("rknn-rga");

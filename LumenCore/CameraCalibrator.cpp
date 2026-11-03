@@ -1,4 +1,5 @@
 #include "CameraCalibrator.h"
+#include <cmath>
 #include <stdexcept>
 
 namespace {
@@ -10,6 +11,16 @@ CameraCalibrator::CameraCalibrator(std::shared_ptr<Logger> logger, std::string i
 	: ISink(logger, 1, false, true, id), ISource(logger, id), m_Logger(logger), m_BoardConfig(boardConfig)
 {
 	m_DoNotLoadCaptureThread = true;
+
+	// cv::findChessboardCorners needs a pattern of more than two corners each way and throws on every frame for less (a cleared number field
+	// in the web UI sends 0); a square size that is not a positive number gives object points that are not a board
+	if (m_BoardConfig.type == BOARD_CHECKERBOARD && (m_BoardConfig.rows < 3 || m_BoardConfig.cols < 3)) {
+		throw std::invalid_argument("CameraCalibrator: a checkerboard needs at least 3 inner corners each way (got " +
+			std::to_string(m_BoardConfig.cols) + "x" + std::to_string(m_BoardConfig.rows) + ")");
+	}
+	if (!(m_BoardConfig.squareSizeMeters > 0.0f) || !std::isfinite(m_BoardConfig.squareSizeMeters)) {
+		throw std::invalid_argument("CameraCalibrator: the board's square size must be a positive number of metres");
+	}
 
 	if (m_BoardConfig.type == BOARD_CHARUCO) {
 		cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(m_BoardConfig.arucoDictionaryId);
@@ -73,6 +84,15 @@ bool CameraCalibrator::SaveBoardDetection()
 		return false;
 	}
 
+	// Snapshots from two picture sizes cannot go into one calibration (their pixels are on different grids, and the result is labelled with one
+	// size): a snapshot at a new size, after the camera's mode was changed mid-session, starts a new set.
+	if (!m_ImgPoints.empty() && frameSize != m_LastFrameSize) {
+		if (m_Logger) m_Logger->EnterLog(LogLevel::Warning, "CameraCalibrator: the picture size changed from " + std::to_string(frameSize.width) + "x" +
+			std::to_string(frameSize.height) + " to " + std::to_string(m_LastFrameSize.width) + "x" + std::to_string(m_LastFrameSize.height) +
+			": the " + std::to_string(m_ImgPoints.size()) + " earlier snapshot(s) were dropped");
+		m_ObjPoints.clear();
+		m_ImgPoints.clear();
+	}
 	m_ObjPoints.push_back(m_LastObjectPoints);
 	m_ImgPoints.push_back(m_LastCorners);
 	frameSize = m_LastFrameSize;

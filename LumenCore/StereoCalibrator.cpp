@@ -1,5 +1,7 @@
 #include "StereoCalibrator.h"
 #include <stdexcept>
+#include <chrono>
+#include <algorithm>
 #include <cmath>
 
 namespace {
@@ -16,6 +18,15 @@ StereoCalibrator::StereoCalibrator(std::shared_ptr<Logger> logger, std::string i
 	  m_Logger(logger), m_BoardConfig(boardConfig), m_MaxSkewUs(maxSkewUs)
 {
 	m_DoNotLoadCaptureThread = true;
+
+	// see CameraCalibrator: a checkerboard needs more than two corners each way, and the square size has to be a positive number
+	if (m_BoardConfig.type == BOARD_CHECKERBOARD && (m_BoardConfig.rows < 3 || m_BoardConfig.cols < 3)) {
+		throw std::invalid_argument("StereoCalibrator: a checkerboard needs at least 3 inner corners each way (got " +
+			std::to_string(m_BoardConfig.cols) + "x" + std::to_string(m_BoardConfig.rows) + ")");
+	}
+	if (!(m_BoardConfig.squareSizeMeters > 0.0f) || !std::isfinite(m_BoardConfig.squareSizeMeters)) {
+		throw std::invalid_argument("StereoCalibrator: the board's square size must be a positive number of metres");
+	}
 
 	if (m_BoardConfig.type == BOARD_CHARUCO) {
 		throw std::runtime_error(
@@ -87,13 +98,23 @@ void StereoCalibrator::Process(const std::vector<SourceResult>& results)
 	std::vector<cv::Point3f> leftObjPoints, rightObjPoints;
 	bool foundLeft = DetectCheckerboard(grayLeft, leftCorners, leftObjPoints);
 	bool foundRight = DetectCheckerboard(grayRight, rightCorners, rightObjPoints);
+	// Two cameras at different modes see the board in different pixel grids: such a pair is shown, but it cannot be saved as a calibration pair.
+	const bool sameSize = grayLeft.size() == grayRight.size();
+	if (!sameSize) {
+		const auto now = std::chrono::steady_clock::now();
+		if (m_Logger && now - m_LastSizeWarning >= std::chrono::seconds(5)) {
+			m_LastSizeWarning = now;
+			m_Logger->EnterLog(LogLevel::Warning, "StereoCalibrator: the left eye is " + std::to_string(grayLeft.cols) + "x" + std::to_string(grayLeft.rows) +
+				" and the right is " + std::to_string(grayRight.cols) + "x" + std::to_string(grayRight.rows) + ": set both cameras to the same mode; pairs are not saved");
+		}
+	}
 
 	{
 		std::lock_guard<std::mutex> lock(m_DetectionMutex);
 		m_LastSkewUs = skewUs;
 		m_LastFoundLeft = foundLeft;
 		m_LastFoundRight = foundRight;
-		m_LastPairFound = foundLeft && foundRight;
+		m_LastPairFound = foundLeft && foundRight && sameSize;
 		if (m_LastPairFound) {
 			m_LastLeftCorners = leftCorners;
 			m_LastRightCorners = rightCorners;
@@ -109,6 +130,10 @@ void StereoCalibrator::Process(const std::vector<SourceResult>& results)
 	if (foundLeft) cv::drawChessboardCorners(displayLeft, patternSize, leftCorners, true);
 	if (foundRight) cv::drawChessboardCorners(displayRight, patternSize, rightCorners, true);
 
+	// cv::hconcat needs equal heights: show a smaller eye scaled to the other's height
+	if (displayRight.rows != displayLeft.rows) {
+		cv::resize(displayRight, displayRight, cv::Size(std::max(1, cvRound(displayRight.cols * static_cast<double>(displayLeft.rows) / displayRight.rows)), displayLeft.rows));
+	}
 	cv::Mat sideBySide;
 	cv::hconcat(displayLeft, displayRight, sideBySide);
 	cv::putText(sideBySide, "Pairs saved: " + std::to_string(GetPairCount()) +
@@ -118,7 +143,7 @@ void StereoCalibrator::Process(const std::vector<SourceResult>& results)
 
 	nlohmann::json json = {
 		{"foundLeft", foundLeft}, {"foundRight", foundRight},
-		{"pairFound", m_LastPairFound}, {"skewUs", skewUs}, {"pairCount", GetPairCount()},
+		{"pairFound", m_LastPairFound}, {"skewUs", skewUs}, {"pairCount", GetPairCount()}, {"sizeMismatch", !sameSize},
 	};
 
 	SetLatestResult(SourceResult(json, sideBySide));
@@ -135,6 +160,14 @@ bool StereoCalibrator::SaveStereoDetection()
 		return false;
 	}
 
+	// pairs from two picture sizes cannot go into one calibration: a pair at a new size starts a new set (see CameraCalibrator::SaveBoardDetection)
+	if (!m_ObjPoints.empty() && m_FrameSize != m_LastFrameSize) {
+		if (m_Logger) m_Logger->EnterLog(LogLevel::Warning, "StereoCalibrator: the picture size changed: the " + std::to_string(m_ObjPoints.size()) +
+			" earlier pair(s) were dropped");
+		m_ObjPoints.clear();
+		m_LeftImgPoints.clear();
+		m_RightImgPoints.clear();
+	}
 	m_ObjPoints.push_back(m_LastObjectPoints);
 	m_LeftImgPoints.push_back(m_LastLeftCorners);
 	m_RightImgPoints.push_back(m_LastRightCorners);
