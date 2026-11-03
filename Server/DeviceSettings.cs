@@ -60,13 +60,23 @@ namespace Server
             if (!File.Exists(path)) return;
             try
             {
-                data = JsonSerializer.Deserialize<DeviceSettingsData>(File.ReadAllText(path)) ?? new DeviceSettingsData();
+                data = Normalised(JsonSerializer.Deserialize<DeviceSettingsData>(File.ReadAllText(path)) ?? new DeviceSettingsData());
             }
             catch (Exception)
             {
                 // a corrupt file starts from defaults rather than keeping the server from booting
                 data = new DeviceSettingsData();
             }
+        }
+
+        // A section the JSON gave as null ("Led": null, from a request body, a hand edit or a restored archive) is replaced by its defaults: the
+        // rest of the server reads Data.Led, Data.NetworkTables and Data.Logs without checking them for null.
+        public static DeviceSettingsData Normalised(DeviceSettingsData settings)
+        {
+            settings.Led ??= new LedSettings();
+            settings.NetworkTables ??= new NetworkTablesSettings();
+            settings.Logs ??= new LogSettings();
+            return settings;
         }
 
         // The problem with these settings as a user-facing message, or null when they are usable. Rejected settings are never stored.
@@ -92,7 +102,7 @@ namespace Server
         // Replaces the settings (after Validate) and saves them.
         public void Replace(DeviceSettingsData next)
         {
-            lock (sync) data = next;
+            lock (sync) data = Normalised(next);
             Save();
         }
 

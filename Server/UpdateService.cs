@@ -41,34 +41,42 @@ namespace Server
         // Saves the uploaded package and checks it; a package that is not a LumenVision one for this board is deleted and refused.
         public async Task<StagedPackage> StageAsync(Stream upload)
         {
-            Directory.CreateDirectory(directory);
-            await using (var file = new FileStream(PackagePath, FileMode.Create, FileAccess.Write))
-            {
-                var buffer = new byte[81920];
-                long total = 0;
-                int read;
-                while ((read = await upload.ReadAsync(buffer)) > 0)
-                {
-                    total += read;
-                    if (total > MaxPackageBytes) { file.Close(); Discard(); throw ApiException.BadRequest("the package is larger than 1 GB"); }
-                    await file.WriteAsync(buffer.AsMemory(0, read));
-                }
-            }
+            // apt-get is reading the package while an install runs: an upload now would truncate it, and a refused one would delete it
+            if ((await StatusAsync()).State == "running") throw ApiException.BadRequest("an update is installing; upload the next package when it has finished");
 
+            Directory.CreateDirectory(directory);
+            // The upload goes to a file of its own and replaces the staged package only once it has passed the checks, so a refused or aborted
+            // upload leaves the previously staged package where it was.
+            string incoming = PackagePath + ".uploading";
             try
             {
-                return await InspectAsync();
+                await using (var file = new FileStream(incoming, FileMode.Create, FileAccess.Write))
+                {
+                    var buffer = new byte[81920];
+                    long total = 0;
+                    int read;
+                    while ((read = await upload.ReadAsync(buffer)) > 0)
+                    {
+                        total += read;
+                        if (total > MaxPackageBytes) throw ApiException.BadRequest("the package is larger than 1 GB");
+                        await file.WriteAsync(buffer.AsMemory(0, read));
+                    }
+                }
+
+                StagedPackage staged = await InspectAsync(incoming);
+                File.Move(incoming, PackagePath, overwrite: true);
+                return staged;
             }
             catch
             {
-                Discard();
+                try { if (File.Exists(incoming)) File.Delete(incoming); } catch (IOException) { /* replaced by the next upload */ }
                 throw;
             }
         }
 
-        private async Task<StagedPackage> InspectAsync()
+        private async Task<StagedPackage> InspectAsync(string packagePath)
         {
-            var info = new FileInfo(PackagePath);
+            var info = new FileInfo(packagePath);
             var header = new byte[ArMagic.Length];
             await using (var file = info.OpenRead())
             {
@@ -76,7 +84,7 @@ namespace Server
                     throw ApiException.BadRequest("this is not a .deb package");
             }
 
-            CommandResult fields = await runner().RunAsync("dpkg-deb", new[] { "--field", PackagePath, "Package", "Version", "Architecture" });
+            CommandResult fields = await runner().RunAsync("dpkg-deb", new[] { "--field", packagePath, "Package", "Version", "Architecture" });
             if (!fields.Ok) throw ApiException.BadRequest("dpkg could not read this package");
             (string package, string version, string architecture) = ParseControlFields(fields.StdOut);
 
@@ -130,11 +138,6 @@ namespace Server
             // started but no exit code yet: running, unless the unit is gone (the board rebooted or the unit was killed)
             CommandResult unit = await runner().RunAsync("systemctl", new[] { "is-active", UnitName });
             return new UpdateStatus(unit.Ok ? "running" : "failed", log);
-        }
-
-        private void Discard()
-        {
-            try { if (File.Exists(PackagePath)) File.Delete(PackagePath); } catch (IOException) { /* replaced by the next upload */ }
         }
 
         private static string Tail(string path, int lines)

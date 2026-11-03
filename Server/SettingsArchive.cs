@@ -92,6 +92,8 @@ namespace Server
             }
             if (manifest == null) throw ApiException.BadRequest("the archive's manifest is empty");
             if (manifest.Format != CurrentFormat) throw ApiException.BadRequest($"the archive format {manifest.Format} is not supported (expected {CurrentFormat})");
+            // a manifest is deserialised without required members, so a hand-made one can lack its lists
+            if (manifest.Files == null || manifest.Groups == null) throw ApiException.BadRequest("the archive's manifest has no list of files or groups");
 
             var listed = new HashSet<string>(manifest.Files, StringComparer.Ordinal);
             foreach (ZipArchiveEntry entry in zip.Entries)
@@ -121,22 +123,60 @@ namespace Server
                 ArchiveManifest manifest = Validate(zip);
                 var entries = zip.Entries.Where(e => e.FullName != ManifestName && e.FullName != LogFile && !e.FullName.EndsWith('/')).ToList();
 
+                // Every entry is extracted to a temporary file BEFORE anything of the device's own data is touched: an entry whose data cannot be read (a
+                // damaged download) then fails the import with the device exactly as it was, instead of after the groups it replaces were deleted.
+                // (in a folder of their own under the root: the data groups' own folders are deleted below, and the staged files must survive that)
+                string stagingFolder = data.FullPath(".import-" + Guid.NewGuid().ToString("N"));
+                var staged = new List<(string Temporary, string Full)>();
+                try
+                {
+                    Directory.CreateDirectory(stagingFolder);
+                    int number = 0;
+                    foreach (ZipArchiveEntry entry in entries)
+                    {
+                        string full = data.SafePath(entry.FullName)!; // validated above
+                        string temporary = Path.Combine(stagingFolder, (number++).ToString());
+                        entry.ExtractToFile(temporary, overwrite: true);
+                        staged.Add((temporary, full));
+                    }
+                }
+                catch (InvalidDataException ex)
+                {
+                    DeleteStaged(stagingFolder);
+                    throw ApiException.BadRequest($"the archive is damaged and nothing was imported ({ex.Message})");
+                }
+                catch (Exception)
+                {
+                    DeleteStaged(stagingFolder);
+                    throw;
+                }
+
                 // which groups the archive carries decides what gets replaced; whatever the archive lacks is left alone
                 DataGroup[] replaced = Portable.Where(g => manifest.Groups.Contains(g.ToString())).ToArray();
                 string? backup = null;
                 if (replaced.Length > 0 && replaced.Any(g => data.Files(g).Any())) backup = WriteBackup(replaced);
 
                 data.Delete(replaced);
-                foreach (ZipArchiveEntry entry in entries)
+                try
                 {
-                    string full = data.SafePath(entry.FullName)!; // validated above
-                    Directory.CreateDirectory(Path.GetDirectoryName(full)!);
-                    string temporary = full + ".importing";
-                    entry.ExtractToFile(temporary, overwrite: true);
-                    File.Move(temporary, full, overwrite: true);
+                    foreach ((string temporary, string full) in staged)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+                        File.Move(temporary, full, overwrite: true);
+                    }
+                }
+                finally
+                {
+                    DeleteStaged(stagingFolder);
                 }
                 return new ImportResult(entries.Count, replaced.Select(g => g.ToString()).ToArray(), backup);
             }
+        }
+
+        private static void DeleteStaged(string stagingFolder)
+        {
+            try { if (Directory.Exists(stagingFolder)) Directory.Delete(stagingFolder, true); }
+            catch (IOException) { /* a leftover staging folder does no harm */ }
         }
 
         private string WriteBackup(DataGroup[] groups)

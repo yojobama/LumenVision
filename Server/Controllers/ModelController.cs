@@ -17,10 +17,14 @@ namespace Server.Controllers
             var form = await Request.ReadFormAsync(HttpContext.RequestAborted);
 
             string name = form["name"].ToString();
-            var variant = (YoloVariant)int.Parse(form["variant"].ToString());
+            if (!int.TryParse(form["variant"].ToString(), out int variantNumber)) throw ApiException.BadRequest("variant must be a number (0 = YOLOv8, 1 = YOLOv11)");
+            var variant = (YoloVariant)variantNumber;
             int inputSize = int.TryParse(form["inputSize"], out var s) ? s : 640;
             float confThreshold = float.TryParse(form["confThreshold"], out var c) ? c : 0.25f;
             float nmsThreshold = float.TryParse(form["nmsThreshold"], out var n) ? n : 0.45f;
+
+            // checked before anything is written: a rejected upload stores nothing
+            ModelManager.ValidateSettings(variant, inputSize, confThreshold, nmsThreshold);
 
             var modelFile = form.Files.GetFile("model");
             if (modelFile == null) throw ApiException.BadRequest("missing required 'model' file");

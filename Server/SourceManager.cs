@@ -312,6 +312,14 @@ namespace Server
                 throw Server.Web.ApiException.BadRequest("the crop must not be negative");
             if ((transform.CropWidth == 0) != (transform.CropHeight == 0))
                 throw Server.Web.ApiException.BadRequest("set both the crop width and height, or neither");
+            if (transform.CropWidth > 0)
+            {
+                // a crop that misses the picture would publish the whole frame while the node's size and calibration say otherwise; the camera's
+                // mode is the picture it cuts from (when the camera is not open yet there is nothing to compare with)
+                CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(sourceId);
+                if (mode.width > 0 && mode.height > 0 && (transform.CropX >= mode.width || transform.CropY >= mode.height))
+                    throw Server.Web.ApiException.BadRequest($"the crop starts outside the camera's {mode.width}x{mode.height} picture");
+            }
 
             transform = transform with { Rotation = ((transform.Rotation % 360) + 360) % 360 };
             ManagerWrapper.Instance.SetCameraTransform(sourceId, transform.ToNative());
@@ -402,6 +410,10 @@ namespace Server
                 if (sink != null && sink.Source != null && sink.Source.Id == sourceId)
                 {
                     sink.Source = null;
+                }
+                if (sink != null && sink.Source2 != null && sink.Source2.Id == sourceId)
+                {
+                    sink.Source2 = null;
                 }
             }
 

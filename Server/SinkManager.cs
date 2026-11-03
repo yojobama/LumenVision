@@ -81,6 +81,18 @@ namespace Server
         public void DeleteSink(int sinkId)
         {
             DeletePreviewsOf(sinkId);
+            // The nodes that read this one (a recording, the NetworkTables sink, a depth fusion node) lose their input: the native Manager unbinds
+            // them, and their records must not keep pointing at an id that no longer exists - it is saved, and the next start's restore fails on it.
+            foreach (Sink reader in sinks.Where(s => s.Id != sinkId && (s.Source?.Id == sinkId || s.Source2?.Id == sinkId || s.DepthSourceId == sinkId)).ToList())
+            {
+                if (reader.Source?.Id == sinkId) reader.Source = null;
+                if (reader.Source2?.Id == sinkId) reader.Source2 = null;
+                if (reader.DepthSourceId == sinkId)
+                {
+                    try { ManagerWrapper.Instance.ClearDepthFusionDepthNode(reader.Id); } catch (Exception) { /* the node may be gone already */ }
+                    reader.DepthSourceId = null;
+                }
+            }
             ManagerWrapper.Instance.DeleteSink(sinkId);
             sinks.RemoveAll(sink => sink.Id == sinkId);
             appliedObjectDetectionCalibrations.Remove(sinkId);
@@ -148,6 +160,7 @@ namespace Server
         // so the apriltag detections can be translated into real world tag locations
         public int AddApriltagSinkForCamera(string name, int sourceId, double tagSize)
         {
+            RequireTagSize(tagSize);
             CameraCalibrationResult calibration = CalibrationManager.Instance.GetForSource(sourceId)
                 ?? throw Server.Web.ApiException.BadRequest($"no saved calibration for source {sourceId} at its current resolution");
             int id = ManagerWrapper.Instance.CreateApriltagDetector(calibration, tagSize);
@@ -162,6 +175,7 @@ namespace Server
             int nthreads = 0, float quadDecimate = 0.0f, bool refineEdges = true, RefineEdgesMode refineMode = RefineEdgesMode.REFINE_EXACT,
             ApriltagAdvancedTuning? advanced = null)
         {
+            RequireTagSize(tagSize);
             int id = ManagerWrapper.Instance.CreateApriltagDetector(new CameraCalibrationResult(), tagSize, backend, frameWidth, frameHeight,
                 MakeTuning(nthreads, quadDecimate, refineEdges, refineMode, advanced));
             sinks.Add(NewApriltagSinkRecord(id, name, tagSize, backend, nthreads, quadDecimate, refineEdges, refineMode, advanced));
@@ -169,9 +183,26 @@ namespace Server
             return id;
         }
 
+        // ASP.NET binds "NaN", "Infinity" and "1e40" to a float or double. System.Text.Json refuses to write a non-finite number, so one such value
+        // stored on a record makes every later save of data.json (and every state broadcast, which serialises each sink) throw until a restart.
+        // The range checks below are written so that NaN fails them (a comparison with NaN is false).
+        internal static void RequireFinite(string what, double value)
+        {
+            if (!double.IsFinite(value)) throw Server.Web.ApiException.BadRequest($"{what} must be a finite number");
+        }
+
+        private static void RequireTagSize(double tagSize)
+        {
+            if (!(tagSize > 0.0 && tagSize < 10.0)) throw Server.Web.ApiException.BadRequest("tagSize must be a positive number of metres (under 10)");
+        }
+
         private static ApriltagTuning MakeTuning(int nthreads, float quadDecimate, bool refineEdges, RefineEdgesMode refineMode,
             ApriltagAdvancedTuning? advanced = null)
         {
+            if (!(quadDecimate >= 0.0f && quadDecimate < 1000.0f)) throw Server.Web.ApiException.BadRequest("quadDecimate must be a number from 0 up");
+            if (advanced?.QuadSigma is float sigma) RequireFinite("quadSigma", sigma);
+            if (advanced?.DecisionMargin is float margin) RequireFinite("decisionMargin", margin);
+            if (advanced?.ProbeMargin is float probe) RequireFinite("probeMargin", probe);
             var tuning = new ApriltagTuning { nthreads = nthreads, quadDecimate = quadDecimate, refineEdges = refineEdges, refineMode = refineMode };
             advanced?.ApplyTo(tuning);
             return tuning;
@@ -544,8 +575,8 @@ namespace Server
         public void SetObjectDetectionThresholds(int sinkId, float confThreshold, float nmsThreshold)
         {
             Sink sink = RequireSink(sinkId, SinkType.ObjectDetectionSink);
-            if (confThreshold < 0.01f || confThreshold > 1.0f) throw Server.Web.ApiException.BadRequest("confThreshold must be 0.01 to 1");
-            if (nmsThreshold < 0.01f || nmsThreshold > 1.0f) throw Server.Web.ApiException.BadRequest("nmsThreshold must be 0.01 to 1");
+            if (!(confThreshold >= 0.01f && confThreshold <= 1.0f)) throw Server.Web.ApiException.BadRequest("confThreshold must be 0.01 to 1");
+            if (!(nmsThreshold >= 0.01f && nmsThreshold <= 1.0f)) throw Server.Web.ApiException.BadRequest("nmsThreshold must be 0.01 to 1");
             ManagerWrapper.Instance.SetObjectDetectionThresholds(sinkId, confThreshold, nmsThreshold);
             sink.ObjectDetectionConfThreshold = confThreshold;
             sink.ObjectDetectionNmsThreshold = nmsThreshold;
@@ -833,10 +864,48 @@ namespace Server
         public int AddStereoDepthSink(string name, StereoDepthBackendKind backend, StereoCalibrationResult calibration,
             double minDepthMeters, double maxDepthMeters, int maxSkewUs, StereoFrameOutput frameOutput)
         {
-            int id = ManagerWrapper.Instance.CreateStereoDepthNode(backend, calibration, minDepthMeters, maxDepthMeters, maxSkewUs, frameOutput);
-            sinks.Add(new Sink(id, name, SinkType.StereoDepthSink));
+            RequireFinite("minDepthMeters", minDepthMeters);
+            RequireFinite("maxDepthMeters", maxDepthMeters);
+            if (!(minDepthMeters > 0.0 && maxDepthMeters > minDepthMeters)) throw Server.Web.ApiException.BadRequest("minDepthMeters must be above 0 and below maxDepthMeters");
+            int id;
+            try
+            {
+                id = ManagerWrapper.Instance.CreateStereoDepthNode(backend, calibration, minDepthMeters, maxDepthMeters, maxSkewUs, frameOutput);
+            }
+            catch (Exception ex) when (ex is not Server.Web.ApiException)
+            {
+                // the native node refuses a malformed calibration (short rectification arrays, ...)
+                throw Server.Web.ApiException.BadRequest(ex.Message);
+            }
+            sinks.Add(NewStereoDepthSinkRecord(id, name, backend, calibration, minDepthMeters, maxDepthMeters, maxSkewUs, frameOutput));
             DB.Instance.Save();
             return id;
+        }
+
+        private static Sink NewStereoDepthSinkRecord(int id, string name, StereoDepthBackendKind backend, StereoCalibrationResult calibration,
+            double minDepthMeters, double maxDepthMeters, int maxSkewUs, StereoFrameOutput frameOutput) =>
+            new Sink(id, name, SinkType.StereoDepthSink)
+            {
+                StereoDepthBackend = backend,
+                StereoDepthCalibration = StereoCalibrationResultDto.From(calibration),
+                StereoDepthMinMeters = minDepthMeters,
+                StereoDepthMaxMeters = maxDepthMeters,
+                StereoDepthMaxSkewUs = maxSkewUs,
+                StereoDepthFrameOutput = frameOutput,
+            };
+
+        // DB.Load() restore path: recreates the StereoDepthSink at the same id from what its record kept; false for a record saved before the
+        // configuration was kept (it cannot be rebuilt, and whatever was bound to it is skipped by the restore)
+        public bool RestoreStereoDepthSink(Sink persisted)
+        {
+            if (persisted.StereoDepthBackend is not StereoDepthBackendKind backend || persisted.StereoDepthCalibration is not StereoCalibrationResultDto calibrationDto
+                || persisted.StereoDepthMinMeters is not double minDepth || persisted.StereoDepthMaxMeters is not double maxDepth) return false;
+            int maxSkewUs = persisted.StereoDepthMaxSkewUs ?? 0;
+            StereoFrameOutput frameOutput = persisted.StereoDepthFrameOutput ?? default;
+            StereoCalibrationResult calibration = calibrationDto.ToNative();
+            int id = ManagerWrapper.Instance.CreateStereoDepthNode(persisted.Id, backend, calibration, minDepth, maxDepth, maxSkewUs, frameOutput);
+            sinks.Add(NewStereoDepthSinkRecord(id, persisted.Name, backend, calibration, minDepth, maxDepth, maxSkewUs, frameOutput));
+            return true;
         }
 
         public string GetStereoDepthBackendName(int sinkId) => ManagerWrapper.Instance.GetStereoDepthBackendName(sinkId);
@@ -904,7 +973,8 @@ namespace Server
                 bool isSourceUsed = false;
                 foreach (var s in sinks)
                 {
-                    if (s.Source != null && s.Source.Id == source.Id)
+                    // another sink: the one being switched off is not a reason to keep its source capturing
+                    if (s.Id != id && s.Source != null && s.Source.Id == source.Id)
                     {
                         isSourceUsed = true;
                         break;
@@ -955,8 +1025,20 @@ namespace Server
             {
                 if (sink.Id == sinkId)
                 {
-                    ManagerWrapper.Instance.UnbindSourceFromSink(sinkId);
-                    sink.Source = null; // Unbind the source
+                    if (sourceId.HasValue)
+                    {
+                        // one named source: a stereo node keeps the other camera
+                        ManagerWrapper.Instance.UnbindSourceFromSink(sinkId, sourceId.Value);
+                        if (sink.Source?.Id == sourceId.Value) { sink.Source = sink.Source2; sink.Source2 = null; }
+                        else if (sink.Source2?.Id == sourceId.Value) sink.Source2 = null;
+                    }
+                    else
+                    {
+                        // every source: a stereo node has two, and the native call that takes no source id unbinds only the first
+                        ManagerWrapper.Instance.UnbindAllSources(sinkId);
+                        sink.Source = null;
+                        sink.Source2 = null;
+                    }
                     DB.Instance.Save();
                     break;
                 }

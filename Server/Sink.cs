@@ -90,6 +90,15 @@ namespace Server
         // DepthFusionSink only: the StereoDepthSink id it reads its depth grid from directly (not a Source).
         public int? DepthSourceId { get; set; }
 
+        // StereoDepthSink only: what DB.Load() needs to rebuild the node - the backend, the calibration it rectifies with, the depth range, the
+        // pairing skew and the output frame. Null for other types and for records saved before these were kept (such a node is not restored).
+        public StereoDepthBackendKind? StereoDepthBackend { get; set; }
+        public StereoCalibrationResultDto? StereoDepthCalibration { get; set; }
+        public double? StereoDepthMinMeters { get; set; }
+        public double? StereoDepthMaxMeters { get; set; }
+        public int? StereoDepthMaxSkewUs { get; set; }
+        public StereoFrameOutput? StereoDepthFrameOutput { get; set; }
+
         // RecordSink only: persisted so DB.Load() can recreate it with its original config. Null for other sink types.
         public string? RecordDstFolder { get; set; }
         public string? RecordEncoderName { get; set; }

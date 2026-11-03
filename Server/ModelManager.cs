@@ -37,9 +37,20 @@ namespace Server
             File.WriteAllText(manifestPath, JsonSerializer.Serialize(models, new JsonSerializerOptions { WriteIndented = true }));
         }
 
+        // What a model's settings may be: written so that NaN fails every check (a comparison with NaN is false), and an input size that gives the
+        // detector a real picture to work on (a zero or negative one makes every frame throw in the letterbox).
+        public static void ValidateSettings(YoloVariant variant, int inputSize, float confThreshold, float nmsThreshold)
+        {
+            if (!Enum.IsDefined(typeof(YoloVariant), variant)) throw Server.Web.ApiException.BadRequest("variant is not a known YOLO variant");
+            if (inputSize < 32 || inputSize > 4096) throw Server.Web.ApiException.BadRequest("inputSize must be 32 to 4096");
+            if (!(confThreshold >= 0.01f && confThreshold <= 1.0f)) throw Server.Web.ApiException.BadRequest("confThreshold must be 0.01 to 1");
+            if (!(nmsThreshold >= 0.01f && nmsThreshold <= 1.0f)) throw Server.Web.ApiException.BadRequest("nmsThreshold must be 0.01 to 1");
+        }
+
         public Model AddModel(string name, string modelFileName, Stream modelData, string? labelsFileName, Stream? labelsData,
             YoloVariant variant, int inputSize, float confThreshold, float nmsThreshold)
         {
+            ValidateSettings(variant, inputSize, confThreshold, nmsThreshold);
             int id = nextId++;
             string modelPath = Path.Combine("models", $"{id}_{modelFileName}");
             using (var output = File.Create(modelPath)) modelData.CopyTo(output);
@@ -83,8 +94,8 @@ namespace Server
         public Model UpdateModel(int id, string? name, float? confThreshold, float? nmsThreshold)
         {
             var model = GetModel(id) ?? throw Server.Web.ApiException.NotFound($"no model with id {id}");
-            if (confThreshold is < 0.01f or > 1.0f) throw Server.Web.ApiException.BadRequest("confThreshold must be 0.01 to 1");
-            if (nmsThreshold is < 0.01f or > 1.0f) throw Server.Web.ApiException.BadRequest("nmsThreshold must be 0.01 to 1");
+            if (confThreshold.HasValue && !(confThreshold.Value >= 0.01f && confThreshold.Value <= 1.0f)) throw Server.Web.ApiException.BadRequest("confThreshold must be 0.01 to 1");
+            if (nmsThreshold.HasValue && !(nmsThreshold.Value >= 0.01f && nmsThreshold.Value <= 1.0f)) throw Server.Web.ApiException.BadRequest("nmsThreshold must be 0.01 to 1");
             if (name != null && string.IsNullOrWhiteSpace(name)) throw Server.Web.ApiException.BadRequest("the name must not be empty");
 
             if (name != null) model.Name = name.Trim();

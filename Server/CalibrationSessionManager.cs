@@ -116,9 +116,20 @@ namespace Server
                 throw ApiException.BadRequest("clear this camera's frame transform before calibrating it; the calibration is stored for the camera's own pixels and is carried across the transform automatically");
         }
 
+        // A checkerboard needs more than two inner corners each way (cv::findChessboardCorners throws for fewer, on every frame, and a cleared number
+        // field in the UI sends 0), and the square size has to be a positive number of metres.
+        private static void RequireBoard(CalibrationBoardType boardType, int rows, int cols, float squareSizeMeters)
+        {
+            if (boardType == CalibrationBoardType.BOARD_CHECKERBOARD && (rows < 3 || cols < 3))
+                throw ApiException.BadRequest("a checkerboard needs at least 3 inner corners in each direction (rows and cols)");
+            if (rows > 100 || cols > 100) throw ApiException.BadRequest("rows and cols must not be above 100");
+            if (!(squareSizeMeters > 0.0f && squareSizeMeters < 10.0f)) throw ApiException.BadRequest("the square size must be a positive number of metres");
+        }
+
         public CalibrationSession StartCamera(int sourceId, CalibrationBoardType boardType, int rows, int cols,
             float squareSizeMeters, float markerSizeMeters, int arucoDictionaryId)
         {
+            RequireBoard(boardType, rows, cols, squareSizeMeters);
             string cameraPath = RequireCameraPath(sourceId);
             RequireNoTransform(sourceId);
             bool wasActive = SourceManager.Instance.IsSourceActive(sourceId);
@@ -154,6 +165,7 @@ namespace Server
         public CalibrationSession StartStereo(int leftSourceId, int rightSourceId, CalibrationBoardType boardType,
             int rows, int cols, float squareSizeMeters)
         {
+            RequireBoard(boardType, rows, cols, squareSizeMeters);
             string leftPath = RequireCameraPath(leftSourceId);
             string rightPath = RequireCameraPath(rightSourceId);
             RequireNoTransform(leftSourceId);
@@ -166,6 +178,7 @@ namespace Server
         public CalibrationSession StartStereoSplit(int cameraSourceId, CalibrationBoardType boardType,
             int rows, int cols, float squareSizeMeters)
         {
+            RequireBoard(boardType, rows, cols, squareSizeMeters);
             string cameraPath = RequireCameraPath(cameraSourceId);
             RequireNoTransform(cameraSourceId);
             CameraMode mode = ManagerWrapper.Instance.GetCameraCurrentMode(cameraSourceId);

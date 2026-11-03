@@ -146,55 +146,77 @@ namespace Server
                             if (source.Type == SourceType.Camera) SourceManager.Instance.ApplyCameraControls(restored.Id);
                         }
                     }
+                    // Every step below is made per node, and one that fails is logged and skipped: a node that cannot come back (its model is gone, a
+                    // binding points at a node that was deleted, a saved depth node without its configuration) must not take the rest of the graph with it.
                     foreach (var sink in sinks)
                     {
-                        // an ApriltagSink saved with its configuration (tag size, requested backend, tuning) is restored as configured;
-                        // records without it use the generic path's defaults - see RestoreApriltagSink
-                        if (sink.Type == SinkType.ApriltagSink && sink.ApriltagTagSize.HasValue)
-                            SinkManager.Instance.RestoreApriltagSink(sink);
-                        else if (sink.Type == SinkType.ObjectDetectionSink)
-                            SinkManager.Instance.RestoreObjectDetectionSink(sink);
-                        else if (sink.Type == SinkType.NetworkTablesSink)
+                        try
                         {
-                            try { SinkManager.Instance.RestoreNetworkTablesSink(sink); }
-                            catch (Exception ex) { logger.EnterLog($"NetworkTables sink {sink.Id} not restored: {ex.Message}"); }
+                            // an ApriltagSink saved with its configuration (tag size, requested backend, tuning) is restored as configured;
+                            // records without it use the generic path's defaults - see RestoreApriltagSink
+                            if (sink.Type == SinkType.ApriltagSink && sink.ApriltagTagSize.HasValue)
+                                SinkManager.Instance.RestoreApriltagSink(sink);
+                            else if (sink.Type == SinkType.ObjectDetectionSink)
+                            {
+                                if (!SinkManager.Instance.RestoreObjectDetectionSink(sink))
+                                    logger.EnterLog($"Detector {sink.Id} ({sink.Name}) not restored: its model no longer exists");
+                            }
+                            else if (sink.Type == SinkType.StereoDepthSink)
+                            {
+                                if (!SinkManager.Instance.RestoreStereoDepthSink(sink))
+                                    logger.EnterLog($"Stereo depth node {sink.Id} ({sink.Name}) not restored: its record carries no calibration (it was saved by an older version)");
+                            }
+                            else if (sink.Type == SinkType.NetworkTablesSink)
+                                SinkManager.Instance.RestoreNetworkTablesSink(sink);
+                            else if (sink.Type == SinkType.MjpegSink)
+                                SinkManager.Instance.RestoreMjpegSink(sink);
+                            else if (sink.Type == SinkType.WebRTCSink)
+                                SinkManager.Instance.RestoreWebRTCSink(sink);
+                            else if (sink.Type == SinkType.RecordSink)
+                            {
+                                // restored with the second pass below: AddSink's generic switch cannot carry its config
+                            }
+                            else
+                                SinkManager.Instance.AddSink(sink.Name, sink.Type.ToString(), sink.Id);
                         }
-                        else if (sink.Type == SinkType.MjpegSink)
-                            SinkManager.Instance.RestoreMjpegSink(sink);
-                        else if (sink.Type == SinkType.WebRTCSink)
+                        catch (Exception ex)
                         {
-                            try { SinkManager.Instance.RestoreWebRTCSink(sink); }
-                            catch (Exception ex) { logger.EnterLog($"WebRTC sink {sink.Id} not restored: {ex.Message}"); }
+                            logger.EnterLog($"Sink {sink.Id} ({sink.Name}, {sink.Type}) not restored: {ex.Message}");
                         }
-                        else
-                            SinkManager.Instance.AddSink(sink.Name, sink.Type.ToString(), sink.Id);
                     }
 
                     // AddSink's generic switch cannot carry RecordSink's config, so RestoreRecordSink reads the persisted Sink directly
                     foreach (var sink in sinks)
                     {
-                        if (sink.Type == SinkType.RecordSink)
-                        {
-                            SinkManager.Instance.RestoreRecordSink(sink);
-                        }
+                        if (sink.Type != SinkType.RecordSink) continue;
+                        try { SinkManager.Instance.RestoreRecordSink(sink); }
+                        catch (Exception ex) { logger.EnterLog($"Recording sink {sink.Id} ({sink.Name}) not restored: {ex.Message}"); }
                     }
 
                     // AddSink only recreates the native node; the source->sink bindings are restored here (sources are created above)
                     foreach (var sink in sinks)
                     {
-                        if (sink.Source != null && sink.Source2 != null)
+                        try
                         {
-                            // stereo sink (StereoDepthSink): Source is the left role, Source2 the right
-                            SinkManager.Instance.BindStereoSourcesToSink(sink.Id, sink.Source.Id, sink.Source2.Id);
+                            if (sink.Source != null && sink.Source2 != null)
+                            {
+                                // stereo sink (StereoDepthSink): Source is the left role, Source2 the right
+                                SinkManager.Instance.BindStereoSourcesToSink(sink.Id, sink.Source.Id, sink.Source2.Id);
+                            }
+                            else if (sink.Source != null)
+                            {
+                                SinkManager.Instance.BindSourceToSink(sink.Id, sink.Source.Id);
+                            }
                         }
-                        else if (sink.Source != null)
+                        catch (Exception ex)
                         {
-                            SinkManager.Instance.BindSourceToSink(sink.Id, sink.Source.Id);
+                            logger.EnterLog($"Binding of sink {sink.Id} ({sink.Name}) not restored: {ex.Message}");
                         }
 
                         if (sink.DepthSourceId.HasValue)
                         {
-                            SinkManager.Instance.AttachDepthFusionSource(sink.Id, sink.DepthSourceId.Value);
+                            try { SinkManager.Instance.AttachDepthFusionSource(sink.Id, sink.DepthSourceId.Value); }
+                            catch (Exception ex) { logger.EnterLog($"Depth source of sink {sink.Id} ({sink.Name}) not restored: {ex.Message}"); }
                         }
                     }
 
@@ -202,10 +224,9 @@ namespace Server
                     // (its encoder runs on every frame even with no peer). StartSinkById also starts a sink's bound source; RecordSink is included so recordings resume.
                     foreach (var sink in sinks)
                     {
-                        if (sink.Type != SinkType.WebRTCSink && !SinkManager.Instance.IsNodeDisabled(sink.Id))
-                        {
-                            SinkManager.Instance.EnableSinkById(sink.Id);
-                        }
+                        if (sink.Type == SinkType.WebRTCSink || SinkManager.Instance.IsNodeDisabled(sink.Id)) continue;
+                        try { SinkManager.Instance.EnableSinkById(sink.Id); }
+                        catch (Exception ex) { logger.EnterLog($"Sink {sink.Id} ({sink.Name}) not started: {ex.Message}"); }
                     }
 
                     logger.EnterLog("DB loaded successfully from " + jsonPath);
@@ -282,12 +303,19 @@ namespace Server
         {
             SinkManager.Instance.DeleteOrphanPreviews();
 
-            foreach (var sink in sinks)
+            foreach (var sink in sinks.ToList())
             {
-                if (SinkManager.Instance.GetSinkById(sink.Id) == null)
+                if (SinkManager.Instance.GetSinkById(sink.Id) != null) continue;
+                // Only the types AddSink can create from a name alone are brought back here. A detector needs its model, a depth node its
+                // calibration, a stream or a recording its settings: those were restored (or refused, with a log line) by Load, and re-adding
+                // them blank used to throw - and Program.Main calls Verify unguarded, so a deleted model stopped the server from starting.
+                if (sink.Type != SinkType.ApriltagSink && sink.Type != SinkType.DepthFusionSink)
                 {
-                    SinkManager.Instance.AddSink(sink.Name, sink.Type.ToString());
+                    logger.EnterLog($"Sink {sink.Id} ({sink.Name}, {sink.Type}) was not restored and is dropped");
+                    continue;
                 }
+                try { SinkManager.Instance.AddSink(sink.Name, sink.Type.ToString()); }
+                catch (Exception ex) { logger.EnterLog($"Sink {sink.Id} ({sink.Name}) could not be re-created: {ex.Message}"); }
             }
 
             foreach (var source in sources)
