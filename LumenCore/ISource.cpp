@@ -86,6 +86,11 @@ void ISource::UnregisterFrameConsumer(const std::string& sinkId)
 	m_FrameConsumers.erase(sinkId);
 }
 
+void ISource::SyncFrameConsumers() const
+{
+	std::lock_guard<std::mutex> guard(m_FrameConsumersMutex);
+}
+
 bool ISource::HasActiveFrameConsumer() const
 {
 	m_DecisionGeneration = m_RequestGeneration.load();

@@ -57,6 +57,9 @@ void ISink::Toggle(bool toggle)
             m_Wake->cv.notify_one();
             m_Thread.join();
             m_ToggleState = false;
+            // a consumer callback on a source's thread may be reading this sink right now (it saw the toggle on): wait for it, so nothing that
+            // follows - OnStopped(), and the destruction a caller is usually about to start - races its read
+            for (const Binding& binding : CopyBindings()) binding.source->SyncFrameConsumers();
             OnStopped();
         }
     }

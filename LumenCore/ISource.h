@@ -48,6 +48,9 @@ public:
 	// wantsNow (optional) is the sharper question the detectors ask once per frame - would this consumer use a frame published right now (see
 	// ISink::WantsFrameNow) - while isActive stays the steady "is anyone watching", which decides the camera's colour or grey decode.
 	void RegisterFrameConsumer(const std::string& sinkId, bool requiresFrame, bool requiresColor, std::function<bool()> isActive, std::function<bool()> wantsNow = nullptr);
+	// Returns once no consumer callback is running: a callback that was mid-flight when the sink it belongs to was switched off has finished (and
+	// its reads of that sink are ordered before anything the caller does next). ISink::Toggle(false) calls it on every bound source.
+	void SyncFrameConsumers() const;
 	// removed on an explicit UnbindSource, not on destruction (isActive then returns false forever, leaving a few dead entries)
 	void UnregisterFrameConsumer(const std::string& sinkId);
 

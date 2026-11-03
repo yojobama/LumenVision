@@ -141,13 +141,17 @@ TEST_CASE("an MjpegSink encodes only while its frames are being polled", "[mjpeg
 	// polled: frames keep being encoded, at the poll rate rather than the 30 fps the clip plays at
 	WaitForFrameSize(manager, sinkId, cv::Size());
 	const int polledStart = EncodedFrames(manager, sinkId);
+	const auto pollingStarted = std::chrono::steady_clock::now();
 	for (int i = 0; i < 20; i++) {
 		manager.GetMjpegFrameBase64(sinkId);
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 	}
+	const double pollingMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - pollingStarted).count();
 	const int polledEncodes = EncodedFrames(manager, sinkId) - polledStart;
 	REQUIRE(polledEncodes >= 1); // a sanitiser build on a slow board encodes only a few a second; the bound below is what shows it is the poll rate
-	REQUIRE(polledEncodes <= 14); // ~1 s of polling at one encode per 80 ms at most
+	// one encode per 80 ms at most, over however long the polling really took (about a second; a ThreadSanitizer build stretches it, and the
+	// bound has to stretch with it), plus one for the frame in flight at each end
+	REQUIRE(polledEncodes <= static_cast<int>(pollingMs / 80.0) + 2);
 
 	// unpolled: after the watched window runs out nothing is encoded
 	std::this_thread::sleep_for(std::chrono::milliseconds(2200));
