@@ -88,6 +88,8 @@ void ISource::UnregisterFrameConsumer(const std::string& sinkId)
 
 bool ISource::HasActiveFrameConsumer() const
 {
+	m_DecisionGeneration = m_RequestGeneration.load();
+	m_DecisionMade = true;
 	if (m_FrameRequests > 0) return true;
 	std::lock_guard<std::mutex> guard(m_FrameConsumersMutex);
 	for (const auto& [id, consumer] : m_FrameConsumers) {
@@ -98,6 +100,8 @@ bool ISource::HasActiveFrameConsumer() const
 
 bool ISource::HasActiveColorFrameConsumer() const
 {
+	m_DecisionGeneration = m_RequestGeneration.load();
+	m_DecisionMade = true;
 	if (m_FrameRequests > 0) return true;
 	std::lock_guard<std::mutex> guard(m_FrameConsumersMutex);
 	for (const auto& [id, consumer] : m_FrameConsumers) {
@@ -132,7 +136,8 @@ void ISource::SetLatestResult(SourceResult result)
 		// bumped here on every published result rather than in each subclass.
 		m_FrameCount++;
 	}
-	if (hasFrame) m_FrameRequests = 0;
+	// a source that never asks (an image file) has no decision to be late for: its next frame answers the request
+	if (hasFrame && (!m_DecisionMade || m_DecisionGeneration.load() >= m_RequestGeneration.load())) m_FrameRequests = 0;
 
 	// "age": how old the frame is as this node publishes it - the latency the UI shows - and "interval": time since the previous result
 	if (m_Profile && ageUs >= 0) {

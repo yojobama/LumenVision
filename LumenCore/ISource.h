@@ -66,7 +66,10 @@ public:
 
 	// Makes HasActiveFrameConsumer/HasActiveColorFrameConsumer true until the next published result that carries a frame, so a
 	// detector draws its annotated output (and a camera decodes colour) for one snapshot even with nothing streaming it.
-	void RequestFrameOnce() { m_FrameRequests++; }
+	// A frame that was already in flight when the request arrived (its colour/annotation decision was taken before) does not clear it: the next
+	// frame, decided with the request in sight, does. HasPendingFrameRequest() tells a waiter whether that has happened yet.
+	void RequestFrameOnce() { m_FrameRequests++; m_RequestGeneration++; }
+	bool HasPendingFrameRequest() const { return m_FrameRequests > 0; }
 protected:
 	// this node's stage timings (shared with its ISink half when it has one); see StageProfile.h
 	StageProfile* SourceProfile() const { return m_Profile.get(); }
@@ -107,6 +110,11 @@ private:
 
 	std::atomic<int> m_FpsLimit{ -1 };
 	std::atomic<int> m_FrameRequests{ 0 };
+	// RequestFrameOnce bumps the generation; HasActive*FrameConsumer record the one they saw, which is the decision the frame being made is
+	// built on. A result clears the request only when no request arrived after that decision.
+	std::atomic<uint64_t> m_RequestGeneration{ 0 };
+	mutable std::atomic<uint64_t> m_DecisionGeneration{ 0 };
+	mutable std::atomic<bool> m_DecisionMade{ false };
 	uint64_t m_LastPublishedUs = 0; // guarded by m_ResultLock
 
 	std::string m_ID;

@@ -15,5 +15,6 @@ private:
 	void CaptureFrame() override;
 	cv::VideoCapture m_Capture;
 	int m_Fps;
+	bool m_LoggedReadFailure = false; // a file that cannot be read at all is reported once, not every frame
 };
 

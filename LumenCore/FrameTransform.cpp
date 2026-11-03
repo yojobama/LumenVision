@@ -18,7 +18,10 @@ cv::Rect FrameTransform::EffectiveCrop(cv::Size input) const
 {
 	cv::Rect whole(0, 0, input.width, input.height);
 	if (cropWidth <= 0 || cropHeight <= 0) return whole;
-	return cv::Rect(cropX, cropY, cropWidth, cropHeight) & whole;
+	// a crop that misses the picture (set for one camera mode, then the mode was lowered) is ignored, so the frames still turn and mirror, and
+	// OutputSize()/TransformCalibration() describe the frames that are actually published
+	const cv::Rect crop = cv::Rect(cropX, cropY, cropWidth, cropHeight) & whole;
+	return crop.empty() ? whole : crop;
 }
 
 cv::Size FrameTransform::OutputSize(cv::Size input) const

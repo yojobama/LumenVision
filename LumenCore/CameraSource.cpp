@@ -174,8 +174,20 @@ void CameraFrameSource::CaptureFrame()
             Frame published = format == FrameFormat::NV12 ? Frame::FromNv12(image, grab.nv12Uv, owner) : Frame(image, format, owner);
             SetLatestResult(SourceResult(std::nullopt, published, grab.captureTimeUs));
             lap.Mark("publish");
+            m_GrabFailures = 0;
         } else {
-            m_Logger->EnterLog(LogLevel::Error, "camera grab failed for " + m_DevicePath);
+            const auto now = std::chrono::steady_clock::now();
+            if (m_GrabFailures == 0 || now - m_LastGrabFailureLogged >= std::chrono::seconds(1)) {
+                m_Logger->EnterLog(LogLevel::Error, "camera grab failed for " + m_DevicePath + " (" + std::to_string(m_GrabFailures + 1) + " in a row)");
+                m_LastGrabFailureLogged = now;
+            }
+            // not a busy loop: a failing read returns at once on a camera that has gone away
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            if (++m_GrabFailures >= 40) {
+                m_Logger->EnterLog(LogLevel::Error, "camera " + m_DevicePath + " keeps failing to deliver frames: closing it to reopen it");
+                m_Backend->Close();
+                m_GrabFailures = 0;
+            }
         }
     } else {
         // Without this the capture thread would spin on a core and write an error line per iteration. Say it once, then retry the

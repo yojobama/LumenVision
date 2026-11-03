@@ -145,7 +145,12 @@ bool V4l2CameraBackend::Open(const std::string& devicePath)
 		ApplyFormat(modes[0].width, modes[0].height, FrameFormatToFourCc(modes[0].pixelFormat));
 	}
 
-	return StartStreaming();
+	// a camera that cannot stream is not open: leaving the fd open would report IsOpened() while every Grab() fails
+	if (!StartStreaming()) {
+		Close();
+		return false;
+	}
+	return true;
 }
 
 void V4l2CameraBackend::Close()
@@ -187,36 +192,31 @@ bool V4l2CameraBackend::StartStreaming()
 	req.memory = V4L2_MEMORY_MMAP;
 	if (XIoctl(m_Fd, VIDIOC_REQBUFS, &req) < 0 || req.count < 1) return false;
 
-	m_Buffers.resize(req.count);
+	// Every failure below goes through StopStreaming(): it unmaps what has been mapped so far and releases the kernel's buffers (a plain
+	// m_Buffers.clear() leaked the mappings, and the allocation then made VIDIOC_S_FMT fail with EBUSY until the device was closed).
+	auto fail = [this]() {
+		StopStreaming();
+		return false;
+	};
+
+	m_Buffers.assign(req.count, MappedBuffer{});
 	for (unsigned int i = 0; i < req.count; i++) {
 		v4l2_buffer buf{};
 		buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		buf.memory = V4L2_MEMORY_MMAP;
 		buf.index = i;
-		if (XIoctl(m_Fd, VIDIOC_QUERYBUF, &buf) < 0) {
-			m_Buffers.clear();
-			return false;
-		}
+		if (XIoctl(m_Fd, VIDIOC_QUERYBUF, &buf) < 0) return fail();
 
+		void* start = mmap(nullptr, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, m_Fd, buf.m.offset);
+		if (start == MAP_FAILED) return fail();
 		m_Buffers[i].length = buf.length;
-		m_Buffers[i].start = mmap(nullptr, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, m_Fd, buf.m.offset);
-		if (m_Buffers[i].start == MAP_FAILED) {
-			m_Buffers[i].start = nullptr;
-			m_Buffers.clear();
-			return false;
-		}
+		m_Buffers[i].start = start;
 
-		if (XIoctl(m_Fd, VIDIOC_QBUF, &buf) < 0) {
-			m_Buffers.clear();
-			return false;
-		}
+		if (XIoctl(m_Fd, VIDIOC_QBUF, &buf) < 0) return fail();
 	}
 
 	v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-	if (XIoctl(m_Fd, VIDIOC_STREAMON, &type) < 0) {
-		m_Buffers.clear();
-		return false;
-	}
+	if (XIoctl(m_Fd, VIDIOC_STREAMON, &type) < 0) return fail();
 
 	m_Streaming = true;
 	return true;
@@ -274,7 +274,9 @@ CameraGrabResult V4l2CameraBackend::Grab(bool preferGray)
 		v4l2_buffer next{};
 		next.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 		next.memory = V4L2_MEMORY_MMAP;
-		if (XIoctl(m_Fd, VIDIOC_DQBUF, &next) < 0) break;
+		// `buf` is already back with the driver here: if the next dequeue fails there is no frame in hand (decoding `buf` would read a buffer the
+		// driver may be writing, and requeuing it again at the end would queue it twice)
+		if (XIoctl(m_Fd, VIDIOC_DQBUF, &next) < 0) return result;
 		buf = next;
 	}
 

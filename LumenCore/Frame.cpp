@@ -76,8 +76,9 @@ Frame Frame::Roi(const cv::Rect& roi) const
 		// both planes are cut at half the luma coordinates and keep the frame's buffer alive
 		return FromNv12(m_Storage->mat(roi), m_Storage->uv(cv::Rect(roi.x / 2, roi.y / 2, roi.width / 2, roi.height / 2)), m_Storage->matPoolOwner);
 	}
-	// cv::Mat's ROI constructor is zero-copy: a new header sharing the same refcounted data.
-	return Frame(m_Storage->mat(roi), m_Storage->format);
+	// cv::Mat's ROI constructor is zero-copy: a new header sharing the same refcounted data. The view also keeps the pool owner, or the
+	// parent's buffer would go back to the FramePool once the parent is released and the next capture would overwrite what the view shows.
+	return Frame(m_Storage->mat(roi), m_Storage->format, m_Storage->matPoolOwner);
 }
 
 const cv::Mat& Frame::AsGray() const

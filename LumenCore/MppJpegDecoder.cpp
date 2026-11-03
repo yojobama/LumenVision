@@ -18,6 +18,25 @@ namespace {
 	// MPP_ALIGN as in rockchip-linux/mpp's osal/inc/mpp_common.h (not on the public include path); only used with a=16.
 	constexpr RK_U32 MppAlign(RK_U32 x, RK_U32 a) { return (x + a - 1) & ~(a - 1); }
 
+	// Whether a JPEG has a single colour component (greyscale), from its frame header: the decoder block then writes the luma plane only, and the
+	// chroma plane of the NV12 it reports is whatever the reused output buffer held before.
+	bool IsSingleComponentJpeg(const uint8_t* data, size_t size)
+	{
+		size_t pos = 2; // after SOI
+		while (pos + 4 <= size) {
+			if (data[pos] != 0xFF) { pos++; continue; }
+			const uint8_t marker = data[pos + 1];
+			if (marker == 0xFF) { pos++; continue; } // fill byte
+			if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD8)) { pos += 2; continue; } // standalone markers
+			if (marker == 0xD9 || marker == 0xDA) return false; // end of image / start of scan, with no frame header seen
+			const size_t length = (static_cast<size_t>(data[pos + 2]) << 8) | data[pos + 3];
+			const bool isFrameHeader = marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC;
+			if (isFrameHeader) return pos + 9 < size && data[pos + 9] == 1; // SOFn: length, precision, height, width, then the component count
+			pos += 2 + length;
+		}
+		return false;
+	}
+
 	// shared by EnsureOutputBufferGroup and EnsureInputBufferGroup: tried in mpp_buffer.h priority order (DMA_HEAP > DRM > ION),
 	// falling back if the preferred allocator is unavailable.
 	//
@@ -206,6 +225,12 @@ bool MppJpegDecoder::DecodeNv12(const uint8_t* jpegData, size_t jpegSize, int wi
 							if (base && frameWidth >= width && frameHeight >= height && frameHorStride >= width && frameVerStride >= height &&
 								width % 2 == 0 && height % 2 == 0) {
 								m_LastHwUs = std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - start).count();
+								// a greyscale JPEG has no chroma to decode: give it the neutral value (128 is "no colour"), or the picture comes
+								// out green / carries the previous frame's colour. Flushed so the CPU's write reaches the buffer other blocks read.
+								if (IsSingleComponentJpeg(jpegData, jpegSize)) {
+									std::memset(base + static_cast<size_t>(frameHorStride) * frameVerStride, 0x80, static_cast<size_t>(frameHorStride) * frameVerStride / 2);
+									mpp_buffer_sync_end(frameBuffer);
+								}
 								// the CPU will read the buffer: invalidate its cache lines once, now that the decoder has written it
 								// (the buffer is cacheable); the planes are then read-only for everyone
 								mpp_buffer_sync_ro_begin(frameBuffer);

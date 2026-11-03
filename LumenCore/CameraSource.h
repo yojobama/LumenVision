@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <optional>
 #include "ISource.h"
 #include "CameraMode.h"
@@ -50,6 +51,10 @@ private:
 	// puts the last mode that was applied back once the device is open again.
 	bool m_ClosedLogged = false;
 	int m_RetrySeconds = 2; // grows to 10 while the device stays away
+	// A camera that is unplugged can go on reporting itself open while every read fails (Media Foundation and V4L2 both do). Failed grabs are
+	// paced, logged once a second at most, and after a couple of seconds of them the device is closed so the retry branch above reopens it.
+	int m_GrabFailures = 0;
+	std::chrono::steady_clock::time_point m_LastGrabFailureLogged{};
 	std::mutex m_ModeMutex;
 	std::optional<CameraMode> m_LastMode;
 };

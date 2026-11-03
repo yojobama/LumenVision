@@ -734,7 +734,8 @@ bool Manager::SaveFreshSnapshot(int sourceId, string path)
     for (int waitedMs = 0; waitedMs < 1000; waitedMs += 10) {
         if (source->GetCurrentFrameCount() > framesBefore) {
             SourceResult fresh = source->GetLatestResult();
-            if (fresh.frame.has_value() && !fresh.frame->empty()) break;
+            // a frame that was already in flight when the request came (grey, say, from a camera feeding only a detector) does not answer it
+            if (fresh.frame.has_value() && !fresh.frame->empty() && !source->HasPendingFrameRequest()) break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
