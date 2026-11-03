@@ -67,8 +67,10 @@ namespace Server.Controllers.sources
                 .Where(source => source?.Type == SourceType.Camera && source.CameraHardwareInfo != null)
                 .Select(source => ResolveDevicePath(source!.CameraHardwareInfo!.path))
                 .ToHashSet();
+            // each element is copied while the native vector is still alive (see SourceManager.InitializeCameraSource)
             return ManagerWrapper.Instance.EnumerateAvailableCameras()
                 .Where(hardwareInfo => !registered.Contains(ResolveDevicePath(hardwareInfo.path)))
+                .Select(hardwareInfo => CameraHardwareInfoDto.From(hardwareInfo).ToNative())
                 .ToArray();
         }
 

@@ -111,7 +111,10 @@ namespace Server
             else
                 sourceId = ManagerWrapper.Instance.CreateCameraSource(cameraHardwareInfo);
 
-            sources.Add(new Source(sourceId, name, SourceType.Camera, cameraHardwareInfo: cameraHardwareInfo));
+            // An owned copy. The camera info that comes out of ManagerWrapper.EnumerateAvailableCameras() is a view into that native vector's memory,
+            // which is freed when the garbage collector finalises the vector: a Source holding the view then read freed memory on the next save or
+            // state broadcast (an access violation that aborted the service).
+            sources.Add(new Source(sourceId, name, SourceType.Camera, cameraHardwareInfo: CameraHardwareInfoDto.From(cameraHardwareInfo).ToNative()));
             DB.Instance.Save();
             return sourceId;
         }
