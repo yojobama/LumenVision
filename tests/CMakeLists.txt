@@ -39,6 +39,14 @@ add_executable(LumenCoreTests
     test_camera_closed.cpp
 )
 
+# Regression tests for the edge cases found by the edge-case hunt, one folder per area: every tests/edge/<area>/*.cpp (CONFIGURE_DEPENDS picks up new files)
+file(GLOB_RECURSE LUMEN_EDGE_TESTS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/edge/*.cpp")
+if(NOT (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64"))
+    # the board-* hunters' tests use POSIX headers and Rockchip hardware: the Orange Pi (Linux arm64) only
+    list(FILTER LUMEN_EDGE_TESTS EXCLUDE REGEX "/edge/board-[^/]*/")
+endif()
+target_sources(LumenCoreTests PRIVATE ${LUMEN_EDGE_TESTS})
+
 # Every LUMEN_WITH_* feature the library was built with, so a test sees the same class layouts as LumenCore (a header guards members with them: the RGA
 # helper inside RknnDetectionBackend, for one). Without this a test that builds such an object on its own stack constructs it with a smaller size than the
 # library's constructor writes, which AddressSanitizer reported as a stack-buffer-overflow.

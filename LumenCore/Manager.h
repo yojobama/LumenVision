@@ -7,6 +7,8 @@
 #include <memory>
 
 #include "ISink.h"
+#include "NodeMap.h"
+#include <mutex>
 #include "CameraCalibrationResult.h"
 #include "Logger.h"
 #include "ISource.h"
@@ -62,6 +64,10 @@ public:
 	// binds the source to the sink unless it already is; true when it is bound afterwards
 	bool EnsureSourceBoundToSink(int sourceId, int sinkId);
 	bool UnbindSourceFromSink(int sinkId);
+	// Unbinds one named source from the sink (the call above unbinds only the first it meets, which leaves the other camera of a stereo node
+	// bound), or every source it has.
+	bool UnbindSourceFromSink(int sinkId, int sourceId);
+	bool UnbindAllSources(int sinkId);
 
 	// functions to create frame sources
 	int CreateCameraSource(CameraHardwareInfo info);
@@ -402,8 +408,14 @@ private:
 	int GenerateUUID();
 
 	// maps for storing results, sources and sinks
-	map<int, std::shared_ptr<ISource>> m_Sources;
-	map<int, std::shared_ptr<ISink>> m_Sinks;
+	// Both maps are safe to use from several threads (the server's REST handlers, its state broadcast and the NetworkTables control tick all
+	// call in together); see NodeMap.h. m_EditMutex additionally makes each graph edit (bind, unbind, delete) one step, so a check made by
+	// an edit (is this bound already, would this make a loop) still holds when it acts.
+	NodeMap<ISource> m_Sources;
+	NodeMap<ISink> m_Sinks;
+	std::recursive_mutex m_EditMutex;
+	// whether `target` feeds `from`, directly or through other nodes' inputs (the walk the loop check in the bind functions makes)
+	static bool FeedsInto(const ISource* target, const ISink* from, int depth = 0);
 	//map<int, std::shared_ptr<CameraCalibrationSink>> m_CameraCalibrationSinks; // camera calibration sinks
 
 	std::shared_ptr<Logger> m_Logger; // a logger for the entire application

@@ -36,8 +36,11 @@ public:
 	bool GetToggleStatus();
 
 	// registers a callback invoked (off the result lock) whenever a new result is published;
-	// used by bound ISinks to wake their processing thread instead of polling
-	void AddResultListener(std::function<void()> listener);
+	// used by bound ISinks to wake their processing thread instead of polling. The id it returns removes the listener again
+	// (ISink does so on unbind and on destruction, so a source never keeps calling for a sink that has gone).
+	using ListenerId = uint64_t;
+	ListenerId AddResultListener(std::function<void()> listener);
+	void RemoveResultListener(ListenerId id);
 
 	// Called by ISink::BindSource/UnbindSource so a dual-role node (ApriltagDetector/ObjectDetectionSink) can tell whether
 	// anything downstream wants its FRAME (not just its JSON). isActive is called lazily so it reflects the consumer's
@@ -86,10 +89,12 @@ private:
 	std::mutex m_ResultLock;
 	std::jthread m_Thread;
 	std::atomic<bool> m_ShouldTerminate{ false };
-	bool m_ToggleState = false;
+	std::atomic<bool> m_ToggleState{ false };
+	std::mutex m_ToggleMutex; // makes Toggle's check-then-act atomic: two threads enabling at once must not both start a thread
 
 	std::mutex m_ListenersMutex;
-	std::vector<std::function<void()>> m_Listeners;
+	std::vector<std::pair<ListenerId, std::function<void()>>> m_Listeners;
+	ListenerId m_NextListenerId = 1;
 
 	struct FrameConsumer {
 		bool requiresFrame;

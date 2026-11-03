@@ -23,9 +23,14 @@ public:
 
     std::string GetID();
 
+    // Binding a source that is already bound succeeds without binding it again (a second binding would hand every result over twice).
     bool BindSource(std::shared_ptr<ISource> p_Source);
 	bool UnbindSource(std::string sourceID);
+	// removes every bound source; returns whether there was any
+	bool UnbindAllSources();
 	bool IsBoundTo(const std::string& sourceID) const;
+	// the sources bound right now, in bind order (a snapshot: safe to use while another thread binds or unbinds)
+	std::vector<std::shared_ptr<ISource>> GetBoundSources() const;
     void Toggle(bool threadWantedAlive);
 	bool GetToggleStatus();
 	// Whether anything is receiving this sink's output right now. A toggled-on preview sink with no viewer returns false, which lets
@@ -61,26 +66,40 @@ private:
 
     std::jthread m_Thread;
     std::atomic<bool> m_ShouldTerminate{ false };
+    std::mutex m_ToggleMutex; // makes Toggle's check-then-act atomic: two threads enabling at once must not both start a thread
 
-    std::mutex m_WakeMutex;
-    std::condition_variable m_WakeCV;
-    bool m_DataAvailable = false;
-
-    // shared with the lambdas registered via ISource::AddResultListener; flipped to false in
-    // ~ISink so a listener firing after this sink is destroyed does not touch a dangling `this`
-    std::shared_ptr<std::atomic<bool>> m_AliveFlag = std::make_shared<std::atomic<bool>>(true);
+    // What the result listeners touch. It is shared with them (by weak_ptr), so a source that is still calling a listener while this sink is
+    // being destroyed wakes nothing that has been freed; ~ISink also removes the listeners, so this is the second line of defence.
+    struct WakeState {
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool dataAvailable = false;
+    };
+    std::shared_ptr<WakeState> m_Wake = std::make_shared<WakeState>();
 
     std::string m_ID;
     std::shared_ptr<StageProfile> m_Profile;
 
-    bool m_ToggleState = false;
+    std::atomic<bool> m_ToggleState{ false };
 
     bool m_RequireJson;
     bool m_RequireFrame;
     bool m_RequireColor;
     int m_MaxSources;
 
-    // uint64_t to match ISource::GetCurrentFrameCount()'s return type (an int would truncate past ~2^31 frames)
-    std::vector<std::pair<std::shared_ptr<ISource>, uint64_t>> m_Sources;
+    // One bound source. lastFrameCount is shared so the processing thread can work on a copy of the bindings while the vector itself is
+    // changed by BindSource/UnbindSource on another thread. uint64_t to match ISource::GetCurrentFrameCount()'s return type.
+    struct Binding {
+        std::shared_ptr<ISource> source;
+        std::shared_ptr<std::atomic<uint64_t>> lastFrameCount;
+        ISource::ListenerId listener = 0;
+    };
+    // guarded by m_SourcesMutex
+    mutable std::mutex m_SourcesMutex;
+    std::vector<Binding> m_Sources;
+    // takes the binding off its source (listener and frame consumer); call without m_SourcesMutex held
+    void Detach(const Binding& binding);
+    // the processing loop's view of the bindings
+    std::vector<Binding> CopyBindings() const;
 };
 

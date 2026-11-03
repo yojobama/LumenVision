@@ -94,30 +94,15 @@ vector<int> Manager::GetAllSinks()
 {
     m_Logger->EnterLog("GetAllSinks called");
     vector<int> returnVector;
-
-    auto iterator = m_Sinks.begin();
-
-    while (iterator != m_Sinks.end())
-    {
-        returnVector.push_back(iterator->first);
-        iterator++;
-    }
-
+    for (const auto& entry : m_Sinks.snapshot()) returnVector.push_back(entry.first);
     return returnVector;
 }
 
 vector<int> Manager::GetAllSources()
 {
 	vector<int> sourceIds;
-
-	auto iterator = m_Sources.begin();
-
-    while (iterator != m_Sources.end()) {
-		sourceIds.push_back(iterator->first);
-        iterator++;
-    }
-
-    return sourceIds;
+	for (const auto& entry : m_Sources.snapshot()) sourceIds.push_back(entry.first);
+	return sourceIds;
 }
 
 std::vector<std::string> Manager::GetAvailableVideoEncoders()
@@ -237,10 +222,34 @@ vector<CameraHardwareInfo> Manager::EnumerateAvailableCameras()
 }
 #endif
 
+bool Manager::FeedsInto(const ISource* target, const ISink* from, int depth)
+{
+    // a graph is a few dozen nodes; the depth cap only guards against a loop that was somehow made anyway
+    if (from == nullptr || depth > 256) return false;
+    for (const auto& bound : from->GetBoundSources()) {
+        if (bound.get() == target) return true;
+        if (FeedsInto(target, dynamic_cast<const ISink*>(bound.get()), depth + 1)) return true;
+    }
+    return false;
+}
+
+namespace {
+    // Binding `source` into `sink` would make a loop when the sink's own output (it is a dual-role node) already feeds the source,
+    // or is the source itself: each node's result wakes the other, with no camera in the loop, at full CPU forever.
+    bool WouldMakeLoop(const std::shared_ptr<ISource>& source, const std::shared_ptr<ISink>& sink, bool (*feedsInto)(const ISource*, const ISink*, int))
+    {
+        const ISource* sinkAsSource = dynamic_cast<const ISource*>(sink.get());
+        if (sinkAsSource == nullptr) return false;
+        if (sinkAsSource == source.get()) return true;
+        return feedsInto(sinkAsSource, dynamic_cast<const ISink*>(source.get()), 0);
+    }
+}
+
 bool Manager::BindStereoSources(int sinkId, int leftSourceId, int rightSourceId) {
     m_Logger->EnterLog("BindStereoSources called with sinkId=" + std::to_string(sinkId) +
         ", leftSourceId=" + std::to_string(leftSourceId) + ", rightSourceId=" + std::to_string(rightSourceId));
 
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
     auto sinkIt = m_Sinks.find(sinkId);
     if (sinkIt == m_Sinks.end()) {
         m_Logger->EnterLog("Sink not found: " + std::to_string(sinkId));
@@ -250,6 +259,14 @@ bool Manager::BindStereoSources(int sinkId, int leftSourceId, int rightSourceId)
     auto rightIt = m_Sources.find(rightSourceId);
     if (leftIt == m_Sources.end() || rightIt == m_Sources.end()) {
         m_Logger->EnterLog("BindStereoSources: left or right source not found");
+        return false;
+    }
+    if (leftIt->second == rightIt->second) {
+        m_Logger->EnterLog(LogLevel::Error, "BindStereoSources: the left and right source are the same node");
+        return false;
+    }
+    if (WouldMakeLoop(leftIt->second, sinkIt->second, &Manager::FeedsInto) || WouldMakeLoop(rightIt->second, sinkIt->second, &Manager::FeedsInto)) {
+        m_Logger->EnterLog(LogLevel::Error, "BindStereoSources: that would feed the node into itself");
         return false;
     }
 
@@ -270,6 +287,7 @@ bool Manager::BindStereoSources(int sinkId, int leftSourceId, int rightSourceId)
 
 bool Manager::BindSourceToSink(int sourceId, int sinkId) {
     m_Logger->EnterLog("BindSourceToSink called with sourceId=" + std::to_string(sourceId) + ", sinkId=" + std::to_string(sinkId));
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
     auto source = m_Sources.find(sourceId);
     if (source == m_Sources.end()) {
         m_Logger->EnterLog("Source not found: " + std::to_string(sourceId));
@@ -280,6 +298,10 @@ bool Manager::BindSourceToSink(int sourceId, int sinkId) {
         m_Logger->EnterLog("Sink not found: " + std::to_string(sinkId));
         return false;
     }
+    if (WouldMakeLoop(source->second, sink->second, &Manager::FeedsInto)) {
+        m_Logger->EnterLog(LogLevel::Error, "BindSourceToSink: that would feed the node into itself");
+        return false;
+    }
 
     bool result = sink->second->BindSource(source->second);
     m_Logger->EnterLog("BindSourceToSink result: " + std::to_string(result));
@@ -287,22 +309,25 @@ bool Manager::BindSourceToSink(int sourceId, int sinkId) {
 }
 
 bool Manager::EnsureSourceBoundToSink(int sourceId, int sinkId) {
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
     auto source = m_Sources.find(sourceId);
     auto sink = m_Sinks.find(sinkId);
     if (source == m_Sources.end() || sink == m_Sinks.end()) return false;
     if (sink->second->IsBoundTo(source->second->GetID())) return true;
+    if (WouldMakeLoop(source->second, sink->second, &Manager::FeedsInto)) return false;
     return sink->second->BindSource(source->second);
 }
 
 bool Manager::UnbindSourceFromSink(int sinkId) {
     m_Logger->EnterLog("UnbindSourceFromSink called with sinkId=" + std::to_string(sinkId));
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
     auto sink = m_Sinks.find(sinkId);
     if (sink == m_Sinks.end()) {
         m_Logger->EnterLog("Sink not found: " + std::to_string(sinkId));
         return false;
     }
 
-    for (const auto& sourcePair : m_Sources) {
+    for (const auto& sourcePair : m_Sources.snapshot()) {
         if (sink->second->UnbindSource(sourcePair.second->GetID())) {
             m_Logger->EnterLog("UnbindSourceFromSink result: true");
             return true;
@@ -314,9 +339,25 @@ bool Manager::UnbindSourceFromSink(int sinkId) {
     return result;
 }
 
+bool Manager::UnbindSourceFromSink(int sinkId, int sourceId) {
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
+    auto sink = m_Sinks.find(sinkId);
+    auto source = m_Sources.find(sourceId);
+    if (sink == m_Sinks.end() || source == m_Sources.end()) return false;
+    return sink->second->UnbindSource(source->second->GetID());
+}
+
+bool Manager::UnbindAllSources(int sinkId) {
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
+    auto sink = m_Sinks.find(sinkId);
+    if (sink == m_Sinks.end()) return false;
+    return sink->second->UnbindAllSources();
+}
+
 bool Manager::DeleteSink(int sinkId)
 {
     m_Logger->EnterLog("DeleteSink called with sinkId=" + std::to_string(sinkId));
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
     auto sinkIt = m_Sinks.find(sinkId);
     if (sinkIt == m_Sinks.end()) {
         m_Logger->EnterLog("Sink not found: " + std::to_string(sinkId));
@@ -325,6 +366,8 @@ bool Manager::DeleteSink(int sinkId)
 
     std::shared_ptr<ISink> p_Sink = sinkIt->second;
     p_Sink->Toggle(false);
+    // a node that was bound to itself (or to something fed by it) no longer holds on to the thing that holds it
+    p_Sink->UnbindAllSources();
 
     // dual-role nodes (e.g. CameraCalibrator, ApriltagDetector) are registered under the same id
     // in m_Sources too; stop that half and unbind every other sink from it before erasing either,
@@ -333,15 +376,15 @@ bool Manager::DeleteSink(int sinkId)
     if (sourceIt != m_Sources.end() && sourceIt->second == std::dynamic_pointer_cast<ISource>(p_Sink)) {
         sourceIt->second->Toggle(false);
         string sourceStringId = sourceIt->second->GetID();
-        for (auto& otherSinkPair : m_Sinks) {
+        for (auto& otherSinkPair : m_Sinks.snapshot()) {
             if (otherSinkPair.first != sinkId) {
                 otherSinkPair.second->UnbindSource(sourceStringId);
             }
         }
-        m_Sources.erase(sourceIt);
+        m_Sources.erase(sinkId);
     }
 
-    m_Sinks.erase(sinkIt);
+    m_Sinks.erase(sinkId);
     m_Logger->EnterLog("DeleteSink removed sinkId=" + std::to_string(sinkId));
     return true;
 }
@@ -349,6 +392,7 @@ bool Manager::DeleteSink(int sinkId)
 bool Manager::DeleteSource(int sourceId)
 {
     m_Logger->EnterLog("DeleteSource called with sourceId=" + std::to_string(sourceId));
+    std::lock_guard<std::recursive_mutex> edit(m_EditMutex);
     auto sourceIt = m_Sources.find(sourceId);
     if (sourceIt == m_Sources.end()) {
         m_Logger->EnterLog("Source not found: " + std::to_string(sourceId));
@@ -357,7 +401,7 @@ bool Manager::DeleteSource(int sourceId)
 
     std::shared_ptr<ISource> p_Source = sourceIt->second;
     string sourceStringId = p_Source->GetID();
-    for (auto& sinkPair : m_Sinks) {
+    for (auto& sinkPair : m_Sinks.snapshot()) {
         sinkPair.second->UnbindSource(sourceStringId);
     }
     p_Source->Toggle(false);
@@ -366,10 +410,11 @@ bool Manager::DeleteSource(int sourceId)
     auto sinkIt = m_Sinks.find(sourceId);
     if (sinkIt != m_Sinks.end() && sinkIt->second == std::dynamic_pointer_cast<ISink>(p_Source)) {
         sinkIt->second->Toggle(false);
-        m_Sinks.erase(sinkIt);
+        sinkIt->second->UnbindAllSources();
+        m_Sinks.erase(sourceId);
     }
 
-    m_Sources.erase(sourceIt);
+    m_Sources.erase(sourceId);
     m_Logger->EnterLog("DeleteSource removed sourceId=" + std::to_string(sourceId));
     return true;
 }
@@ -768,7 +813,9 @@ int Manager::CreateApriltagDetector(CameraCalibrationResult calibrationResult, d
 
 	auto p_Sink = std::make_shared<ApriltagDetector>(m_Logger, std::to_string(id), calibrationResult, tagSize);
 
+    // both halves, like every other detector overload: its output has to be bindable to a downstream sink
     m_Sinks.emplace(id, p_Sink);
+    m_Sources.emplace(id, p_Sink);
 
     m_Logger->EnterLog("ApriltagDetector created with id=" + std::to_string(id));
     return id;
@@ -1002,11 +1049,11 @@ bool Manager::GetApriltagDetectorRefineModeSupported(int sinkId)
 }
 
 namespace {
-	CameraCalibrator* FindCalibrator(map<int, std::shared_ptr<ISink>>& sinks, int calibratorId)
+	std::shared_ptr<CameraCalibrator> FindCalibrator(NodeMap<ISink>& sinks, int calibratorId)
 	{
-		auto sink = sinks.find(calibratorId);
-		if (sink == sinks.end()) return nullptr;
-		return dynamic_cast<CameraCalibrator*>(sink->second.get());
+	    auto sink = sinks.find(calibratorId);
+	    if (sink == sinks.end()) return nullptr;
+	    return std::dynamic_pointer_cast<CameraCalibrator>(sink->second);
 	}
 }
 
@@ -1059,7 +1106,7 @@ int Manager::CreateCameraCalibrator(int id, CalibrationBoardType boardType, int 
 
 CameraCalibrationResult Manager::GetCameraCalibrationResult(int calibratorId)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	if (p_Calibrator == nullptr) {
 		m_Logger->EnterLog("CameraCalibrator not found: " + std::to_string(calibratorId));
 		return CameraCalibrationResult();
@@ -1069,7 +1116,7 @@ CameraCalibrationResult Manager::GetCameraCalibrationResult(int calibratorId)
 
 CameraCalibrationResult Manager::RunCameraCalibration(int calibratorId)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	if (p_Calibrator == nullptr) {
 		throw std::runtime_error("CameraCalibrator not found: " + std::to_string(calibratorId));
 	}
@@ -1078,43 +1125,43 @@ CameraCalibrationResult Manager::RunCameraCalibration(int calibratorId)
 
 int Manager::GetCameraCalibrationSnapshotCount(int calibratorId)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	return p_Calibrator == nullptr ? 0 : p_Calibrator->GetSnapshotCount();
 }
 
 bool Manager::RemoveCameraCalibrationSnapshot(int calibratorId, int index)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	return p_Calibrator != nullptr && p_Calibrator->RemoveSnapshot(index);
 }
 
 void Manager::ClearCameraCalibrationSnapshots(int calibratorId)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	if (p_Calibrator != nullptr) p_Calibrator->ClearSnapshots();
 }
 
 vector<double> Manager::GetCameraCalibrationSnapshotCorners(int calibratorId, int index)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	return p_Calibrator == nullptr ? vector<double>() : p_Calibrator->GetSnapshotCorners(index);
 }
 
 int Manager::GetCameraCalibrationFrameWidth(int calibratorId)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	return p_Calibrator == nullptr ? 0 : p_Calibrator->GetFrameWidth();
 }
 
 int Manager::GetCameraCalibrationFrameHeight(int calibratorId)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	return p_Calibrator == nullptr ? 0 : p_Calibrator->GetFrameHeight();
 }
 
 bool Manager::SaveCameraCalibrationBoardDetection(int calibratorId)
 {
-	CameraCalibrator* p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
+	auto p_Calibrator = FindCalibrator(m_Sinks, calibratorId);
 	if (p_Calibrator == nullptr) {
 		m_Logger->EnterLog("CameraCalibrator not found: " + std::to_string(calibratorId));
 		return false;
@@ -1143,18 +1190,18 @@ namespace {
     // default board, matching CameraCalibrator's default
     const StereoCalibrationBoardConfig DEFAULT_STEREO_BOARD_CONFIG;
 
-    StereoCalibrator* FindStereoCalibrator(map<int, std::shared_ptr<ISink>>& sinks, int calibratorId)
+    std::shared_ptr<StereoCalibrator> FindStereoCalibrator(NodeMap<ISink>& sinks, int calibratorId)
     {
         auto sink = sinks.find(calibratorId);
         if (sink == sinks.end()) return nullptr;
-        return dynamic_cast<StereoCalibrator*>(sink->second.get());
+        return std::dynamic_pointer_cast<StereoCalibrator>(sink->second);
     }
 
-    StereoDepthNode* FindStereoDepthNode(map<int, std::shared_ptr<ISink>>& sinks, int nodeId)
+    std::shared_ptr<StereoDepthNode> FindStereoDepthNode(NodeMap<ISink>& sinks, int nodeId)
     {
         auto sink = sinks.find(nodeId);
         if (sink == sinks.end()) return nullptr;
-        return dynamic_cast<StereoDepthNode*>(sink->second.get());
+        return std::dynamic_pointer_cast<StereoDepthNode>(sink->second);
     }
 }
 
@@ -1203,7 +1250,7 @@ int Manager::CreateStereoCalibrator(int id, CalibrationBoardType boardType, int 
 
 bool Manager::SaveStereoCalibrationDetection(int calibratorId)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     if (p_Calibrator == nullptr) {
         m_Logger->EnterLog("StereoCalibrator not found: " + std::to_string(calibratorId));
         return false;
@@ -1213,43 +1260,43 @@ bool Manager::SaveStereoCalibrationDetection(int calibratorId)
 
 int Manager::GetStereoCalibrationPairCount(int calibratorId)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     return p_Calibrator == nullptr ? 0 : p_Calibrator->GetPairCount();
 }
 
 bool Manager::RemoveStereoCalibrationPair(int calibratorId, int index)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     return p_Calibrator != nullptr && p_Calibrator->RemovePair(index);
 }
 
 void Manager::ClearStereoCalibrationPairs(int calibratorId)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     if (p_Calibrator != nullptr) p_Calibrator->ClearPairs();
 }
 
 vector<double> Manager::GetStereoCalibrationPairCorners(int calibratorId, int index, string eye)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     return p_Calibrator == nullptr ? vector<double>() : p_Calibrator->GetPairCorners(index, eye);
 }
 
 int Manager::GetStereoCalibrationFrameWidth(int calibratorId)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     return p_Calibrator == nullptr ? 0 : p_Calibrator->GetFrameWidth();
 }
 
 int Manager::GetStereoCalibrationFrameHeight(int calibratorId)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     return p_Calibrator == nullptr ? 0 : p_Calibrator->GetFrameHeight();
 }
 
 StereoCalibrationResult Manager::RunStereoCalibration(int calibratorId)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     if (p_Calibrator == nullptr) {
         throw std::runtime_error("StereoCalibrator not found: " + std::to_string(calibratorId));
     }
@@ -1258,7 +1305,7 @@ StereoCalibrationResult Manager::RunStereoCalibration(int calibratorId)
 
 StereoCalibrationResult Manager::GetStereoCalibrationResult(int calibratorId)
 {
-    StereoCalibrator* p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
+    auto p_Calibrator = FindStereoCalibrator(m_Sinks, calibratorId);
     if (p_Calibrator == nullptr) {
         m_Logger->EnterLog("StereoCalibrator not found: " + std::to_string(calibratorId));
         return StereoCalibrationResult();
@@ -1292,19 +1339,19 @@ int Manager::CreateStereoDepthNode(int id, StereoDepthBackendKind backend, Stere
 
 string Manager::GetStereoDepthBackendName(int sinkId)
 {
-    StereoDepthNode* p_Node = FindStereoDepthNode(m_Sinks, sinkId);
+    auto p_Node = FindStereoDepthNode(m_Sinks, sinkId);
     return p_Node == nullptr ? "" : p_Node->GetBackendName();
 }
 
 double Manager::GetStereoDepthValidFraction(int sinkId)
 {
-    StereoDepthNode* p_Node = FindStereoDepthNode(m_Sinks, sinkId);
+    auto p_Node = FindStereoDepthNode(m_Sinks, sinkId);
     return p_Node == nullptr ? 0.0 : p_Node->GetLastValidFraction();
 }
 
 double Manager::GetStereoDepthMedianDepthMeters(int sinkId)
 {
-    StereoDepthNode* p_Node = FindStereoDepthNode(m_Sinks, sinkId);
+    auto p_Node = FindStereoDepthNode(m_Sinks, sinkId);
     return p_Node == nullptr ? 0.0 : p_Node->GetLastMedianDepthMeters();
 }
 
@@ -1681,7 +1728,7 @@ int Manager::CreateWebRTCSink(int id, int bitrateKbps, int fps, string encoderNa
 namespace {
     // shared by all WebRTC accessor methods below - a WebRTCSink lookup + cast is used
     // repeatedly, and every failure mode should behave the same way
-    std::shared_ptr<WebRTCSink> FindWebRTCSink(map<int, std::shared_ptr<ISink>>& sinks, int sinkId)
+    std::shared_ptr<WebRTCSink> FindWebRTCSink(NodeMap<ISink>& sinks, int sinkId)
     {
         auto sink = sinks.find(sinkId);
         if (sink == sinks.end()) return nullptr;
@@ -1891,22 +1938,12 @@ bool Manager::DeleteRecordSinkSegment(int, string) { return false; }
 
 void Manager::StartAllSources()
 {
-    auto iterator = m_Sources.begin();
-
-    while (iterator != m_Sources.end()) {
-        iterator->second->Toggle(true);
-        iterator++;
-    }
+    for (auto& entry : m_Sources.snapshot()) entry.second->Toggle(true);
 }
 
 void Manager::StopAllSources()
 {
-    auto iterator = m_Sources.begin();
-
-    while (iterator != m_Sources.end()) {
-        iterator->second->Toggle(false);
-        iterator++;
-    }
+    for (auto& entry : m_Sources.snapshot()) entry.second->Toggle(false);
 }
 
 bool Manager::StopSourceById(int sourceId)
@@ -1939,23 +1976,11 @@ bool Manager::IsSourceActive(int sourceId)
 }
 
 void Manager::StartAllSinks() {
-    if (!m_Sinks.empty()) {
-        auto iterator = m_Sinks.begin();
-
-        while (iterator != m_Sinks.end()) {
-            iterator->second->Toggle(true);
-            iterator++;
-        }
-    }
+    for (auto& entry : m_Sinks.snapshot()) entry.second->Toggle(true);
 }
 
 void Manager::StopAllSinks() {
-    auto iterator = m_Sinks.begin();
-
-    while (iterator != m_Sinks.end()) {
-        iterator->second->Toggle(false);
-        iterator++;
-    }
+    for (auto& entry : m_Sinks.snapshot()) entry.second->Toggle(false);
 }
 
 bool Manager::StopSinkById(int sinkId) {
@@ -2015,7 +2040,7 @@ string Manager::GetAllSinkResults()
     m_Logger->EnterLog("GetAllSinkResults called");
     nlohmann::json allResults = nlohmann::json::object();
 
-    for (auto& sinkPair : m_Sinks) {
+    for (auto& sinkPair : m_Sinks.snapshot()) {
         ISource* p_AsSource = dynamic_cast<ISource*>(sinkPair.second.get());
         if (p_AsSource == nullptr) {
             continue;

@@ -10,7 +10,14 @@ DepthFusionNode::DepthFusionNode(std::shared_ptr<Logger> logger, std::string id)
 
 void DepthFusionNode::SetStereoDepthNode(std::shared_ptr<StereoDepthNode> depthNode)
 {
-	m_DepthNode = depthNode;
+	std::lock_guard<std::mutex> guard(m_DepthNodeMutex);
+	m_DepthNode = std::move(depthNode);
+}
+
+std::shared_ptr<StereoDepthNode> DepthFusionNode::GetDepthNode() const
+{
+	std::lock_guard<std::mutex> guard(m_DepthNodeMutex);
+	return m_DepthNode;
 }
 
 nlohmann::json DepthFusionNode::FuseDetections(const nlohmann::json& detections, const std::vector<float>& depth, int cols, int rows,
@@ -84,19 +91,21 @@ nlohmann::json DepthFusionNode::FuseDetections(const nlohmann::json& detections,
 void DepthFusionNode::Process(const std::vector<SourceResult>& results)
 {
 	if (results.empty() || !results[0].json.has_value()) return;
-	if (!m_DepthNode) {
+	// one copy for the whole pass: detaching the depth source on another thread must not leave this one holding a null
+	const std::shared_ptr<StereoDepthNode> depthNode = GetDepthNode();
+	if (!depthNode) {
 		if (m_Logger) m_Logger->EnterLog(LogLevel::Error, "DepthFusionNode: no StereoDepthNode attached - call SetStereoDepthNode first.");
 		return;
 	}
 
 	std::vector<float> depth;
 	int cols, rows, blockW, blockH;
-	if (!m_DepthNode->GetDepthGridFor(results[0].captureTimeUs, depth, cols, rows, blockW, blockH)) return;
+	if (!depthNode->GetDepthGridFor(results[0].captureTimeUs, depth, cols, rows, blockW, blockH)) return;
 
-	StereoCalibrationResult calibration = m_DepthNode->GetCalibration();
+	StereoCalibrationResult calibration = depthNode->GetCalibration();
 	// detections are in the cropped output frame, so the principal point moves by the crop's origin
 	int cropX = 0, cropY = 0;
-	m_DepthNode->GetCropOrigin(cropX, cropY);
+	depthNode->GetCropOrigin(cropX, cropY);
 	double fx = calibration.rectifiedFx, cx = calibration.rectifiedCx - cropX, cy = calibration.rectifiedCy - cropY;
 
 	// annotate-on-demand: skips the clone and distance labels when nothing bound wants the frame
@@ -118,5 +127,6 @@ void DepthFusionNode::Process(const std::vector<SourceResult>& results)
 		}
 	}
 
-	SetLatestResult(SourceResult(fused, annotatedFrame));
+	// the fused detections are for the frame the detector saw, so they keep its capture time (not the moment this node ran)
+	SetLatestResult(SourceResult(fused, annotatedFrame, results[0].captureTimeUs));
 }

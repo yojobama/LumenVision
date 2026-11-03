@@ -22,15 +22,25 @@ CameraCalibrator::CameraCalibrator(std::shared_ptr<Logger> logger, std::string i
 
 CameraCalibrationResult CameraCalibrator::RunCalibration()
 {
-	if (m_ObjPoints.size() < 4) {
-		throw std::runtime_error("CameraCalibrator::RunCalibration: need at least 4 saved snapshots, have " + std::to_string(m_ObjPoints.size()));
+	// REST calls add, remove and clear snapshots while a calibration runs: work on a copy taken under the lock
+	std::vector<std::vector<cv::Point3f>> objPoints;
+	std::vector<std::vector<cv::Point2f>> imgPoints;
+	cv::Size solveSize;
+	{
+		std::lock_guard<std::mutex> lock(m_DetectionMutex);
+		objPoints = m_ObjPoints;
+		imgPoints = m_ImgPoints;
+		solveSize = frameSize;
+	}
+	if (objPoints.size() < 4) {
+		throw std::runtime_error("CameraCalibrator::RunCalibration: need at least 4 saved snapshots, have " + std::to_string(objPoints.size()));
 	}
 
 	cv::Mat cameraMatrix = cv::Mat(3, 3, CV_64F);
 	cv::Mat distCoeffsMat = cv::Mat(8, 1, CV_64F);
 	std::vector<cv::Mat> rvecs, tvecs;
 
-	double rms = cv::calibrateCamera(m_ObjPoints, m_ImgPoints, frameSize, cameraMatrix, distCoeffsMat, rvecs, tvecs);
+	double rms = cv::calibrateCamera(objPoints, imgPoints, solveSize, cameraMatrix, distCoeffsMat, rvecs, tvecs);
 
 	double fx = cameraMatrix.at<double>(0, 0);
 	double fy = cameraMatrix.at<double>(1, 1);
@@ -39,13 +49,18 @@ CameraCalibrationResult CameraCalibrator::RunCalibration()
 
 	std::vector<double> distCoeffs(distCoeffsMat.begin<double>(), distCoeffsMat.end<double>());
 
-	m_LastResult = CameraCalibrationResult(fx, fy, cx, cy, rms, distCoeffs, frameSize.width, frameSize.height);
-	if (m_Logger) m_Logger->EnterLog("CameraCalibrator: RunCalibration produced rms=" + std::to_string(rms) + " over " + std::to_string(m_ObjPoints.size()) + " snapshot(s)");
-	return m_LastResult.value();
+	CameraCalibrationResult result(fx, fy, cx, cy, rms, distCoeffs, solveSize.width, solveSize.height);
+	{
+		std::lock_guard<std::mutex> lock(m_DetectionMutex);
+		m_LastResult = result;
+	}
+	if (m_Logger) m_Logger->EnterLog("CameraCalibrator: RunCalibration produced rms=" + std::to_string(rms) + " over " + std::to_string(objPoints.size()) + " snapshot(s)");
+	return result;
 }
 
 CameraCalibrationResult CameraCalibrator::GetCalibrationResult() const
 {
+	std::lock_guard<std::mutex> lock(m_DetectionMutex);
 	return m_LastResult.value_or(CameraCalibrationResult());
 }
 

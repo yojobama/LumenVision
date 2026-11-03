@@ -2,6 +2,7 @@
 #include "CameraCalibrationResult.h"
 #include "SourceResult.h"
 #include "CpuAffinity.h"
+#include <algorithm>
 
 ISource::ISource(std::shared_ptr<Logger> p_Logger, std::string m_ID)
 	: m_ResultLock()
@@ -32,6 +33,7 @@ std::string ISource::GetID()
 void ISource::Toggle(bool threadWantedAlive)
 {
 	if (m_DoNotLoadCaptureThread) return;
+	std::lock_guard<std::mutex> toggleGuard(m_ToggleMutex);
 	// idempotent: a repeated Toggle(true) must not spawn a second capture thread
 	if (threadWantedAlive == m_ToggleState) return;
 
@@ -58,10 +60,18 @@ bool ISource::GetToggleStatus()
 	return m_ToggleState;
 }
 
-void ISource::AddResultListener(std::function<void()> listener)
+ISource::ListenerId ISource::AddResultListener(std::function<void()> listener)
 {
 	std::lock_guard<std::mutex> guard(m_ListenersMutex);
-	m_Listeners.push_back(std::move(listener));
+	const ListenerId id = m_NextListenerId++;
+	m_Listeners.emplace_back(id, std::move(listener));
+	return id;
+}
+
+void ISource::RemoveResultListener(ListenerId id)
+{
+	std::lock_guard<std::mutex> guard(m_ListenersMutex);
+	m_Listeners.erase(std::remove_if(m_Listeners.begin(), m_Listeners.end(), [id](const auto& entry) { return entry.first == id; }), m_Listeners.end());
 }
 
 void ISource::RegisterFrameConsumer(const std::string& sinkId, bool requiresFrame, bool requiresColor, std::function<bool()> isActive, std::function<bool()> wantsNow)
@@ -132,13 +142,13 @@ void ISource::SetLatestResult(SourceResult result)
 
 	// notify bound sinks outside the result lock so a listener can safely call back
 	// into this source (e.g. GetLatestResult) without deadlocking
-	std::vector<std::function<void()>> listenersCopy;
+	std::vector<std::pair<ListenerId, std::function<void()>>> listenersCopy;
 	{
 		std::lock_guard<std::mutex> guard(m_ListenersMutex);
 		listenersCopy = m_Listeners;
 	}
 	for (auto& listener : listenersCopy) {
-		listener();
+		listener.second();
 	}
 }
 

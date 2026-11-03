@@ -109,6 +109,7 @@ set_property(SOURCE swig.i PROPERTY USE_TARGET_INCLUDE_DIRECTORIES ON)
 # re-run SWIG when they change.
 set_property(SOURCE swig.i PROPERTY DEPENDS
     Manager.h
+    NodeMap.h
     CameraCalibrationResult.h
     IDetectionBackend.h
     IApriltagBackend.h

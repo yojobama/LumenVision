@@ -84,6 +84,8 @@ ApriltagDetector::~ApriltagDetector() = default;
 
 void ApriltagDetector::SetConstrainedSeed(double x, double y, double yawRadians, const frames::Pose3& robotToCamera)
 {
+	// a seed that is not a number would make every constrained solve fail: keep the previous one
+	if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(yawRadians)) return;
 	std::lock_guard<std::mutex> lock(m_ConstrainedMutex);
 	m_HasConstrainedSeed = true;
 	m_ConstrainedSeedX = x;

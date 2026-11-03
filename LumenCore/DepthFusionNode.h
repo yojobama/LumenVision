@@ -1,4 +1,5 @@
 #pragma once
+#include <mutex>
 #include "ISource.h"
 #include "ISink.h"
 #include "StereoDepthNode.h"
@@ -25,5 +26,8 @@ private:
 	void Process(const std::vector<SourceResult>& results) override;
 
 	std::shared_ptr<Logger> m_Logger;
+	// set from a REST thread (attach or detach a depth source) while Process() runs on the node's thread
+	std::shared_ptr<StereoDepthNode> GetDepthNode() const;
+	mutable std::mutex m_DepthNodeMutex;
 	std::shared_ptr<StereoDepthNode> m_DepthNode;
 };

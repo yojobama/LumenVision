@@ -127,6 +127,8 @@ ConstrainedPnpResult SolveConstrainedPnp(const ConstrainedPnpInput& input)
 		if (!improved) break; // no step lowers the cost: at a minimum
 	}
 
+	// a non-finite seed (or a solve that diverged to one) is not a pose: report failure, never ok with a NaN position
+	if (!std::isfinite(params[0]) || !std::isfinite(params[1]) || !std::isfinite(params[2]) || !std::isfinite(cost)) return result;
 	result.ok = true;
 	result.x = params[0];
 	result.y = params[1];

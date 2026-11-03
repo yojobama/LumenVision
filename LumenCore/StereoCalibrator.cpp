@@ -203,9 +203,20 @@ int StereoCalibrator::GetFrameHeight() const
 
 StereoCalibrationResult StereoCalibrator::RunCalibration()
 {
+	// REST calls add, remove and clear pairs while a calibration runs: work on a copy taken under the lock
+	std::vector<std::vector<cv::Point3f>> objPoints;
+	std::vector<std::vector<cv::Point2f>> leftImgPoints, rightImgPoints;
+	cv::Size frameSize;
+	{
+		std::lock_guard<std::mutex> lock(m_DetectionMutex);
+		objPoints = m_ObjPoints;
+		leftImgPoints = m_LeftImgPoints;
+		rightImgPoints = m_RightImgPoints;
+		frameSize = m_FrameSize;
+	}
 	// stereo extrinsics have more DOF than a single-eye calibration, so too few views is actively misleading
-	if (m_ObjPoints.size() < 8) {
-		throw std::runtime_error("StereoCalibrator::RunCalibration: need at least 8 saved pairs, have " + std::to_string(m_ObjPoints.size()));
+	if (objPoints.size() < 8) {
+		throw std::runtime_error("StereoCalibrator::RunCalibration: need at least 8 saved pairs, have " + std::to_string(objPoints.size()));
 	}
 
 	cv::Mat K1, D1, K2, D2;
@@ -223,29 +234,29 @@ StereoCalibrationResult StereoCalibrator::RunCalibration()
 		std::vector<cv::Mat> rvecs, tvecs;
 		K1 = cv::Mat::eye(3, 3, CV_64F);
 		D1 = cv::Mat::zeros(8, 1, CV_64F);
-		cv::calibrateCamera(m_ObjPoints, m_LeftImgPoints, m_FrameSize, K1, D1, rvecs, tvecs);
+		cv::calibrateCamera(objPoints, leftImgPoints, frameSize, K1, D1, rvecs, tvecs);
 		K2 = cv::Mat::eye(3, 3, CV_64F);
 		D2 = cv::Mat::zeros(8, 1, CV_64F);
-		cv::calibrateCamera(m_ObjPoints, m_RightImgPoints, m_FrameSize, K2, D2, rvecs, tvecs);
+		cv::calibrateCamera(objPoints, rightImgPoints, frameSize, K2, D2, rvecs, tvecs);
 	}
 
 	cv::Mat R, T, E, F;
 	double stereoRms = cv::stereoCalibrate(
-		m_ObjPoints, m_LeftImgPoints, m_RightImgPoints,
-		K1, D1, K2, D2, m_FrameSize, R, T, E, F,
+		objPoints, leftImgPoints, rightImgPoints,
+		K1, D1, K2, D2, frameSize, R, T, E, F,
 		cv::CALIB_FIX_INTRINSIC,
 		cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 100, 1e-5));
 
 	cv::Mat R1, R2, P1, P2, Q;
 	cv::Rect validRoi1, validRoi2;
-	cv::stereoRectify(K1, D1, K2, D2, m_FrameSize, R, T, R1, R2, P1, P2, Q,
+	cv::stereoRectify(K1, D1, K2, D2, frameSize, R, T, R1, R2, P1, P2, Q,
 		cv::CALIB_ZERO_DISPARITY, /*alpha=*/0, cv::Size(), &validRoi1, &validRoi2);
 
 	StereoCalibrationResult result;
 	result.left = CameraCalibrationResult(K1.at<double>(0, 0), K1.at<double>(1, 1), K1.at<double>(0, 2), K1.at<double>(1, 2),
-		0.0, MatToVec(D1), m_FrameSize.width, m_FrameSize.height);
+		0.0, MatToVec(D1), frameSize.width, frameSize.height);
 	result.right = CameraCalibrationResult(K2.at<double>(0, 0), K2.at<double>(1, 1), K2.at<double>(0, 2), K2.at<double>(1, 2),
-		0.0, MatToVec(D2), m_FrameSize.width, m_FrameSize.height);
+		0.0, MatToVec(D2), frameSize.width, frameSize.height);
 	result.R = MatToVec(R);
 	result.T = MatToVec(T);
 	result.E = MatToVec(E);
@@ -260,8 +271,8 @@ StereoCalibrationResult StereoCalibrator::RunCalibration()
 	result.rectifiedFx = P1.at<double>(0, 0);
 	result.rectifiedCx = P1.at<double>(0, 2);
 	result.rectifiedCy = P1.at<double>(1, 2);
-	result.imageWidth = m_FrameSize.width;
-	result.imageHeight = m_FrameSize.height;
+	result.imageWidth = frameSize.width;
+	result.imageHeight = frameSize.height;
 	result.roiLeftX = validRoi1.x; result.roiLeftY = validRoi1.y;
 	result.roiLeftW = validRoi1.width; result.roiLeftH = validRoi1.height;
 	result.roiRightX = validRoi2.x; result.roiRightY = validRoi2.y;
@@ -279,10 +290,10 @@ StereoCalibrationResult StereoCalibrator::RunCalibration()
 	// epipolarRms: push every saved corner through the rectification maps and measure how far it lands off the epipolar line
 	double sumAbsDy = 0.0;
 	int64_t countDy = 0;
-	for (size_t i = 0; i < m_LeftImgPoints.size(); i++) {
+	for (size_t i = 0; i < leftImgPoints.size(); i++) {
 		std::vector<cv::Point2f> rectLeft, rectRight;
-		cv::undistortPoints(m_LeftImgPoints[i], rectLeft, K1, D1, R1, P1);
-		cv::undistortPoints(m_RightImgPoints[i], rectRight, K2, D2, R2, P2);
+		cv::undistortPoints(leftImgPoints[i], rectLeft, K1, D1, R1, P1);
+		cv::undistortPoints(rightImgPoints[i], rectRight, K2, D2, R2, P2);
 		for (size_t j = 0; j < rectLeft.size() && j < rectRight.size(); j++) {
 			sumAbsDy += std::abs(rectLeft[j].y - rectRight[j].y);
 			countDy++;
@@ -290,14 +301,18 @@ StereoCalibrationResult StereoCalibrator::RunCalibration()
 	}
 	result.epipolarRms = countDy > 0 ? (sumAbsDy / countDy) : -1.0;
 
-	m_LastResult = result;
+	{
+		std::lock_guard<std::mutex> lock(m_DetectionMutex);
+		m_LastResult = result;
+	}
 	if (m_Logger) m_Logger->EnterLog("StereoCalibrator: RunCalibration produced stereoRms=" + std::to_string(stereoRms) +
 		" epipolarRms=" + std::to_string(result.epipolarRms) + " baseline=" + std::to_string(result.baselineMeters) +
-		"m over " + std::to_string(m_ObjPoints.size()) + " pair(s)");
+		"m over " + std::to_string(objPoints.size()) + " pair(s)");
 	return result;
 }
 
 StereoCalibrationResult StereoCalibrator::GetCalibrationResult() const
 {
+	std::lock_guard<std::mutex> lock(m_DetectionMutex);
 	return m_LastResult.value_or(StereoCalibrationResult());
 }
