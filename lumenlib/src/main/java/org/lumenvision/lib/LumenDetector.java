@@ -19,6 +19,7 @@ import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.RawSubscriber;
 import edu.wpi.first.networktables.StringSubscriber;
+import edu.wpi.first.networktables.TimestampedInteger;
 import edu.wpi.first.networktables.TimestampedRaw;
 import edu.wpi.first.networktables.TimestampedString;
 
@@ -46,21 +47,28 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
     private static boolean versionCheckEnabled = true;
 
     // one subscription serves both: getAtomic() is the latest value and readQueue() the unread ones, independently
-    private final RawSubscriber resultSub;
+    // the detector's own topics are not final: they move to the node's table once the graph names it (see verifyKind)
+    private RawSubscriber resultSub;
 
-    private final IntegerPublisher fpsLimitPub;
-    private final IntegerSubscriber fpsLimitSub;
+    private IntegerPublisher fpsLimitPub;
+    private IntegerSubscriber fpsLimitSub;
     // created on the first seed, so only a detector that is sent one publishes the topics
     private DoubleArrayPublisher constrainedSeedPub;
     private DoubleArrayPublisher robotToCameraPub;
 
-    private final DoubleArraySubscriber intrinsicsSub;
-    private final DoubleArraySubscriber distortionSub;
+    private DoubleArraySubscriber intrinsicsSub;
+    private DoubleArraySubscriber distortionSub;
     private final DoubleSubscriber heartbeatSub;
     private final StringSubscriber versionSub;
     private final IntegerSubscriber protocolSub;
-    // checked at most once; the coprocessor's ".version" is constant for the life of its process
+    // how long a ".version" may stand without a ".protocol" before the coprocessor is taken to be one that publishes none (protocol 1-2)
+    private static final long PROTOCOL_GRACE_MICROS = 2_000_000;
+    // evaluated again whenever either topic's value is replaced, as the coprocessor may be updated while the robot program runs
     private boolean versionChecked = false;
+    private long versionStamp = 0;
+    private long protocolStamp = 0;
+    private long versionSeenMicros = 0;
+    private long versionWarnedStamp = 0;
     private boolean protocolRefused = false;
     private boolean schemaWarned = false;
 
@@ -82,9 +90,17 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
     protected LumenDetector(NetworkTableInstance instance, String rootTable, String name, String expectedKind) {
         super(instance, rootTable, name);
         this.expectedKind = expectedKind;
-        String base = "/" + rootTable + "/" + tableName(name) + "/";
         String root = "/" + rootTable + "/";
+        bindDetectorTopics(getTable());
+        heartbeatSub = instance.getDoubleTopic(root + "heartbeat").subscribe(0.0);
+        versionSub = instance.getStringTopic(root + ".version").subscribe("");
+        protocolSub = instance.getIntegerTopic(root + ".protocol").subscribe(-1);
+        graphSub = instance.getStringTopic(root + ".graph").subscribe("");
+    }
 
+    private void bindDetectorTopics(String table) {
+        NetworkTableInstance instance = getNetworkTableInstance();
+        String base = "/" + getRootTable() + "/" + table + "/";
         // send-all so the queue sees every frame, not just the latest per network send period
         resultSub = instance.getRawTopic(base + "result").subscribe("raw", new byte[0],
                 PubSubOption.pollStorage(UNREAD_QUEUE_DEPTH), PubSubOption.keepDuplicates(true), PubSubOption.sendAll(true));
@@ -94,10 +110,28 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
 
         intrinsicsSub = instance.getDoubleArrayTopic(base + "cameraIntrinsics").subscribe(new double[0]);
         distortionSub = instance.getDoubleArrayTopic(base + "cameraDistortion").subscribe(new double[0]);
-        heartbeatSub = instance.getDoubleTopic(root + "heartbeat").subscribe(0.0);
-        versionSub = instance.getStringTopic(root + ".version").subscribe("");
-        protocolSub = instance.getIntegerTopic(root + ".protocol").subscribe(-1);
-        graphSub = instance.getStringTopic(root + ".graph").subscribe("");
+    }
+
+    private void closeDetectorTopics() {
+        for (AutoCloseable closeable : new AutoCloseable[] {
+                resultSub, fpsLimitPub, constrainedSeedPub, robotToCameraPub, fpsLimitSub, intrinsicsSub, distortionSub }) {
+            if (closeable == null) continue; // the seed publishers of a detector never sent one
+            try {
+                closeable.close();
+            } catch (Exception ignored) {
+                // closing a topic handle cannot fail in a way the caller could act on
+            }
+        }
+        constrainedSeedPub = null;
+        robotToCameraPub = null;
+    }
+
+    @Override
+    protected void retarget(String newTable) {
+        if (newTable.equals(getTable())) return;
+        super.retarget(newTable);
+        closeDetectorTopics();
+        bindDetectorTopics(newTable);
     }
 
     /** Whether to compare this library's version and protocol with the coprocessor's and warn on a mismatch (default on). */
@@ -172,7 +206,8 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
         graphTimestamp = graphValue.timestamp;
         LumenGraph graph = LumenGraph.parse(graphValue.value);
         if (graph.getNodes().isEmpty()) return;
-        Optional<LumenGraph.Node> node = graph.findByTable(tableName(getName())).filter(LumenGraph.Node::isDetector);
+        Optional<LumenGraph.Node> node = findNode(graph);
+        if (node.isPresent()) retarget(node.get().getTable());
         if (node.isEmpty()) {
             if (expectedKind != null && !missingWarned) {
                 missingWarned = true;
@@ -189,6 +224,14 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
         }
     }
 
+    // the coprocessor numbers a table apart ("front-2") when a camera or another node already has the name, so the node is found through the
+    // graph: the detector published under the table this name gives, else the detector the UI calls by this name
+    private Optional<LumenGraph.Node> findNode(LumenGraph graph) {
+        Optional<LumenGraph.Node> byTable = graph.findByTable(tableName(getName())).filter(LumenGraph.Node::isDetector);
+        if (byTable.isPresent()) return byTable;
+        return graph.getNodes().stream().filter(n -> n.isDetector() && n.getName().equals(getName())).findFirst();
+    }
+
     private static String describe(String kind) {
         if (LumenGraph.APRILTAG_DETECTOR.equals(kind)) return "an AprilTag detector";
         if (LumenGraph.OBJECT_DETECTOR.equals(kind)) return "an object detector";
@@ -196,15 +239,36 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
     }
 
     private void verifyVersionOnce() {
-        if (versionChecked || !versionCheckEnabled) return;
+        verifyVersionOnce(false);
+    }
+
+    private void verifyVersionOnce(boolean force) {
+        if (!versionCheckEnabled) return;
         // deferred from the constructor: the NT4 handshake may not have completed yet, so ".version" would read empty
-        String coprocessorVersion = versionSub.get();
-        if (coprocessorVersion.isEmpty()) return;
+        TimestampedString version = versionSub.getAtomic();
+        if (version.value.isEmpty()) return;
+        TimestampedInteger protocolValue = protocolSub.getAtomic();
+        long now = NetworkTablesJNI.now();
+        if (version.timestamp != versionStamp) {
+            versionStamp = version.timestamp;
+            versionSeenMicros = now;
+            versionChecked = false;
+        }
+        if (protocolValue.timestamp != protocolStamp) {
+            protocolStamp = protocolValue.timestamp;
+            versionChecked = false;
+        }
+        if (versionChecked) return;
+        long protocol = protocolValue.value;
+        // ".protocol" is a topic of its own and may land a moment after ".version"; only an old coprocessor never publishes it
+        if (protocolValue.timestamp == 0 && !force && now - versionSeenMicros < PROTOCOL_GRACE_MICROS) return;
         versionChecked = true;
-        LumenVersionCheck.warnOnMismatch(coprocessorVersion);
-        long protocol = protocolSub.get();
-        if (protocol != LumenVersionCheck.PROTOCOL) {
-            protocolRefused = true;
+        if (versionWarnedStamp != versionStamp) {
+            versionWarnedStamp = versionStamp;
+            LumenVersionCheck.warnOnMismatch(version.value);
+        }
+        protocolRefused = protocol != LumenVersionCheck.PROTOCOL;
+        if (protocolRefused) {
             LumenVersionCheck.report("LumenVision: the coprocessor speaks protocol " + (protocol < 0 ? "1-2 (none published)" : protocol)
                     + " but lumenlib-java needs " + LumenVersionCheck.PROTOCOL + "; results are ignored until both are updated together.");
         }
@@ -213,11 +277,12 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
     /** Compares this library's version and protocol with the coprocessor's now (once it has connected) and warns on a mismatch. */
     public void verifyVersion() {
         versionChecked = false;
+        versionWarnedStamp = 0;
         protocolRefused = false;
         boolean wasEnabled = versionCheckEnabled;
         versionCheckEnabled = true;
         try {
-            verifyVersionOnce();
+            verifyVersionOnce(true);
         } finally {
             versionCheckEnabled = wasEnabled;
         }
@@ -234,7 +299,7 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
     /** Publishes the floor-constrained solve's seed and camera mount (see {@link LumenAprilTagDetector#setConstrainedSeed}). */
     protected void publishConstrainedSeed(Pose2d robotPoseInLayoutFrame, Transform3d robotToCamera) {
         if (constrainedSeedPub == null) {
-            String base = "/" + getRootTable() + "/" + tableName(getName()) + "/";
+            String base = "/" + getRootTable() + "/" + getTable() + "/";
             constrainedSeedPub = getNetworkTableInstance().getDoubleArrayTopic(base + "config/constrainedSeed").publish();
             robotToCameraPub = getNetworkTableInstance().getDoubleArrayTopic(base + "config/robotToCamera").publish();
         }
@@ -276,10 +341,8 @@ public abstract class LumenDetector<R extends LumenResult<?>> extends LumenNode 
     @Override
     public void close() {
         super.close();
-        for (AutoCloseable closeable : new AutoCloseable[] {
-                resultSub, fpsLimitPub, constrainedSeedPub, robotToCameraPub, fpsLimitSub, intrinsicsSub, distortionSub,
-                heartbeatSub, versionSub, protocolSub, graphSub }) {
-            if (closeable == null) continue; // the seed publishers of a detector never sent one
+        closeDetectorTopics();
+        for (AutoCloseable closeable : new AutoCloseable[] { heartbeatSub, versionSub, protocolSub, graphSub }) {
             try {
                 closeable.close();
             } catch (Exception ignored) {

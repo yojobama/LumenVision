@@ -18,6 +18,9 @@ import edu.wpi.first.networktables.NetworkTablesJNI;
 import edu.wpi.first.networktables.PubSubOption;
 import edu.wpi.first.networktables.RawPublisher;
 import edu.wpi.first.networktables.StringPublisher;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.lumenvision.lib.LumenCoprocessor;
 import org.lumenvision.lib.LumenDetector;
 import org.lumenvision.lib.LumenGraph;
@@ -26,8 +29,10 @@ import org.lumenvision.photoncompat.PhotonCamera;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Random;
 
 /**
@@ -43,7 +48,14 @@ public class PhotonCameraSim implements AutoCloseable {
     // every open simulated camera by NT instance and root table: they share the one .graph topic, so each publishes all of their nodes
     private static final Map<String, List<PhotonCameraSim>> OPEN = new HashMap<>();
 
+    private static final Map<String, Integer> NEXT_ID = new HashMap<>();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
     private final LumenDetector<?> camera;
+    // node ids and tables as the coprocessor would give them; fixed for the life of the simulated camera
+    private final int cameraId;
+    private final String cameraTable;
+    private final String detectorTable;
     private final SimCameraProperties properties;
     private final Random random = new Random();
 
@@ -77,7 +89,30 @@ public class PhotonCameraSim implements AutoCloseable {
 
         NetworkTableInstance instance = camera.getNetworkTableInstance();
         String root = "/" + camera.getRootTable() + "/";
-        String base = root + LumenDetector.tableName(camera.getName()) + "/";
+        // the camera and its detector carry the same name, so, as the coprocessor does, the detector's table is numbered apart
+        synchronized (OPEN) {
+            List<PhotonCameraSim> sims = OPEN.computeIfAbsent(graphKey(), k -> new ArrayList<>());
+            // a second simulation of the same detector publishes into the first one's nodes rather than numbering new ones
+            PhotonCameraSim same = sims.stream().filter(sim -> sim.camera == camera).findFirst().orElse(null);
+            if (same != null) {
+                cameraId = same.cameraId;
+                cameraTable = same.cameraTable;
+                detectorTable = same.detectorTable;
+            } else {
+                int next = NEXT_ID.getOrDefault(graphKey(), 1);
+                cameraId = next;
+                NEXT_ID.put(graphKey(), next + 2);
+                Set<String> used = new HashSet<>();
+                for (PhotonCameraSim sim : sims) {
+                    used.add(sim.cameraTable);
+                    used.add(sim.detectorTable);
+                }
+                cameraTable = uniqueTable(camera.getName(), cameraId, used);
+                detectorTable = uniqueTable(camera.getName(), cameraId + 1, used);
+            }
+            sims.add(this);
+        }
+        String base = root + detectorTable + "/";
         resultPub = instance.getRawTopic(base + "result").publish("raw", PubSubOption.sendAll(true), PubSubOption.keepDuplicates(true));
         intrinsicsPub = instance.getDoubleArrayTopic(base + "cameraIntrinsics").publish();
         distortionPub = instance.getDoubleArrayTopic(base + "cameraDistortion").publish();
@@ -93,9 +128,15 @@ public class PhotonCameraSim implements AutoCloseable {
         ledConfigSub = instance.getIntegerTopic(root + "config/ledMode").subscribe(-1);
         seedSub = instance.getDoubleArrayTopic(base + "config/constrainedSeed").subscribe(new double[0]);
         mountSub = instance.getDoubleArrayTopic(base + "config/robotToCamera").subscribe(new double[0]);
-        synchronized (OPEN) {
-            OPEN.computeIfAbsent(graphKey(), k -> new ArrayList<>()).add(this);
-        }
+    }
+
+    // the coprocessor's rule (NetworkTablesControlService.ComputeNodeTables): the sanitised name, with the id appended when another node has it
+    private static String uniqueTable(String name, int id, Set<String> used) {
+        String table = LumenDetector.tableName(name);
+        if (table.isEmpty()) table = String.valueOf(id);
+        else if (!used.add(table)) table = table + "-" + id;
+        used.add(table);
+        return table;
     }
 
     private String graphKey() {
@@ -105,22 +146,24 @@ public class PhotonCameraSim implements AutoCloseable {
     // each open camera on this NT instance and root as a camera node (odd id) feeding its detector (the next id), which carries the
     // camera's name as the coprocessor names it
     private String graphJson() {
-        StringBuilder json = new StringBuilder("{\"nodes\":[");
+        // built by a JSON encoder: a camera name may hold a quote or backslash, which would otherwise empty the graph for every detector
+        ObjectNode root = MAPPER.createObjectNode();
+        ArrayNode nodes = root.putArray("nodes");
         synchronized (OPEN) {
             List<PhotonCameraSim> sims = OPEN.getOrDefault(graphKey(), List.of(this));
-            for (int i = 0; i < sims.size(); i++) {
-                PhotonCameraSim sim = sims.get(i);
+            Set<Integer> listed = new HashSet<>();
+            for (PhotonCameraSim sim : sims) {
+                if (!listed.add(sim.cameraId)) continue;
                 String name = sim.camera.getName();
-                int cameraId = 2 * i + 1;
-                if (i > 0) json.append(',');
-                json.append("{\"id\":").append(cameraId).append(",\"name\":\"").append(name)
-                        .append("\",\"kind\":\"Camera\",\"enabled\":true,\"input\":null},")
-                        .append("{\"id\":").append(cameraId + 1).append(",\"name\":\"").append(name).append("\",\"table\":\"")
-                        .append(LumenDetector.tableName(name)).append("\",\"kind\":\"").append(LumenGraph.APRILTAG_DETECTOR)
-                        .append("\",\"enabled\":").append(sim.enabledConfigSub.get()).append(",\"input\":").append(cameraId).append('}');
+                ObjectNode cameraNode = nodes.addObject();
+                cameraNode.put("id", sim.cameraId).put("name", name).put("table", sim.cameraTable).put("kind", "Camera")
+                        .put("enabled", true).putNull("input");
+                ObjectNode detectorNode = nodes.addObject();
+                detectorNode.put("id", sim.cameraId + 1).put("name", name).put("table", sim.detectorTable)
+                        .put("kind", LumenGraph.APRILTAG_DETECTOR).put("enabled", sim.enabledConfigSub.get()).put("input", sim.cameraId);
             }
         }
-        return json.append("]}").toString();
+        return root.toString();
     }
 
     public PhotonCameraSim(PhotonCamera camera, SimCameraProperties properties) {
@@ -365,7 +408,10 @@ public class PhotonCameraSim implements AutoCloseable {
             List<PhotonCameraSim> sims = OPEN.get(graphKey());
             if (sims != null) {
                 sims.remove(this);
-                if (sims.isEmpty()) OPEN.remove(graphKey());
+                if (sims.isEmpty()) {
+                    OPEN.remove(graphKey());
+                    NEXT_ID.remove(graphKey());
+                }
             }
         }
         for (AutoCloseable closeable : new AutoCloseable[] {

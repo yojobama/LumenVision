@@ -2,6 +2,8 @@ package org.lumenvision.lib;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -37,7 +39,10 @@ public class LumenCoprocessorControl {
      * @return true if the coprocessor reports it saved successfully
      */
     public boolean saveSnapshot(int sourceId, String fileName) {
-        return sendPost("/source/snapshot?SourceID=" + sourceId + "&fileName=" + fileName);
+        // encoded: a space, '#' or '&' in an event-named file would otherwise throw or cut the name short
+        String body = send("/source/snapshot?SourceID=" + sourceId + "&fileName=" + URLEncoder.encode(fileName, StandardCharsets.UTF_8), "POST");
+        // the coprocessor answers 200 with "false" when it had no frame to save or the write failed
+        return body != null && Boolean.parseBoolean(body.trim());
     }
 
     private boolean sendPatch(String path) {
@@ -49,6 +54,11 @@ public class LumenCoprocessorControl {
     }
 
     private boolean sendNoBody(String path, String method) {
+        return send(path, method) != null;
+    }
+
+    // the response body of a 2xx answer, or null when the request failed or was refused
+    private String send(String path, String method) {
         try {
             HttpRequest request =
                     HttpRequest.newBuilder(api(path))
@@ -56,10 +66,10 @@ public class LumenCoprocessorControl {
                             .timeout(Duration.ofSeconds(2))
                             .build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            return response.statusCode() >= 200 && response.statusCode() < 300;
-        } catch (IOException | InterruptedException e) {
+            return response.statusCode() >= 200 && response.statusCode() < 300 ? response.body() : null;
+        } catch (IOException | InterruptedException | IllegalArgumentException e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            return false;
+            return null;
         }
     }
 }

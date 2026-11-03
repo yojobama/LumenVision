@@ -16,11 +16,13 @@ public class LumenNode implements AutoCloseable {
     private final String rootTable;
     private final String name;
 
-    private final BooleanPublisher enabledPub;
-    private final IntegerPublisher snapshotPub;
-    private final BooleanSubscriber enabledSub;
-    private final BooleanPublisher recordingPub;
-    private final BooleanSubscriber recordingSub;
+    // not final: a node whose table the coprocessor numbered apart from another's is rebound once the graph says so
+    private String table;
+    private BooleanPublisher enabledPub;
+    private IntegerPublisher snapshotPub;
+    private BooleanSubscriber enabledSub;
+    private BooleanPublisher recordingPub;
+    private BooleanSubscriber recordingSub;
     private long snapshotCount;
 
     /**
@@ -32,7 +34,12 @@ public class LumenNode implements AutoCloseable {
         this.instance = instance;
         this.rootTable = rootTable;
         this.name = name;
-        String base = "/" + rootTable + "/" + tableName(name) + "/";
+        bindNodeTopics(tableName(name));
+    }
+
+    private void bindNodeTopics(String table) {
+        this.table = table;
+        String base = "/" + rootTable + "/" + table + "/";
         enabledPub = instance.getBooleanTopic(base + "config/enabled").publish();
         snapshotPub = instance.getIntegerTopic(base + "config/snapshot").publish();
         enabledSub = instance.getBooleanTopic(base + "status/enabled").subscribe(true);
@@ -49,6 +56,18 @@ public class LumenNode implements AutoCloseable {
             out.append(ok ? c : '_');
         }
         return out.toString();
+    }
+
+    /** The NT table the node's topics are under now: {@link #tableName} of its name until the graph names another. */
+    protected final String getTable() {
+        return table;
+    }
+
+    /** Moves the node's control topics to another table (see {@link LumenGraph.Node#getTable()}); a subclass rebinds its own as well. */
+    protected void retarget(String newTable) {
+        if (newTable.equals(table)) return;
+        closeNodeTopics();
+        bindNodeTopics(newTable);
     }
 
     public String getName() {
@@ -100,6 +119,10 @@ public class LumenNode implements AutoCloseable {
 
     @Override
     public void close() {
+        closeNodeTopics();
+    }
+
+    private void closeNodeTopics() {
         for (AutoCloseable closeable : new AutoCloseable[] { enabledPub, snapshotPub, enabledSub, recordingPub, recordingSub }) {
             try {
                 closeable.close();

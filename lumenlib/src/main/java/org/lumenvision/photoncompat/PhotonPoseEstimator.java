@@ -34,6 +34,8 @@ public class PhotonPoseEstimator {
 
     private Pose3d referencePose = new Pose3d();
     private Pose3d lastPose;
+    // the timestamp update(result) last estimated from, as photonlib keeps it: the same frame is not estimated twice
+    private double lastResultTimestamp = -1;
     private final TimeInterpolatableBuffer<Rotation2d> headingBuffer = TimeInterpolatableBuffer.createBuffer(1.0);
 
     /** The current photonlib constructor: pass each camera's result to {@link #update(PhotonPipelineResult)}. */
@@ -57,6 +59,7 @@ public class PhotonPoseEstimator {
 
     public void setFieldTags(AprilTagFieldLayout fieldTags) {
         this.fieldTags = fieldTags;
+        invalidateCache();
     }
 
     public PoseStrategy getPrimaryStrategy() {
@@ -65,11 +68,13 @@ public class PhotonPoseEstimator {
 
     public void setPrimaryStrategy(PoseStrategy strategy) {
         this.primaryStrategy = strategy;
+        invalidateCache();
     }
 
     /** The strategy used when a coprocessor strategy has no result (default LOWEST_AMBIGUITY). */
     public void setMultiTagFallbackStrategy(PoseStrategy strategy) {
         this.multiTagFallbackStrategy = strategy;
+        invalidateCache();
     }
 
     public PoseStrategy getMultiTagFallbackStrategy() {
@@ -82,15 +87,23 @@ public class PhotonPoseEstimator {
 
     public void setRobotToCameraTransform(Transform3d robotToCamera) {
         this.robotToCamera = robotToCamera;
+        invalidateCache();
     }
 
     /** The pose CLOSEST_TO_REFERENCE_POSE compares candidates with. */
     public void setReferencePose(Pose3d referencePose) {
         this.referencePose = referencePose;
+        invalidateCache();
     }
 
     public void setReferencePose(Pose2d referencePose) {
         this.referencePose = new Pose3d(referencePose);
+        invalidateCache();
+    }
+
+    // a changed setting makes the frame last estimated worth estimating again
+    private void invalidateCache() {
+        lastResultTimestamp = -1;
     }
 
     /** The pose CLOSEST_TO_LAST_POSE compares candidates with; updated by every successful estimate. */
@@ -125,6 +138,11 @@ public class PhotonPoseEstimator {
     /** Estimates the robot pose from a result of this estimator's camera using the primary strategy (and the fallback, if needed). */
     public Optional<EstimatedRobotPose> update(PhotonPipelineResult photonResult) {
         LumenPipelineResult result = photonResult.getLumenPipelineResult();
+        // as photonlib: a result with no capture time, or the frame already estimated, gives nothing, so a loop faster than the camera
+        // (or a camera that has stopped) does not feed the same measurement into a pose filter again
+        double timestamp = result.getTimestampSeconds();
+        if (timestamp < 0 || Math.abs(timestamp - lastResultTimestamp) < 1e-6) return Optional.empty();
+        lastResultTimestamp = timestamp;
         Optional<EstimatedRobotPose> estimate = estimate(result, primaryStrategy);
         if (estimate.isEmpty() && (primaryStrategy == PoseStrategy.MULTI_TAG_PNP_ON_COPROCESSOR
                 || primaryStrategy == PoseStrategy.MULTI_TAG_PNP_ON_RIO || primaryStrategy == PoseStrategy.CONSTRAINED_SOLVEPNP)) {

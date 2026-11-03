@@ -37,8 +37,18 @@ class PhotonPoseEstimatorTest {
         return new LumenTrackedTarget(id, -1, -1, 0, 0, area, 0, ambiguity, best, alternate, 0.2f, 0.9f, new double[8], new double[8]);
     }
 
+    // each result is a new frame: an estimator gives nothing for a frame it has already estimated (see EdgePhotonPoseEstimatorTest)
+    private static double nextFrameSeconds = 12.0;
+
+    @org.junit.jupiter.api.BeforeEach
+    void firstFrameAtTwelveSeconds() {
+        nextFrameSeconds = 12.0;
+    }
+
     private static PhotonPipelineResult result(Optional<LumenMultiTagResult> multiTag, LumenTrackedTarget... targets) {
-        return new PhotonPipelineResult(new LumenPipelineResult(new ArrayList<>(List.of(targets)), 12.0, 7, 15000, multiTag));
+        double timestamp = nextFrameSeconds;
+        nextFrameSeconds += 0.02;
+        return new PhotonPipelineResult(new LumenPipelineResult(new ArrayList<>(List.of(targets)), timestamp, 7, 15000, multiTag));
     }
 
     private static void assertPose(Pose3d expected, Pose3d actual, double tolerance) {
@@ -210,7 +220,7 @@ class PhotonPoseEstimatorTest {
     void constrainedSolveReturnsTheCoprocessorsRobotPoseAndFallsBackWithoutOne() {
         LumenConstrainedResult constrained = new LumenConstrainedResult(ROBOT.toPose2d(), 0.3, 1);
         LumenTrackedTarget t = target(1, TAG1, ROBOT, 0.1, 1.0, new Transform3d());
-        PhotonPipelineResult withConstrained = new PhotonPipelineResult(new LumenPipelineResult(new ArrayList<>(List.of(t)), 12.0, 7, 15000,
+        PhotonPipelineResult withConstrained = new PhotonPipelineResult(new LumenPipelineResult(new ArrayList<>(List.of(t)), 11.0, 7, 15000,
                 Optional.empty(), Optional.of(constrained)));
 
         PhotonPoseEstimator estimator = estimator(PoseStrategy.CONSTRAINED_SOLVEPNP);

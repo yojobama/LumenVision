@@ -105,6 +105,8 @@ public class PhotonCamera implements AutoCloseable {
 
     /** Driver mode stops the camera's detectors, so no results are published; the camera itself keeps running. */
     public void setDriverMode(boolean driverMode) {
+        // driver mode stops every detector, after which "the first enabled one" is pipeline 0; remember the running one to return to it
+        if (driverMode && !this.driverMode && selected < 0) selected = getPipelineIndex();
         this.driverMode = driverMode;
         applyRunningState();
     }
