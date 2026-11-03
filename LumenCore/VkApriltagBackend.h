@@ -8,6 +8,7 @@
 #include <vkapriltag/gpu/QuadDecode.h>
 #include <vkapriltag/vk/Context.h>
 #include <atomic>
+#include <stdexcept>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -24,6 +25,13 @@
 // 2D detection (pose, JSON and annotation live in ApriltagDetector).
 class VkApriltagBackend : public IApriltagBackend {
 public:
+	// Thrown when the GPU is fine but this frame size cannot be run on it (too small to hold a tag, past the pipeline's limits, ...): the detector
+	// then uses the CPU backend for that size only and tries the GPU again for the next one. Any other exception from the constructor means
+	// there is no usable device (no driver, no Vulkan), which is permanent.
+	struct UnsupportedFrameSize : std::runtime_error {
+		using std::runtime_error::runtime_error;
+	};
+
 	// throws (via vk::Context's constructor / CheckVk) if no usable Vulkan compute device is found or the frame size is
 	// unusable; callers should catch this and fall back to CpuApriltagBackend.
 	// frameWidth/frameHeight must be the real frame size: the GPU buffers and decimation are fixed at construction.
@@ -92,6 +100,8 @@ private:
 
 	// each frame is a different pooled buffer for a while, so the import cache is capped; frames beyond it are copied
 	static constexpr size_t kMaxImportedFrames = 32;
+	// the smallest decimated side the GPU pipeline is built for (a tag cannot be found in less)
+	static constexpr int kMinDecimatedSide = 8;
 
 	apriltag_detector_t* m_Detector;
 	apriltag_family_t* m_Family;
@@ -100,6 +110,12 @@ private:
 	std::string m_GpuDeviceName;
 	int m_FrameWidth = 0;
 	int m_FrameHeight = 0;
+	// The GPU pipeline sizes its grey buffer as width*height/4 words, so a frame whose pixel count is not a multiple of four cannot be uploaded as it is.
+	// Those frames go to the GPU on a copy widened (by repeating the last column) to a multiple of four; the tags' pixel coordinates are unchanged
+	// because the extra columns are on the right. m_GpuWidth is that width (the frame's own when no padding is needed).
+	int m_GpuWidth = 0;
+	cv::Mat m_PaddedFrame;
+	std::shared_ptr<void> m_PaddedFrameOwner;
 	uint32_t m_Decimation = 2;
 	RefineEdgesMode m_RefineMode = REFINE_EXACT;
 

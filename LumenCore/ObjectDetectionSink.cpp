@@ -1,4 +1,5 @@
 #include "ObjectDetectionSink.h"
+#include "DistortionCoefficients.h"
 #include "FramePool.h"
 #include <nlohmann/json.hpp>
 #include <opencv2/calib3d.hpp>
@@ -26,7 +27,9 @@ void ObjectDetectionSink::SetCalibration(const CameraCalibrationResult& calibrat
 		calibration.fx, 0, calibration.cx,
 		0, calibration.fy, calibration.cy,
 		0, 0, 1);
-	m_DistCoeffs = calibration.HasDistortion() ? cv::Mat(calibration.distCoeffs, true) : cv::Mat::zeros(5, 1, CV_64F);
+	// a count of coefficients OpenCV rejects (k1 and k2 alone, say) would make every undistortPoints throw
+	const std::vector<double> distortion = NormalisedDistortionCoefficients(calibration.distCoeffs);
+	m_DistCoeffs = distortion.empty() ? cv::Mat::zeros(5, 1, CV_64F) : cv::Mat(distortion, true);
 }
 
 std::optional<CameraCalibrationResult> ObjectDetectionSink::GetCalibration()

@@ -134,6 +134,19 @@ private:
 	// invalid pointers for fx=fy=0, so pose estimation is skipped entirely without valid intrinsics.
 	bool m_HasCalibration = false;
 
+	// A calibration belongs to one picture size. When frames arrive at another size (the camera mode was changed after calibrating),
+	// m_CameraMatrix and m_DetectionInfo hold the intrinsics scaled to the frame when the shape is the same, and m_PoseUsable is false when it
+	// is not (a different aspect ratio means a crop or another sensor mode: scaling would give wrong distances, so no pose is published).
+	// Both are set for the frame size in m_AppliedWidth/Height by ApplyFrameSizeLocked; the caller holds m_CalibrationMutex.
+	bool m_PoseUsable = false;
+	int m_AppliedWidth = 0;
+	int m_AppliedHeight = 0;
+	void ApplyFrameSizeLocked(int frameWidth, int frameHeight);
+
+	// the size the current backend was built for, and whether it is the CPU one only because the GPU one could not be built for that size
+	cv::Size m_BackendSize;
+	bool m_CpuFallbackForSize = false;
+
 
 	AprilTagFieldLayout m_FieldLayout;
 

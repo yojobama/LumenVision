@@ -1,4 +1,5 @@
 #include "CpuApriltagBackend.h"
+#include <algorithm>
 
 CpuApriltagBackend::CpuApriltagBackend(ApriltagTuning tuning)
 {
@@ -24,6 +25,13 @@ CpuApriltagBackend::~CpuApriltagBackend()
 
 zarray_t* CpuApriltagBackend::Detect(const cv::Mat& grayFrame)
 {
+	// libapriltag's quad search reads outside a picture a few pixels across (a thin or tiny ROI crop in front of an AprilTag node killed the service
+	// with a segmentation fault), and no tag fits in one: such a frame has no detections
+	constexpr float kMinDecimatedSide = 8.0f;
+	const float decimation = std::max(1.0f, m_Detector->quad_decimate);
+	if (static_cast<float>(std::min(grayFrame.cols, grayFrame.rows)) / decimation < kMinDecimatedSide) {
+		return zarray_create(sizeof(apriltag_detection_t*));
+	}
 	// the row stride, not the width: a crop of a larger frame (half of a side-by-side camera) is a view with its parent's stride
 	image_u8_t img = {
 		grayFrame.cols,

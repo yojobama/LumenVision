@@ -120,6 +120,7 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 			std::to_string(frameWidth) + "x" + std::to_string(frameHeight) + ")");
 	}
 
+	m_GpuWidth = (static_cast<int64_t>(frameWidth) * frameHeight) % 4 == 0 ? frameWidth : ((frameWidth + 3) & ~3);
 	m_FamilyKind = tuning.family;
 	m_MaxHamming = ClampMaxHamming(tuning.maxHamming);
 	m_Family = CreateApriltagFamily(m_FamilyKind);
@@ -130,9 +131,15 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	m_Detector->refine_edges = tuning.refineEdges;
 
 	try {
-		m_Decimation = ResolveDecimation(tuning.quadDecimate, frameWidth, frameHeight);
+		m_Decimation = ResolveDecimation(tuning.quadDecimate, m_GpuWidth, frameHeight);
+		// no tag fits in a picture this small once decimated (and the pipeline's own buffers underflow below 3 pixels)
+		if (std::min(frameWidth, frameHeight) / static_cast<int>(m_Decimation) < kMinDecimatedSide) {
+			throw UnsupportedFrameSize("a " + std::to_string(frameWidth) + "x" + std::to_string(frameHeight) + " frame is too small for the GPU pipeline");
+		}
 
+		// from here a failure is about this frame size or this configuration, not about the device: the context was acquired
 		SharedContext shared = AcquireContext(tuning.gpuDevice);
+		try {
 		m_Context = shared.context;
 		m_Lane = m_Context->CreateLane(m_Context->StreamSlot(shared.stream));
 		m_GpuDeviceName = m_Context->caps().name;
@@ -142,7 +149,7 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 			caps.min_host_pointer_alignment > 0 && FramePool::kBlockAlignment % caps.min_host_pointer_alignment == 0;
 
 		DetectorConfig config;
-		config.width = static_cast<uint32_t>(frameWidth);
+		config.width = static_cast<uint32_t>(m_GpuWidth);
 		config.height = static_cast<uint32_t>(frameHeight);
 		config.decimation = m_Decimation;
 		config.tag_width = static_cast<uint32_t>(m_Family->width_at_border);
@@ -176,6 +183,11 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 		// APRILTAG_VK_REFINE, if set, overrides the requested method inside the library.
 		m_TagDecoder = std::make_unique<TagDecoder>(m_Detector, m_Decimation, config.cpu_threads,
 			ToRefineMethod(tuning.refineMode), tuning.probeMargin > 0.0f ? tuning.probeMargin : 0.0f);
+		} catch (const UnsupportedFrameSize&) {
+			throw;
+		} catch (const std::exception& e) {
+			throw UnsupportedFrameSize(e.what());
+		}
 	} catch (...) {
 		ReleaseResources();
 		throw;
@@ -232,6 +244,12 @@ zarray_t* VkApriltagBackend::Detect(const cv::Mat& frame)
 		lapStart = now;
 	};
 
+	// the GPU buffers were sized for this frame size: a different one would be read or written past them
+	if (frame.cols != m_FrameWidth || frame.rows != m_FrameHeight) {
+		throw std::invalid_argument("VkApriltagBackend::Detect: the frame is " + std::to_string(frame.cols) + "x" + std::to_string(frame.rows) +
+			" but the backend was built for " + std::to_string(m_FrameWidth) + "x" + std::to_string(m_FrameHeight));
+	}
+
 	// The GPU reads width*height packed bytes, so a crop carrying its parent's row stride is repacked first.
 	cv::Mat packed;
 	if (!frame.isContinuous()) {
@@ -243,9 +261,18 @@ zarray_t* VkApriltagBackend::Detect(const cv::Mat& frame)
 	}
 	const cv::Mat& grayFrame = frame.isContinuous() ? frame : packed;
 
-	m_LastFrameImported = ImportFrameIfPossible(grayFrame);
+	// the picture the GPU reads: the frame itself, or its copy widened to a multiple of four pixels when the pixel count is odd-shaped
+	cv::Mat gpuFrame = grayFrame;
+	if (m_GpuWidth != m_FrameWidth) {
+		m_PaddedFrame = FramePool::Instance().Acquire(grayFrame.rows, m_GpuWidth, CV_8UC1, m_PaddedFrameOwner);
+		cv::copyMakeBorder(grayFrame, m_PaddedFrame, 0, 0, 0, m_GpuWidth - grayFrame.cols, cv::BORDER_REPLICATE);
+		gpuFrame = m_PaddedFrame;
+		lap("vk-pad");
+	}
+
+	m_LastFrameImported = ImportFrameIfPossible(gpuFrame);
 	lapStart = std::chrono::steady_clock::now(); // the (rare) first-time import is setup, not a per-frame cost
-	m_GpuDetector->Detect(grayFrame.data);
+	m_GpuDetector->Detect(gpuFrame.data);
 	lap("vk-gpu");
 
 	// the library's own split of that call: the upload, waiting for the previous frame's fence, recording, GPU execution and readback

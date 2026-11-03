@@ -1,4 +1,7 @@
 #include "ApriltagDetector.h"
+#include <cmath>
+#include <map>
+#include "DistortionCoefficients.h"
 #include "ApriltagDetection.h"
 #include "CameraCalibrationResult.h"
 #include "ApriltagFamily.h"
@@ -111,6 +114,8 @@ void ApriltagDetector::SetCalibration(const CameraCalibrationResult& calibration
 	m_DetectionInfo.cx = calibration.cx;
 	m_DetectionInfo.cy = calibration.cy;
 	m_HasCalibration = calibration.fx > 0.0 && calibration.fy > 0.0;
+	m_PoseUsable = m_HasCalibration;
+	m_AppliedWidth = m_AppliedHeight = 0; // the next frame re-derives the intrinsics for its size
 
 	// m_CameraMatrix must exist whenever m_HasCalibration does; multi-tag PnP needs intrinsics even
 	// when the fitted distortion is zero.
@@ -120,9 +125,11 @@ void ApriltagDetector::SetCalibration(const CameraCalibrationResult& calibration
 			0, calibration.fy, calibration.cy,
 			0, 0, 1);
 	}
-	if (calibration.HasDistortion()) {
+	// OpenCV rejects a count of distortion coefficients other than 4, 5, 8, 12 or 14 (k1 and k2 alone is common): bring it to one it takes
+	const std::vector<double> distortion = NormalisedDistortionCoefficients(calibration.distCoeffs);
+	if (!distortion.empty()) {
 		m_HasDistortion = true;
-		m_DistCoeffs = cv::Mat(calibration.distCoeffs, true /* copy */);
+		m_DistCoeffs = cv::Mat(distortion, true /* copy */);
 	} else {
 		m_DistCoeffs = cv::Mat::zeros(5, 1, CV_64F);
 	}
@@ -135,8 +142,47 @@ bool ApriltagDetector::HasCalibration() const
 	return m_HasCalibration;
 }
 
+void ApriltagDetector::ApplyFrameSizeLocked(int frameWidth, int frameHeight)
+{
+	if (!m_HasCalibration) { m_PoseUsable = false; return; }
+	if (frameWidth == m_AppliedWidth && frameHeight == m_AppliedHeight) return;
+	m_AppliedWidth = frameWidth;
+	m_AppliedHeight = frameHeight;
+
+	const CameraCalibrationResult& calibration = m_OriginalCalibration;
+	double scaleX = 1.0, scaleY = 1.0;
+	bool usable = true;
+	if (calibration.imageWidth > 0 && calibration.imageHeight > 0 && (calibration.imageWidth != frameWidth || calibration.imageHeight != frameHeight)) {
+		const double calibrationAspect = static_cast<double>(calibration.imageWidth) / calibration.imageHeight;
+		const double frameAspect = static_cast<double>(frameWidth) / frameHeight;
+		if (std::abs(calibrationAspect - frameAspect) <= 0.01 * calibrationAspect) {
+			scaleX = static_cast<double>(frameWidth) / calibration.imageWidth;
+			scaleY = static_cast<double>(frameHeight) / calibration.imageHeight;
+			if (m_Logger) m_Logger->EnterLog(LogLevel::Info, "ApriltagDetector: the calibration is for " + std::to_string(calibration.imageWidth) + "x" +
+				std::to_string(calibration.imageHeight) + " and the frames are " + std::to_string(frameWidth) + "x" + std::to_string(frameHeight) +
+				": scaling the intrinsics to the frame");
+		} else {
+			usable = false;
+			if (m_Logger) m_Logger->EnterLog(LogLevel::Warning, "ApriltagDetector: the calibration is for " + std::to_string(calibration.imageWidth) + "x" +
+				std::to_string(calibration.imageHeight) + " but the frames are " + std::to_string(frameWidth) + "x" + std::to_string(frameHeight) +
+				" (a different shape): no tag poses are published until the camera is back at a matching mode or is calibrated at this one");
+		}
+	}
+	// pixel centres are at integer coordinates, so the principal point scales about the edge of the picture, not about its origin pixel
+	const double fx = calibration.fx * scaleX, fy = calibration.fy * scaleY;
+	const double cx = (calibration.cx + 0.5) * scaleX - 0.5, cy = (calibration.cy + 0.5) * scaleY - 0.5;
+	m_DetectionInfo.fx = fx;
+	m_DetectionInfo.fy = fy;
+	m_DetectionInfo.cx = cx;
+	m_DetectionInfo.cy = cy;
+	m_CameraMatrix = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+	m_PoseUsable = usable;
+}
+
 void ApriltagDetector::BuildBackendLocked(int frameWidth, int frameHeight)
 {
+	m_BackendSize = cv::Size(frameWidth, frameHeight);
+	m_CpuFallbackForSize = false;
 	if (m_RequestedBackendKind == APRILTAG_BACKEND_VULKAN && !m_VulkanUnavailable) {
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 		try {
@@ -159,6 +205,11 @@ void ApriltagDetector::BuildBackendLocked(int frameWidth, int frameHeight)
 			m_Backend = std::move(vk);
 			m_ActiveBackendKind = APRILTAG_BACKEND_VULKAN;
 			return;
+		} catch (const VkApriltagBackend::UnsupportedFrameSize& e) {
+			// The GPU is fine but cannot run this frame size: the CPU backend takes it, and the GPU is tried again when the size changes.
+			if (m_Logger) m_Logger->EnterLog(LogLevel::Warning,
+				std::string("Vulkan AprilTag backend cannot run this frame size (") + e.what() + "), using the CPU backend for it");
+			m_CpuFallbackForSize = true;
 		} catch (const std::exception& e) {
 			// No usable Vulkan device or setup failed: fall back to CPU, without retrying per frame.
 			if (m_Logger) m_Logger->EnterLog(LogLevel::Warning,
@@ -450,12 +501,17 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 			const cv::Mat& gray = result.frame->AsGray();
 			lap.Mark("gray");
 
+			// the calibration is for one picture size: scale it to this frame, or note that it cannot be used for it
+			ApplyFrameSizeLocked(gray.cols, gray.rows);
+
 			// Vulkan is sized to the frame: build on the first frame, rebuild if the size changes.
 			if (m_RequestedBackendKind == APRILTAG_BACKEND_VULKAN && !m_VulkanUnavailable) {
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
-				auto* vk = dynamic_cast<VkApriltagBackend*>(m_Backend.get());
+				// a Vulkan backend is sized to its frame; the CPU backend that stands in for one that could not be built for a size is
+				// retried as soon as the size changes
+				const bool sizeChanged = m_Backend && m_BackendSize != cv::Size(gray.cols, gray.rows);
 				bool needsBuild = !m_Backend ||
-					(vk && (vk->GetFrameWidth() != gray.cols || vk->GetFrameHeight() != gray.rows));
+					(sizeChanged && (m_ActiveBackendKind == APRILTAG_BACKEND_VULKAN || m_CpuFallbackForSize));
 #else
 				bool needsBuild = !m_Backend;
 #endif
@@ -493,6 +549,25 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			std::vector<nlohmann::json> jsonVector;
 
+			// A layout tag seen twice in one frame (a printed duplicate, a reflection) would put contradictory corners into the joint
+			// solves: only the best decode of each ID goes in, and the tag count is the number of distinct IDs.
+			std::map<int, int> bestLayoutDetection;
+			if (m_PoseUsable) {
+				std::map<int, double> bestMargin;
+				for (int i = 0; i < zarray_size(detections); i++) {
+					apriltag_detection_t* candidate;
+					zarray_get(detections, i, &candidate);
+					if (candidate->decision_margin < m_Tuning.decisionMargin) continue;
+					AprilTagFieldPose ignored;
+					if (!m_FieldLayout.TryGetTagPose(candidate->id, ignored)) continue;
+					auto best = bestMargin.find(candidate->id);
+					if (best == bestMargin.end() || candidate->decision_margin > best->second) {
+						bestMargin[candidate->id] = candidate->decision_margin;
+						bestLayoutDetection[candidate->id] = i;
+					}
+				}
+			}
+
 			// Multi-tag PnP: accumulates tags with a known field pose, solved jointly after the tag loop.
 			std::vector<cv::Point3d> multiTagObjectPoints;
 			std::vector<cv::Point2d> multiTagImagePoints;
@@ -522,7 +597,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				// A layout pose is the tag's WPILib frame (X out of its face), so the tag lies in its local Y-Z plane; the corners
 				// follow detection->p[0..3]'s order (see frames::WpilibTagCorners).
 				AprilTagFieldPose fieldPose;
-				if (m_HasCalibration && m_FieldLayout.TryGetTagPose(detection->id, fieldPose)) {
+				if (m_PoseUsable && m_FieldLayout.TryGetTagPose(detection->id, fieldPose) && bestLayoutDetection[detection->id] == i) {
 					const auto localCorners = frames::WpilibTagCorners(m_DetectionInfo.tagsize);
 					cv::Vec3d fieldTranslation(fieldPose.translation.x, fieldPose.translation.y, fieldPose.translation.z);
 					for (int corner = 0; corner < 4; corner++) {
@@ -542,7 +617,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 				// estimate_tag_pose returns invalid pose pointers for degenerate intrinsics (fx=fy=0), which
 				// corrupts the heap when freed, so skip pose estimation without valid intrinsics.
-				if (m_HasCalibration && m_Tuning.singleTagPose) {
+				if (m_PoseUsable && m_Tuning.singleTagPose) {
 					ScopedStage poseStage(SinkProfile(), "pose");
 					apriltag_detection_t poseDetection = *detection;
 					if (m_HasDistortion) {
@@ -644,7 +719,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			// Constrained solve: the same tag corners, but only the robot's floor position and heading unknown.
 			nlohmann::json constrainedJson = nullptr;
-			if (m_HasCalibration && multiTagCount >= 1) {
+			if (m_PoseUsable && multiTagCount >= 1) {
 				ConstrainedPnpInput input;
 				bool hasSeed;
 				{
