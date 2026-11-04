@@ -4,3 +4,4 @@
 scripts/deb/postinst text eol=lf
 scripts/deb/prerm text eol=lf
 scripts/deb/postrm text eol=lf
+scripts/patches/*.patch text eol=lf

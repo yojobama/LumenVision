@@ -1,0 +1,71 @@
+diff --git a/libavcodec/rkmppenc.c b/libavcodec/rkmppenc.c
+index ef05b4b..a49458a 100644
+--- a/libavcodec/rkmppenc.c
++++ b/libavcodec/rkmppenc.c
+@@ -252,7 +252,11 @@ static void clear_frame_list(MPPEncFrame **list)
+                 mpp_buffer_get_index(mpp_buf) >= 0)
+                 mpp_buffer_put(mpp_buf);
+ 
+-            mpp_frame_deinit(&frame->mpp_frame);
++            /* The end-of-stream marker has no buffer, and once it has been sent MPP releases it (with the packet that confirms it, or when the
++             * context is destroyed): deinitialising it here as well returns it to MPP's pool a second time, which libmpp logs as
++             * "mpp_mem_pool_put invalid mem pool ptr ... mpp_frame_deinit" at every close. */
++            if (mpp_buf)
++                mpp_frame_deinit(&frame->mpp_frame);
+             frame->mpp_frame = NULL;
+         }
+ 
+@@ -970,7 +974,21 @@ static int rkmpp_get_packet(AVCodecContext *avctx, AVPacket *packet, int timeout
+         return AVERROR(ENOMEM);
+ 
+     if (mpp_packet_get_eos(mpp_pkt)) {
++        MPPEncFrame *eos_frame;
++
+         av_log(avctx, AV_LOG_DEBUG, "Received an EOS packet\n");
++        /* MPP has finished with the end-of-stream marker: release it now, once, instead of keeping it in the list until close */
++        for (eos_frame = r->frame_list; eos_frame; eos_frame = eos_frame->next) {
++            if (eos_frame->queued == 1 && eos_frame->mpp_frame && !mpp_frame_get_buffer(eos_frame->mpp_frame)) {
++                mpp_frame_deinit(&eos_frame->mpp_frame);
++                eos_frame->mpp_frame = NULL;
++                av_freep(&eos_frame->mpp_sei_set.datas);
++                eos_frame->mpp_sei_set.count = 0;
++                av_frame_free(&eos_frame->frame);
++                eos_frame->queued = 0;
++            }
++        }
++        r->eos_queued = 0;
+         ret = AVERROR_EOF;
+         goto exit;
+     }
+@@ -1050,12 +1068,19 @@ static int rkmpp_encode_frame(AVCodecContext *avctx, AVPacket *packet,
+     if (get_used_frame_count(r->frame_list) > r->async_frames)
+         goto get;
+ 
++    /* a second flush call must not queue a second end-of-stream marker: wait for the one that is queued */
++    if (!frame && r->eos_queued)
++        goto get;
++
+     mpp_enc_frame = rkmpp_submit_frame(avctx, (AVFrame *)frame);
+     if (!mpp_enc_frame) {
+         av_log(avctx, AV_LOG_ERROR, "Failed to submit frame on input\n");
+         return AVERROR(ENOMEM);
+     }
+ 
++    if (!frame)
++        r->eos_queued = 1;
++
+ send:
+     ret = rkmpp_send_frame(avctx, mpp_enc_frame);
+     if (ret == AVERROR(EAGAIN))
+diff --git a/libavcodec/rkmppenc.h b/libavcodec/rkmppenc.h
+index a70c863..3ca2b93 100644
+--- a/libavcodec/rkmppenc.h
++++ b/libavcodec/rkmppenc.h
+@@ -70,6 +70,7 @@ typedef struct RKMPPEncContext {
+ 
+     MPPEncFrame       *frame_list;
+     int                async_frames;
++    int                eos_queued;
+ 
+     int                rc_mode;
+     int                qp_init;

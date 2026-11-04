@@ -887,9 +887,17 @@ fetch_ffmpeg_rockchip() {
     [[ "$WITH_FFMPEG_ROCKCHIP" -eq 1 ]] || return 0
     [[ "$ARCH" == "aarch64" ]] || return 0
 
-    if [[ -x "$LUMEN_FFMPEG_PREFIX/bin/ffmpeg" ]] && \
+    # Our fix for the encoder's end-of-stream frame: it was freed twice when an h264_rkmpp recording closed, which libmpp logs as "mpp_mem_pool_put
+    # invalid mem pool ptr" (the same problem is nyanmisaka/ffmpeg-rockchip pull request 273, against the newer encoder). The install is stamped with
+    # the patch's hash, so an install made without it, or with an older version of it, is rebuilt.
+    local patch_file stamp want_sha
+    patch_file="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/patches/ffmpeg-rockchip-rkmppenc-eos.patch"
+    stamp="$LUMEN_FFMPEG_PREFIX/.lumen-rkmppenc-patch.sha256"
+    want_sha="$(sha256sum "$patch_file" | cut -d' ' -f1)"
+
+    if [[ -x "$LUMEN_FFMPEG_PREFIX/bin/ffmpeg" && "$(cat "$stamp" 2>/dev/null)" == "$want_sha" ]] && \
        PKG_CONFIG_PATH="$LUMEN_FFMPEG_PREFIX/lib/pkgconfig" pkg-config --exists libavcodec 2>/dev/null; then
-        log "ffmpeg-rockchip already installed at $LUMEN_FFMPEG_PREFIX"
+        log "ffmpeg-rockchip already installed at $LUMEN_FFMPEG_PREFIX (with the rkmppenc end-of-stream patch)"
         return 0
     fi
     if [[ "$CHECK_ONLY" -eq 1 ]]; then
@@ -910,6 +918,17 @@ fetch_ffmpeg_rockchip() {
         git clone --branch "$FFMPEG_ROCKCHIP_REF" --depth 1 https://github.com/nyanmisaka/ffmpeg-rockchip.git "$src"
     fi
 
+    # apply the patch to the source once (a source tree that already has it, from an earlier run, is left as it is)
+    if git -C "$src" apply --check "$patch_file" 2>/dev/null; then
+        git -C "$src" apply "$patch_file"
+        log "applied $(basename "$patch_file") to $src"
+    elif git -C "$src" apply --check --reverse "$patch_file" 2>/dev/null; then
+        log "$(basename "$patch_file") is already applied to $src"
+    else
+        fail "$(basename "$patch_file") does not apply to $src - is FFMPEG_ROCKCHIP_REF (${FFMPEG_ROCKCHIP_REF}) the 7.1 branch it was made for?"
+        return 1
+    fi
+
     (
         cd "$src"
         # Literal $ORIGIN rpath on every .so so avcodec's own dependencies (e.g. libswresample)
@@ -923,6 +942,7 @@ fetch_ffmpeg_rockchip() {
         make -j "$JOBS"
     )
     install_ffmpeg_build "$src"
+    echo "$want_sha" | sudo tee "$stamp" >/dev/null
 
     log "ffmpeg-rockchip installed to $LUMEN_FFMPEG_PREFIX"
     # captured first; see install_ffmpeg on pipefail
