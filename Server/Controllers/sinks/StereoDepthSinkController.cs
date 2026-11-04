@@ -14,8 +14,7 @@ namespace Server.Controllers.sinks
             [FromQuery] double minDepthMeters, [FromQuery] double maxDepthMeters,
             [FromQuery] int maxSkewUs, [FromQuery] StereoFrameOutput frameOutput)
         {
-            string body = await HttpContext.GetRequestBodyAsStringAsync();
-            StereoCalibrationResultDto calibration = System.Text.Json.JsonSerializer.Deserialize<StereoCalibrationResultDto>(body);
+            StereoCalibrationResultDto calibration = await HttpContext.ReadJsonBodyAsync<StereoCalibrationResultDto>();
             int sinkId = SinkManager.Instance.AddStereoDepthSink(name, backend, calibration.ToNative(), minDepthMeters, maxDepthMeters, maxSkewUs, frameOutput);
             return sinkId;
         }

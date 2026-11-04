@@ -183,6 +183,11 @@ bool RecordSink::EnsureEncoderInitialized(int width, int height)
 
 void RecordSink::ShutdownEncoder()
 {
+	// With h264_rkmpp, freeing the encoder makes libmpp log "mpp_mem_pool_put invalid mem pool ptr ... caller mpp_frame_deinit" once. It is harmless (the
+	// pool refuses the second put) and comes from inside the vendored ffmpeg-rockchip and libmpp: one MppFrame that the encoder's frame list and MPP's own
+	// input list both free when the context is destroyed. Not avoidable from here - tried: no end-of-stream flush (a frame then stays in MPP's list), more
+	// receives before closing, and changing the close order in rkmppenc.c (still double); skipping the encoder's free of the end-of-stream frame removes
+	// the message but leaks that frame in MPP's pool.
 	if (m_YuvFrame) av_frame_free(&m_YuvFrame);
 	if (m_SwsContext) { sws_freeContext(m_SwsContext); m_SwsContext = nullptr; }
 	if (m_CodecContext) avcodec_free_context(&m_CodecContext);

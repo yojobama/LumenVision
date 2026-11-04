@@ -30,8 +30,7 @@ namespace Server.Controllers.sources
         [HttpPost("cameraSource/create")]
         public async Task<int> Create([FromQuery] string name = "default")
         {
-            string body = await HttpContext.GetRequestBodyAsStringAsync();
-            CameraHardwareInfoDto hardwareInfo = System.Text.Json.JsonSerializer.Deserialize<CameraHardwareInfoDto>(body);
+            CameraHardwareInfoDto hardwareInfo = await HttpContext.ReadJsonBodyAsync<CameraHardwareInfoDto>();
             int sourceId = SourceManager.Instance.InitializeCameraSource(hardwareInfo.ToNative(), name);
             return sourceId;
         }
@@ -113,8 +112,7 @@ namespace Server.Controllers.sources
         [HttpPatch("cameraSource/{id}/mode")]
         public async Task<bool> SetMode(int id)
         {
-            string body = await HttpContext.GetRequestBodyAsStringAsync();
-            CameraModeDto mode = System.Text.Json.JsonSerializer.Deserialize<CameraModeDto>(body);
+            CameraModeDto mode = await HttpContext.ReadJsonBodyAsync<CameraModeDto>();
             return SourceManager.Instance.SetCameraMode(id, mode);
         }
 
@@ -172,8 +170,7 @@ namespace Server.Controllers.sources
         [HttpPatch("cameraSource/{id}/transform")]
         public async Task SetTransform(int id)
         {
-            string body = await HttpContext.GetRequestBodyAsStringAsync();
-            FrameTransformDto transform = System.Text.Json.JsonSerializer.Deserialize<FrameTransformDto>(body);
+            FrameTransformDto transform = await HttpContext.ReadJsonBodyAsync<FrameTransformDto>();
             SourceManager.Instance.SetCameraTransform(id, transform);
         }
 
