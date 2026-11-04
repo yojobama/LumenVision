@@ -63,21 +63,33 @@ namespace Server.WebSockets
             }
         }
 
-        private async Task BroadcastAsync(string json)
+        // A client that stops reading (a frozen or throttled browser tab, a dead network path) fills its TCP window and its send never completes:
+        // awaited in turn with no limit, it would stall the tick for every other client for good. Each send gets this long, and all of them run
+        // together; a client that misses it is dropped (it reconnects and gets a fresh snapshot).
+        internal static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(3);
+
+        private async Task SendToClientAsync(Guid id, WebSocket socket, ArraySegment<byte> payload)
+        {
+            if (socket.State != WebSocketState.Open) return;
+            using var timeout = new CancellationTokenSource(SendTimeout);
+            try
+            {
+                await socket.SendAsync(payload, WebSocketMessageType.Text, true, timeout.Token);
+            }
+            catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException or OperationCanceledException)
+            {
+                _clients.TryRemove(id, out _); // one bad client must not stop the others' tick
+                socket.Abort();
+            }
+        }
+
+        internal int ClientCount => _clients.Count;
+        internal void Track(WebSocket socket) => _clients[Guid.NewGuid()] = socket;
+
+        internal Task BroadcastAsync(string json)
         {
             var payload = new ArraySegment<byte>(Encoding.UTF8.GetBytes(json));
-            foreach (var (id, socket) in _clients)
-            {
-                if (socket.State != WebSocketState.Open) continue;
-                try
-                {
-                    await socket.SendAsync(payload, WebSocketMessageType.Text, true, CancellationToken.None);
-                }
-                catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException)
-                {
-                    _clients.TryRemove(id, out _); // one bad client must not stop the others' tick
-                }
-            }
+            return Task.WhenAll(_clients.Select(client => SendToClientAsync(client.Key, client.Value, payload)));
         }
 
         public async Task RunAsync(CancellationToken cancellationToken)
