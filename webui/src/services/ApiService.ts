@@ -161,7 +161,11 @@ export class ApiService {
 
   private async sessionRequest<T>(path: string, method = 'GET'): Promise<T> {
     const response = await fetch(`${this.baseUrl}/calibration/${path}`, { method });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      // the server's reason (e.g. "clear this camera's frame transform before calibrating it") is the plain-text body
+      const reason = (await response.text().catch(() => '')).trim();
+      throw new Error(reason ? `${reason} (HTTP ${response.status})` : `HTTP ${response.status}`);
+    }
     return response.json();
   }
 

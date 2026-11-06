@@ -6,6 +6,11 @@
 #include <cstdio>
 
 namespace {
+	// ticks per second of the encoder's pts (a multiple of every common frame rate, and what MPEG uses)
+	constexpr int kPtsTimeBaseDen = 90000;
+	// a keyframe at least this often (seconds), so seeking stays quick and a power cut loses little, at any frame rate
+	constexpr int kKeyframeIntervalSeconds = 2;
+
 	// zero-padded so a filename sort is chronological; ListSegments()/EnforceRetention() rely on it
 	std::string SegmentBaseName(int index)
 	{
@@ -145,11 +150,13 @@ bool RecordSink::EnsureEncoderInitialized(int width, int height)
 	m_CodecContext = avcodec_alloc_context3(codec);
 	m_CodecContext->width = width;
 	m_CodecContext->height = height;
-	m_CodecContext->time_base = AVRational{ 1, m_Config.fps };
+	// a fine, fixed time base: frames carry their real capture times, so the file plays at the rate it was captured at (variable frame rate)
+	m_CodecContext->time_base = AVRational{ 1, kPtsTimeBaseDen };
 	m_CodecContext->framerate = AVRational{ m_Config.fps, 1 };
 	m_CodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
 	m_CodecContext->bit_rate = static_cast<int64_t>(m_Config.bitrateKbps) * 1000;
-	m_CodecContext->gop_size = m_Config.fps * 2;
+	// the keyframes come from time (EncodeAndWrite forces one every kKeyframeIntervalSeconds); this is only the ceiling for a camera faster than the configured fps
+	m_CodecContext->gop_size = std::max(m_Config.fps * kKeyframeIntervalSeconds, 240);
 	// no B-frames, so MP4 muxing needs no DTS/PTS reordering
 	m_CodecContext->max_b_frames = 0;
 	// MP4 wants SPS/PPS in extradata (the avcC box), not repeated before every keyframe
@@ -198,7 +205,9 @@ void RecordSink::StartNewSegment(int width, int height)
 	CloseCurrentSegment();
 
 	if (!EnsureEncoderInitialized(width, height)) return;
-	m_FrameCounter = 0;
+	m_LastPts = -1;
+	m_FirstCaptureUs = 0;
+	m_NextKeyPts = 0;
 	m_RotateFromPts = AV_NOPTS_VALUE;
 	OpenSegmentFiles();
 }
@@ -297,6 +306,20 @@ void RecordSink::CloseCurrentSegment()
 	m_RotateFromPts = AV_NOPTS_VALUE;
 }
 
+int64_t RecordSink::NextPts(const SourceResult& result)
+{
+	// a source that stamps no capture time (0) falls back to the time the frame reaches the sink
+	const uint64_t captureUs = result.captureTimeUs != 0 ? result.captureTimeUs : SourceResult::NowUs();
+	if (m_FirstCaptureUs == 0) m_FirstCaptureUs = captureUs;
+	int64_t pts = captureUs >= m_FirstCaptureUs
+		? av_rescale_q(static_cast<int64_t>(captureUs - m_FirstCaptureUs), AVRational{ 1, 1000000 }, AVRational{ 1, kPtsTimeBaseDen })
+		: 0;
+	// strictly increasing, as the encoder and the muxer need (a repeated or earlier capture time still gets its own tick)
+	if (pts <= m_LastPts) pts = m_LastPts + 1;
+	m_LastPts = pts;
+	return pts;
+}
+
 void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 {
 	StageLap lap(SinkProfile());
@@ -321,13 +344,16 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 		m_StartFailedSize = cv::Size();
 	}
 	if (!m_FormatContext || !m_CodecContext) return;
+	const int64_t pts = NextPts(result);
 	// a due segment asks for a keyframe now; the file changes when that keyframe comes out of the encoder (below), so every file starts on one
 	bool forceKeyframe = false;
 	if (m_RotateFromPts == AV_NOPTS_VALUE &&
 		std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - m_SegmentStartedAt).count() >= m_Config.segmentSeconds) {
-		m_RotateFromPts = m_FrameCounter; // this frame's pts
+		m_RotateFromPts = pts; // this frame's pts
 		forceKeyframe = true;
 	}
+	if (pts >= m_NextKeyPts) forceKeyframe = true;
+	if (forceKeyframe) m_NextKeyPts = pts + static_cast<int64_t>(kKeyframeIntervalSeconds) * kPtsTimeBaseDen;
 
 	if (nv12) {
 		if (!m_Nv12Converter.Convert(frame, m_YuvFrame)) return;
@@ -337,7 +363,7 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 		int srcStride[1] = { static_cast<int>(bgrFrame.step) };
 		sws_scale(m_SwsContext, srcSlices, srcStride, 0, m_EncoderHeight, m_YuvFrame->data, m_YuvFrame->linesize);
 	}
-	m_YuvFrame->pts = m_FrameCounter++;
+	m_YuvFrame->pts = pts;
 	m_YuvFrame->pict_type = forceKeyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
 	lap.Mark("convert");
 

@@ -28,6 +28,7 @@ struct Mp4Summary {
 	int packets = 0;
 	bool firstIsKeyframe = false;
 	double firstSeconds = -1;
+	double lastSeconds = -1;
 };
 
 Mp4Summary SummariseMp4(const std::filesystem::path& path)
@@ -46,6 +47,7 @@ Mp4Summary SummariseMp4(const std::filesystem::path& path)
 						summary.firstIsKeyframe = (packet->flags & AV_PKT_FLAG_KEY) != 0;
 						summary.firstSeconds = packet->pts * av_q2d(format->streams[video]->time_base);
 					}
+					summary.lastSeconds = packet->pts * av_q2d(format->streams[video]->time_base);
 					summary.packets++;
 				}
 				av_packet_unref(packet);
@@ -162,6 +164,52 @@ TEST_CASE("segments rotate on a keyframe from one running encoder: each file pla
 	// the files together hold every frame the encoder was given, none dropped at a rotation
 	CHECK(framesSent > 0);
 	CHECK(framesRecorded == framesSent);
+
+	manager.Shutdown();
+	std::filesystem::remove_all(folder, ignored);
+	std::filesystem::remove(clip, ignored);
+}
+
+TEST_CASE("a recording of a fast source plays at the speed it was captured at, not slowed down to the sink's nominal fps", "[record]") {
+	const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lumencore-test-record-realtime";
+	std::error_code ignored;
+	std::filesystem::remove_all(folder, ignored);
+	std::filesystem::create_directories(folder);
+	const std::filesystem::path clip = std::filesystem::temp_directory_path() / "lumencore-test-record-realtime.avi";
+	{
+		cv::Mat bus = cv::imread(std::string(LUMEN_TEST_DATA_DIR) + "/bus.jpg");
+		REQUIRE_FALSE(bus.empty());
+		cv::resize(bus, bus, cv::Size(320, 240));
+		cv::VideoWriter writer(clip.string(), cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 120.0, bus.size());
+		REQUIRE(writer.isOpened());
+		for (int i = 0; i < 600; i++) writer.write(bus);
+	}
+
+	Manager manager;
+	int sourceId = manager.CreateVideoFileSource(clip.string(), 120);
+	// the sink is told 30 fps (what the server passes whatever the camera does), the source delivers 120
+	int sinkId = manager.CreateRecordSink(folder.string(), "libx264", 2000, 30, 60, 0, 0);
+	manager.BindSourceToSink(sourceId, sinkId);
+	manager.StartSinkById(sinkId);
+	const auto started = std::chrono::steady_clock::now();
+	manager.StartSourceById(sourceId);
+	std::this_thread::sleep_for(std::chrono::milliseconds(2500));
+	manager.StopSourceById(sourceId);
+	std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	manager.StopSinkById(sinkId);
+	const double wallSeconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+
+	std::filesystem::path video;
+	for (const auto& entry : std::filesystem::directory_iterator(folder)) {
+		if (entry.path().extension() == ".mp4") video = entry.path();
+	}
+	REQUIRE_FALSE(video.empty());
+	const Mp4Summary summary = SummariseMp4(video);
+	REQUIRE(summary.opened);
+	REQUIRE(summary.packets > 30);
+	// the clip lasts about as long as the recording ran; counting frames at 30 fps would make it several times longer
+	REQUIRE(summary.lastSeconds <= wallSeconds);
+	REQUIRE(summary.lastSeconds > 0.5);
 
 	manager.Shutdown();
 	std::filesystem::remove_all(folder, ignored);

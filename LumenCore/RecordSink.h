@@ -24,8 +24,8 @@ struct RecordSinkConfig {
 	// "libx264" by default (same knob as WebRTCSinkConfig, e.g. "h264_rkmpp" on the Orange Pi);
 	// see cmake/LumenFFmpeg.cmake for the GPL licensing implications
 	std::string encoderName = "libx264";
-	// higher than WebRTCSink's 4000 default: footage quality matters more than live latency
-	int bitrateKbps = 8000;
+	// the same as WebRTCSink's default: a 720p recording at 8000 kbps came to about 50 MB a minute for no visible gain
+	int bitrateKbps = 4000;
 	int fps = 30;
 	// a new segment starts once the current one has been open this long, bounding what a crash/power loss can lose
 	int segmentSeconds = 300;
@@ -65,6 +65,7 @@ private:
 
 	bool EnsureEncoderInitialized(int width, int height); // caller must already hold m_Mutex
 	void ShutdownEncoder();                                // caller must already hold m_Mutex
+	int64_t NextPts(const SourceResult& result);         // the frame's pts from its capture time, always above the previous one; caller holds m_Mutex
 	void EncodeAndWrite(const Frame& frame, const SourceResult& result); // caller must already hold m_Mutex
 
 	std::shared_ptr<Logger> m_Logger;
@@ -82,7 +83,11 @@ private:
 	AVFrame* m_YuvFrame = nullptr;
 	int m_EncoderWidth = 0;
 	int m_EncoderHeight = 0;
-	int64_t m_FrameCounter = 0; // the encoder's pts, continuous across segments; each file's start is subtracted when writing
+	// The encoder's pts, in kPtsTimeBaseDen ticks per second, continuous across segments (each file's start is subtracted when writing). It follows
+	// the frames' capture times, not a frame count at the configured fps: a camera running at 120 fps recorded as 30 played back four times slow.
+	int64_t m_LastPts = -1;
+	uint64_t m_FirstCaptureUs = 0; // capture time of the encoder's first frame; 0 until it has one
+	int64_t m_NextKeyPts = 0;      // the pts from which the next frame is a keyframe: one every two seconds whatever the frame rate
 	int64_t m_SegmentPtsBase = AV_NOPTS_VALUE; // pts of the current file's first packet
 	// the segment is due from this pts on: the first keyframe packet at or after it starts a new file (an encoder with a lookahead still
 	// hands out older packets, keyframes among them, after the request); AV_NOPTS_VALUE when no rotation is pending

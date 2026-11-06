@@ -395,7 +395,7 @@ namespace Server
         // creates a RecordSink; bind it to a frame-producing node to record segmented MP4 files plus a JSON-Lines telemetry sidecar.
         // dstFolder is relative to the working directory; defaults to a name-derived folder under "recordings/".
         public int AddRecordSink(string name, string? dstFolder = null, string? encoderName = null,
-            int bitrateKbps = 8000, int fps = 30, int segmentSeconds = 300,
+            int bitrateKbps = 4000, int fps = 30, int segmentSeconds = 300,
             long maxFolderSizeBytes = 0, int maxFileCount = 0)
         {
             string resolvedFolder = dstFolder ?? System.IO.Path.Combine("recordings", SanitizeFolderName(name));
@@ -501,7 +501,7 @@ namespace Server
         {
             string dstFolder = persisted.RecordDstFolder ?? System.IO.Path.Combine("recordings", persisted.Id.ToString());
             int id = ManagerWrapper.Instance.CreateRecordSink(persisted.Id, dstFolder,
-                persisted.RecordEncoderName ?? ManagerWrapper.Instance.GetPreferredWebRTCEncoder(), persisted.RecordBitrateKbps ?? 8000, 30,
+                persisted.RecordEncoderName ?? ManagerWrapper.Instance.GetPreferredWebRTCEncoder(), persisted.RecordBitrateKbps ?? 4000, 30,
                 persisted.RecordSegmentSeconds ?? 300, persisted.RecordMaxFolderSizeBytes ?? 0,
                 persisted.RecordMaxFileCount ?? 0);
             sinks.Add(new Sink(id, persisted.Name, SinkType.RecordSink)

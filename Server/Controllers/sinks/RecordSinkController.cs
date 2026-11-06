@@ -28,7 +28,7 @@ namespace Server.Controllers.sinks
             [FromQuery] long? maxFolderSizeBytes = null, [FromQuery] int? maxFileCount = null)
         {
             int sinkId = SinkManager.Instance.AddRecordSink(name, dstFolder, encoderName,
-                bitrateKbps ?? 8000, fps ?? 30, segmentSeconds ?? 300, maxFolderSizeBytes ?? 0, maxFileCount ?? 0);
+                bitrateKbps ?? 4000, fps ?? 30, segmentSeconds ?? 300, maxFolderSizeBytes ?? 0, maxFileCount ?? 0);
             return Task.FromResult(sinkId);
         }
 
