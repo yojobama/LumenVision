@@ -15,6 +15,7 @@
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
 #include <vkapriltag/PoseEstimator.h>
+#include <stdexcept>
 #endif
 
 namespace {
@@ -404,8 +405,15 @@ bool ApriltagDetector::SolveTagPose(const apriltag_detection_t& poseDetection, S
 		const double key[5] = { m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, m_DetectionInfo.tagsize };
 		if (!m_PoseEstimator || !std::equal(std::begin(key), std::end(key), std::begin(m_PoseEstimatorKey))) {
 			// one thread: Process() solves a handful of tags per frame, so a worker pool would only add wake-ups
-			m_PoseEstimator = std::make_shared<apriltag_vulkan::PoseEstimator>(
-				apriltag_vulkan::CameraIntrinsics{ key[0], key[1], key[2], key[3] }, key[4], 1);
+			// vkapriltag 1.10 throws std::invalid_argument unless the tag size and focal lengths are finite and positive and the principal
+			// point is finite (a zero tag size, an uncalibrated camera): such a tag has no pose, and the detector must keep running
+			try {
+				m_PoseEstimator = std::make_shared<apriltag_vulkan::PoseEstimator>(
+					apriltag_vulkan::CameraIntrinsics{ key[0], key[1], key[2], key[3] }, key[4], 1);
+			} catch (const std::invalid_argument&) {
+				m_PoseEstimator.reset();
+				return false;
+			}
 			std::copy(std::begin(key), std::end(key), std::begin(m_PoseEstimatorKey));
 		}
 		auto* estimator = static_cast<apriltag_vulkan::PoseEstimator*>(m_PoseEstimator.get());
