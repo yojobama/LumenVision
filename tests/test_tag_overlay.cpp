@@ -57,3 +57,16 @@ TEST_CASE("nothing is drawn for a tag behind the camera", "[overlay]") {
 
 	CHECK(cv::countNonZero(image.reshape(1)) == 0);
 }
+
+TEST_CASE("a close, tilted tag whose box reaches behind the camera still shows the part of it in front", "[overlay]") {
+	cv::Mat image(480, 640, CV_8UC3, cv::Scalar(0, 0, 0));
+	// turned 70 degrees about the vertical axis at 15 cm with a 20 cm box: the tag's own corners are in front of the lens, the box's far corners behind
+	const double c = std::cos(1.22), s = std::sin(1.22);
+	const double rotation[9] = { c, 0, s, 0, 1, 0, -s, 0, c };
+	const double translation[3] = { 0.0, 0.0, 0.15 };
+
+	DrawTagPose(image, rotation, translation, 0.2, Camera(), cv::Mat());
+
+	// the tag's own outline (and the box edges up to the lens plane) are drawn, and nothing throws or hangs on the huge coordinates
+	CHECK(CountColour(image, kGreen) > 20);
+}

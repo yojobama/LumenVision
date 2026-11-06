@@ -1,6 +1,7 @@
 #include "TagOverlay.h"
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
+#include <algorithm>
 #include <vector>
 
 void DrawTagPose(cv::Mat& image, const double R[9], const double t[3], double tagSize,
@@ -15,27 +16,39 @@ void DrawTagPose(cv::Mat& image, const double R[9], const double t[3], double ta
 		{ 0, 0, 0 }, { axisLength, 0, 0 }, { 0, axisLength, 0 }, { 0, 0, -axisLength },
 	};
 
-	cv::Mat rotation(3, 3, CV_64F);
-	for (int i = 0; i < 9; i++) rotation.at<double>(i / 3, i % 3) = R[i];
-	cv::Mat rvec;
-	cv::Rodrigues(rotation, rvec);
-	const cv::Mat tvec = (cv::Mat_<double>(3, 1) << t[0], t[1], t[2]);
-
+	// the points in the camera's frame; a segment is clipped at a near plane just in front of the lens and the part behind it is dropped. The box
+	// is a whole tag size tall, so on a close, tilted tag its far face crosses the camera's plane: that must not take the visible part of the
+	// box (and the axes) with it.
+	std::vector<cv::Point3d> camera;
+	camera.reserve(points.size());
 	for (const cv::Point3d& point : points) {
-		const double z = R[6] * point.x + R[7] * point.y + R[8] * point.z + t[2];
-		if (z <= 0.0) return;
+		camera.emplace_back(R[0] * point.x + R[1] * point.y + R[2] * point.z + t[0],
+			R[3] * point.x + R[4] * point.y + R[5] * point.z + t[1],
+			R[6] * point.x + R[7] * point.y + R[8] * point.z + t[2]);
 	}
+	const double nearPlane = tagSize * 0.01;
 
-	std::vector<cv::Point2d> projected;
-	cv::projectPoints(points, rvec, tvec, cameraMatrix, distCoeffs, projected);
-	auto at = [&](int i) { return cv::Point(cvRound(projected[i].x), cvRound(projected[i].y)); };
+	auto line = [&](int from, int to, const cv::Scalar& colour, int thickness) {
+		cv::Point3d a = camera[from], b = camera[to];
+		if (a.z < nearPlane && b.z < nearPlane) return;
+		// move the endpoint that is behind the near plane onto it
+		if (a.z < nearPlane) a = a + (b - a) * ((nearPlane - a.z) / (b.z - a.z));
+		else if (b.z < nearPlane) b = b + (a - b) * ((nearPlane - b.z) / (a.z - b.z));
+		std::vector<cv::Point2d> projected;
+		cv::projectPoints(std::vector<cv::Point3d>{ a, b }, cv::Vec3d(0, 0, 0), cv::Vec3d(0, 0, 0), cameraMatrix, distCoeffs, projected);
+		// a point just in front of the lens lands far off the image: keep it in the integer range cv::line clips in
+		auto at = [](const cv::Point2d& p) {
+			return cv::Point(cvRound(std::max(-1e6, std::min(1e6, p.x))), cvRound(std::max(-1e6, std::min(1e6, p.y))));
+		};
+		cv::line(image, at(projected[0]), at(projected[1]), colour, thickness, cv::LINE_AA);
+	};
 
 	const cv::Scalar boxColour(0x00, 0xff, 0x00);
 	for (int i = 0; i < 4; i++) {
-		cv::line(image, at(i), at(4 + i), boxColour, 2, cv::LINE_AA);
-		cv::line(image, at(4 + i), at(4 + (i + 1) % 4), boxColour, 2, cv::LINE_AA);
+		line(i, 4 + i, boxColour, 2);
+		line(4 + i, 4 + (i + 1) % 4, boxColour, 2);
 	}
-	cv::line(image, at(8), at(9), cv::Scalar(0, 0, 0xff), 3, cv::LINE_AA);   // X: red
-	cv::line(image, at(8), at(10), cv::Scalar(0, 0xff, 0), 3, cv::LINE_AA);  // Y: green
-	cv::line(image, at(8), at(11), cv::Scalar(0xff, 0, 0), 3, cv::LINE_AA);  // Z: blue
+	line(8, 9, cv::Scalar(0, 0, 0xff), 3);   // X: red
+	line(8, 10, cv::Scalar(0, 0xff, 0), 3);  // Y: green
+	line(8, 11, cv::Scalar(0xff, 0, 0), 3);  // Z: blue
 }
