@@ -1,21 +1,9 @@
 #pragma once
 #include "ObjectDetection.h"
+#include "ObjectTrackingConfig.h"
 #include <opencv2/core.hpp>
 #include <cstdint>
 #include <vector>
-
-// Gives the boxes an object detector reports frame by frame a stable identity and a velocity (SORT-style tracking).
-struct ObjectTrackingConfig {
-	bool enabled = false;
-	// a detection can only continue a track when its box overlaps the track's predicted box by at least this much (intersection over union)
-	double minIoU = 0.1;
-	// consecutive frames a new object must be seen before it gets a track id (until then its id is -1), so a one-frame false positive burns none
-	int minHits = 3;
-	// a track that is not seen for this long (capture time) is dropped, and its id is never reused
-	int maxAgeMs = 500;
-	// a detection only continues a track of its own class
-	bool classAware = true;
-};
 
 // What the tracker says about one detection of the frame.
 struct TrackInfo {

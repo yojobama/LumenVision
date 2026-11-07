@@ -13,6 +13,7 @@
 #include "Logger.h"
 #include "ISource.h"
 #include "IDetectionBackend.h"
+#include "ObjectTrackingConfig.h"
 #include "IApriltagBackend.h"
 #include "CalibrationBoardType.h"
 #include "StereoCalibrationResult.h"
@@ -181,6 +182,9 @@ public:
 	void SetObjectDetectionThresholds(int sinkId, float confThreshold, float nmsThreshold);
 	float GetObjectDetectionConfThreshold(int sinkId);
 	float GetObjectDetectionNmsThreshold(int sinkId);
+	// object tracking of a running ObjectDetectionSink (see ObjectTrackingConfig.h); Set throws if sinkId is not one, Get returns the defaults
+	void SetObjectDetectionTracking(int sinkId, ObjectTrackingConfig config);
+	ObjectTrackingConfig GetObjectDetectionTracking(int sinkId);
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider);
 	int CreateObjectDetectionSink(ObjectDetectionProvider provider, int id);
 

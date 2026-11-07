@@ -38,6 +38,21 @@ std::optional<CameraCalibrationResult> ObjectDetectionSink::GetCalibration()
 	return m_Calibration;
 }
 
+void ObjectDetectionSink::SetTracking(const ObjectTrackingConfig& config)
+{
+	std::lock_guard<std::mutex> lock(m_TrackingMutex);
+	const bool wasEnabled = m_Tracker.Config().enabled;
+	m_Tracker.SetConfig(config);
+	// switching on starts from no tracks: whatever was tracked before the pause is not the same picture
+	if (config.enabled && !wasEnabled) m_Tracker.Reset();
+}
+
+ObjectTrackingConfig ObjectDetectionSink::GetTracking()
+{
+	std::lock_guard<std::mutex> lock(m_TrackingMutex);
+	return m_Tracker.Config();
+}
+
 void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 {
 	for (const SourceResult& result : results) {
@@ -55,6 +70,16 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 			m_Backend->LastStageTimingsUs(stages);
 			for (const auto& [stage, us] : stages) SinkProfile()->Record(stage, us);
 		}
+
+		// identity and velocity for each detection; the tracker is only touched under its mutex, and nothing is added to the output when it is off
+		std::vector<TrackInfo> tracks;
+		bool tracking = false;
+		{
+			std::lock_guard<std::mutex> lock(m_TrackingMutex);
+			tracking = m_Tracker.Config().enabled;
+			if (tracking) tracks = m_Tracker.Update(detections, result.captureTimeUs, frameSize);
+		}
+		if (tracking) lap.Mark("track");
 
 		// Annotate only when a bound sink wants the frame; otherwise skips the FramePool acquire/copy and drawing.
 		bool wantsFrame = HasActiveFrameConsumer();
@@ -79,7 +104,8 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 			}
 		}
 
-		for (const ObjectDetection& detection : detections) {
+		for (size_t index = 0; index < detections.size(); index++) {
+			const ObjectDetection& detection = detections[index];
 			cv::Rect2d box = detection.GetBoundingBox();
 
 			nlohmann::json entry{
@@ -90,6 +116,11 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 				{"frameWidth", frameSize.width},
 				{"frameHeight", frameSize.height}
 			};
+			if (tracking) {
+				entry["trackId"] = tracks[index].trackId;
+				entry["vxPxPerS"] = tracks[index].vxPxPerS;
+				entry["vyPxPerS"] = tracks[index].vyPxPerS;
+			}
 			if (hasCalibration) {
 				// normalised image coordinates of the box centre (lens distortion removed): yaw = atan(-x) (positive left), pitch = atan(-y), as for tags
 				std::vector<cv::Point2d> centre{ {box.x + box.width / 2.0, box.y + box.height / 2.0} };
@@ -102,7 +133,7 @@ void ObjectDetectionSink::Process(const std::vector<SourceResult>& results)
 
 			if (wantsFrame) {
 				cv::rectangle(annotatedFrame, box, cv::Scalar(0, 0xff, 0), 2);
-				std::string label = detection.GetClassName() + " " + std::to_string(static_cast<int>(detection.GetConfidence() * 100)) + "%";
+				std::string label = (tracking && tracks[index].trackId > 0 ? "#" + std::to_string(tracks[index].trackId) + " " : std::string()) + detection.GetClassName() + " " + std::to_string(static_cast<int>(detection.GetConfidence() * 100)) + "%";
 				cv::putText(annotatedFrame, label, cv::Point(static_cast<int>(box.x), static_cast<int>(box.y) - 5),
 					cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0xff, 0), 1);
 			}

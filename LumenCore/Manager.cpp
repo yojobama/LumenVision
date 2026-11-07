@@ -1501,6 +1501,21 @@ float Manager::GetObjectDetectionNmsThreshold(int sinkId)
     return p_Sink ? p_Sink->GetNmsThreshold() : 0.0f;
 }
 
+void Manager::SetObjectDetectionTracking(int sinkId, ObjectTrackingConfig config)
+{
+    auto sink = m_Sinks.find(sinkId);
+    auto* p_Sink = sink == m_Sinks.end() ? nullptr : dynamic_cast<ObjectDetectionSink*>(sink->second.get());
+    if (p_Sink == nullptr) throw std::runtime_error("no ObjectDetectionSink with id " + std::to_string(sinkId));
+    p_Sink->SetTracking(config);
+}
+
+ObjectTrackingConfig Manager::GetObjectDetectionTracking(int sinkId)
+{
+    auto sink = m_Sinks.find(sinkId);
+    auto* p_Sink = sink == m_Sinks.end() ? nullptr : dynamic_cast<ObjectDetectionSink*>(sink->second.get());
+    return p_Sink ? p_Sink->GetTracking() : ObjectTrackingConfig();
+}
+
 std::string Manager::GetObjectDetectionSinkBackendName(int sinkId)
 {
     auto sink = m_Sinks.find(sinkId);

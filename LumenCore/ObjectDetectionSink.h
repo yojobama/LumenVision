@@ -3,6 +3,7 @@
 #include "ISource.h"
 #include "IDetectionBackend.h"
 #include "CameraCalibrationResult.h"
+#include "ObjectTracker.h"
 #include <memory>
 #include <mutex>
 
@@ -20,6 +21,11 @@ public:
 	float GetConfThreshold() const { return m_Backend ? m_Backend->GetConfThreshold() : 0.0f; }
 	float GetNmsThreshold() const { return m_Backend ? m_Backend->GetNmsThreshold() : 0.0f; }
 
+	// Tracking (off by default): each detection then also carries a trackId (-1 until the object has been seen minHits times in a row) and the
+	// velocity of its box centre in pixels per second. Changing the settings keeps the tracks; turning tracking on starts from none.
+	void SetTracking(const ObjectTrackingConfig& config);
+	ObjectTrackingConfig GetTracking();
+
 	// With a calibration each detection also reports the yaw/pitch of its box centre (degrees, positive left / up, as the
 	// AprilTag targets); without one they are omitted.
 	void SetCalibration(const CameraCalibrationResult& calibration);
@@ -31,6 +37,9 @@ private:
 
 	std::shared_ptr<IDetectionBackend> m_Backend;
 	std::shared_ptr<Logger> m_Logger;
+
+	std::mutex m_TrackingMutex; // guards the tracker (processing thread) against SetTracking/GetTracking (request threads)
+	ObjectTracker m_Tracker;
 
 	std::mutex m_CalibrationMutex;
 	bool m_HasCalibration = false;

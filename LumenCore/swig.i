@@ -8,6 +8,7 @@
 #include "StereoCalibrationResult.h"
 #include "StereoDepthBackendKind.h"
 #include "StereoFrameOutput.h"
+#include "ObjectTrackingConfig.h"
 
 // On Windows, Manager.h transitively pulls in <windows.h> via NetworkTablesSink.h's WPILib
 // (wpinet) headers, which #defines GetMessage as a macro (GetMessageA/W) - textually rewriting
@@ -70,6 +71,7 @@
 %include "FrameFormat.h"
 %include "CameraMode.h"
 %include "FrameTransform.h"
+%include "ObjectTrackingConfig.h"
 // Manager::CopyMjpegFrame writes into a buffer the caller pins: an IntPtr in C#, not an opaque SWIGTYPE_p_void
 %apply void *VOID_INT_PTR { void *buffer }
 %include "Manager.h"
