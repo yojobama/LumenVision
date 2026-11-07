@@ -33,6 +33,7 @@ set(LUMEN_CORE_SOURCES
     NetworkTablesSink.cpp
     ObjectDetection.cpp
     ObjectDetectionSink.cpp
+    ObjectTracker.cpp
     OnnxDetectionBackend.cpp
     OpenCvCameraBackend.cpp
     PixelUnpack.cpp
@@ -177,7 +178,7 @@ if(NOT DEFINED OpenCV_DIR AND EXISTS "/usr/local/lib/cmake/opencv5")
     # the 5.x one explicitly. Presets override OpenCV_DIR; this is only the default for the install-deps.sh Linux layout.
     set(OpenCV_DIR "/usr/local/lib/cmake/opencv5" CACHE PATH "OpenCV 5.x config directory")
 endif()
-find_package(OpenCV 5.0 REQUIRED CONFIG
+find_package(OpenCV 5.1 REQUIRED CONFIG
     COMPONENTS core imgproc imgcodecs videoio dnn objdetect calib stereo geometry
 )
 find_package(Threads REQUIRED)
