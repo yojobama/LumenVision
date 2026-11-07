@@ -193,3 +193,37 @@ the WebRTC preview connected throughout. It found two bugs, both fixed and re-ch
 60 s segment, which corrupted MPP's frame pool, leaked encoder buffers (dma-buf +4.8 MB/h) and caused 9 bursts of failed encode jobs; the encoder
 now lives for the whole recording and segments rotate on a forced keyframe. RGA jobs on memory above 4 GB failed on the RGA2 core; they are now
 kept on the RGA3 cores.
+
+## Sixth round: vkapriltag 1.9.0 to 1.10.1 (desktop GPU only; the board has not been measured)
+
+The submodule moved to the `v1.10.1` tag (`956d502`). 1.10 turns its accuracy work on by default (profile-fit edge refinement, grey-margin and one-cell-out retries, third corrected bit, per-family
+limits, dark and border-less quad rejection, box decimation, noise-adaptive contrast floor) and adds speed work (compacted labelling, a leaner tail, flag polling, a GPU keep-alive on integrated
+GPUs). One behaviour change reached LumenCore: `PoseEstimator`'s constructor now throws `std::invalid_argument` for a zero tag size or non-positive focal lengths, which ended the detector
+thread (the edge test "a detector with a zero tag size keeps running" caught it); `ApriltagDetector::SolveTagPose` now treats it as "no pose".
+
+The board was not reachable for this round, so the numbers are from vkapriltag's own tools built from both tags on the development PC (AMD Radeon RX 9060 XT, Windows, OpenCV 5.0), each at its
+defaults. They say nothing about the Mali; the library's own change log reports 2.549 / 1.230 ms to 1.058 / 0.743 ms (decimation 1 / 2) on the Orange Pi 5 Plus, which this round did not
+reproduce. Because the defaults changed, an on-board run should compare 1.9.0 and 1.10.1 with the refine preset and `probeMargin` the service really uses, as the earlier rounds did.
+
+Corpus (`profiles/vkapriltag-desktop/gen_corpus.py`): 170 synthetic 1280x800 frames of tag36h11 with exact ground-truth corners, 322 tags, varying tag size (16-320 px), tilt, yaw, blur,
+noise, contrast, and 4-40 tags per frame. A tag counts as found when its ID is in the ground truth; corner error is the mean distance to the true corners (the ground truth shifted half a pixel
+for the detector's pixel-corner convention).
+
+| | 1.9.0 | 1.10.1 |
+|---|---|---|
+| tags found, decimation 1 / 2 (of 322) | 216 / 131 | 217 / 130 |
+| wrong IDs | 0 / 0 | 0 / 0 |
+| median corner error, decimation 1 / 2 | 0.209 / 0.221 px | 0.189 / 0.189 px |
+| 95th percentile corner error, decimation 1 / 2 | 0.449 / 0.568 px | 0.396 / 0.485 px |
+| median frame total, single tag, decimation 1 / 2 | 0.320 / 0.259 ms | 0.278 / 0.249 ms |
+| median frame total, 4-40 tags, decimation 1 | 1.65 ms | 0.34-0.41 ms |
+| median frame total, 4-40 tags, decimation 2 | 1.03-1.11 ms | 0.29-0.35 ms |
+
+Timing is `--iterations 300` per frame, three alternating runs per version. The many-tag frames of 1.9.0 sit at one value (about 1.65 ms) however many tags there are, which points at a fixed
+cost per frame (clock ramp or completion latency on repeated submissions) that 1.10's flag polling and keep-alive remove; whether the Mali has the same cost is not known from this.
+Recall is the same on this corpus: the 1.10 change log's gain in tags found was measured on its own corpus, and here libapriltag itself finds fewer than either (209 / 104). Pose, from
+`apriltag_synth_ground_truth` (rotation error against the true pose, mean over the frames both sides decode): vkapriltag 6.06 deg (1.9.0) to 5.09 deg (1.10.1), libapriltag 6.4-6.6 deg;
+translation error 0.0039 to 0.0034 of the distance; corner RMS 0.82-0.96 px (libapriltag) against 0.50-0.69 px (1.10.1, which no longer tracks libapriltag's corners as 1.9.0 did, so the
+mutual rotation delta between the two rises from 3.5 to 5.5 deg while both stay near the truth). The worst cases of about 120 deg are pose-ambiguity flips on tags under 20 px, in every
+build. Library and LumenCore tests: the apriltag, pose, edge, multitag and overlay tests pass (1,061,446 assertions) in the ASan+UBSan WSL build against 1.10.1; the GPU-only tests were skipped
+there (software Vulkan only).
