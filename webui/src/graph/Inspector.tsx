@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Trash2, Wifi, WifiOff, Radio, Play, Square, Code, RefreshCw, AlertTriangle, Circle, Download, FolderInput } from 'lucide-react';
 import type { PipelineNode } from './model';
-import type { WsSource, WsSink, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings } from '../types';
+import type { WsSource, WsSink, CameraMode, CameraControls, CalibrationStatus, RecordSegment, ApriltagAdvancedSettings, ObjectTracking } from '../types';
 import { REFINE_EDGES_MODES, APRILTAG_FAMILIES, DEFAULT_APRILTAG_ADVANCED } from '../types';
 import { ApiService } from '../services/ApiService';
 import { ToggleSwitch } from '../components/ToggleSwitch';
@@ -53,6 +53,7 @@ export const Inspector: React.FC<{
   const [refineModeValue, setRefineModeValue] = useState(1);
   const [refineModeSupported, setRefineModeSupported] = useState(false);
   const [detectionThresholds, setDetectionThresholds] = useState<{ confThreshold: number; nmsThreshold: number } | null>(null);
+  const [tracking, setTracking] = useState<ObjectTracking | null>(null);
   const [advanced, setAdvanced] = useState<ApriltagAdvancedSettings>(DEFAULT_APRILTAG_ADVANCED);
   const [gpuDevices, setGpuDevices] = useState<string[]>([]);
   const [gpuDeviceName, setGpuDeviceName] = useState('');
@@ -170,6 +171,9 @@ export const Inspector: React.FC<{
     api.getObjectDetectionThresholds(sink.Id)
       .then(t => { if (!cancelled) setDetectionThresholds({ confThreshold: t.confThreshold, nmsThreshold: t.nmsThreshold }); })
       .catch(() => { if (!cancelled) setDetectionThresholds(null); });
+    api.getObjectDetectionTracking(sink.Id)
+      .then(t => { if (!cancelled) setTracking(t); })
+      .catch(() => { if (!cancelled) setTracking(null); });
     api.getObjectDetectionSinkBackend(sink.Id)
       .then(name => { if (!cancelled) setDetectionBackendName(name); })
       .catch(() => { if (!cancelled) setDetectionBackendName(null); });
@@ -376,6 +380,17 @@ export const Inspector: React.FC<{
       setResultJson(JSON.stringify(result, null, 2));
     } catch (err) {
       setResultJson(`(failed to fetch result: ${err instanceof Error ? err.message : String(err)})`);
+    }
+  };
+
+  const applyTracking = async (next: ObjectTracking) => {
+    if (!sink) return;
+    try {
+      await api.setObjectDetectionTracking(sink.Id, next);
+      setTracking(next);
+      onToast(next.enabled ? 'Tracking applied' : 'Tracking off', 'success');
+    } catch (error) {
+      onToast(error instanceof Error && error.message ? error.message : 'Failed to apply the tracking settings', 'error');
     }
   };
 
@@ -701,6 +716,39 @@ export const Inspector: React.FC<{
                 <ThresholdFields {...detectionThresholds} onChange={setDetectionThresholds} />
                 <button onClick={applyDetectionThresholds}
                   className="w-full px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Apply cutoffs</button>
+              </div>
+            )}
+            {isObjectDetectionSink && tracking && (
+              <div className="space-y-2" title="Gives each detected object an id and a velocity (pixels per second) that stay with it from frame to frame.">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Track objects</span>
+                  <ToggleSwitch enabled={tracking.enabled} onChange={() => applyTracking({ ...tracking, enabled: !tracking.enabled })} />
+                </div>
+                {tracking.enabled && (
+                  <div className="grid grid-cols-3 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <label title="Least overlap (intersection over union) with an object's predicted box for a detection to continue it.">Min overlap
+                      <input type="number" min={0.01} max={0.99} step={0.05} value={tracking.minIoU}
+                        onChange={e => setTracking({ ...tracking, minIoU: parseFloat(e.target.value) || 0.1 })}
+                        className="w-full px-1 py-1 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+                    </label>
+                    <label title="Frames in a row an object must be seen before it gets an id.">Frames to confirm
+                      <input type="number" min={1} max={30} step={1} value={tracking.minHits}
+                        onChange={e => setTracking({ ...tracking, minHits: parseInt(e.target.value) || 3 })}
+                        className="w-full px-1 py-1 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+                    </label>
+                    <label title="How long an object can be out of sight and still keep its id.">Keep (ms)
+                      <input type="number" min={50} max={10000} step={50} value={tracking.maxAgeMs}
+                        onChange={e => setTracking({ ...tracking, maxAgeMs: parseInt(e.target.value) || 500 })}
+                        className="w-full px-1 py-1 border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
+                    </label>
+                    <label className="col-span-3 flex items-center gap-2" title="A detection only continues an object of its own class.">
+                      <input type="checkbox" checked={tracking.classAware} onChange={e => setTracking({ ...tracking, classAware: e.target.checked })} />
+                      Match within a class only
+                    </label>
+                    <button onClick={() => applyTracking(tracking)}
+                      className="col-span-3 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">Apply tracking</button>
+                  </div>
+                )}
               </div>
             )}
 

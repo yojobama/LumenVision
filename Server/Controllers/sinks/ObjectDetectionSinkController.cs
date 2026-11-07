@@ -32,6 +32,23 @@ namespace Server.Controllers.sinks
             return Task.CompletedTask;
         }
 
+        // GET: the sink's tracking settings (off by default)
+        [HttpGet("objectDetectionSink/tracking")]
+        public Task<ObjectTrackingDto> GetTracking([FromQuery] int sinkId)
+        {
+            return Task.FromResult(SinkManager.Instance.GetObjectDetectionTracking(sinkId));
+        }
+
+        // PUT: turn tracking on or off and set it; with it on every detection carries trackId (-1 until the object has been seen minHits times
+        // in a row) and its velocity in pixels per second. Remembered on the sink.
+        [HttpPut("objectDetectionSink/tracking")]
+        public Task SetTracking([FromQuery] int sinkId, [FromQuery] bool enabled, [FromQuery] double minIoU = 0.1, [FromQuery] int minHits = 3,
+            [FromQuery] int maxAgeMs = 500, [FromQuery] bool classAware = true)
+        {
+            SinkManager.Instance.SetObjectDetectionTracking(sinkId, new ObjectTrackingDto(enabled, minIoU, minHits, maxAgeMs, classAware));
+            return Task.CompletedTask;
+        }
+
         // GET: the backend the sink is running (informational; it cannot be switched)
         [HttpGet("objectDetectionSink/backend")]
         public Task<string> GetBackend([FromQuery] int sinkId)

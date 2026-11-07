@@ -130,6 +130,8 @@ namespace Server
         // cutoffs set on this sink itself; null = the model's own (Model.ConfThreshold / NmsThreshold)
         public float? ObjectDetectionConfThreshold { get; set; }
         public float? ObjectDetectionNmsThreshold { get; set; }
+        // tracking of this sink's detections; null = off with the default settings (older data has none)
+        public ObjectTrackingDto? ObjectTracking { get; set; }
 
         // No `source` constructor parameter: System.Text.Json would bind the JSON "Source" property to it instead of the Source setter.
         public Sink(int id, string name, SinkType type)

@@ -1,4 +1,4 @@
-import type { NodeProfile, CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
+import type { ObjectTracking, NodeProfile, CameraHardwareInfo, CameraMode, CameraControls, Model, StereoCalibrationResult, StereoDepthStats, NodeTypesResponse, CameraCalibrationResult, CalibrationCoverage, CalibrationStatus, CalibrationBoard, CalibrationSession, StoredCameraCalibration, StoredStereoCalibration, NetworkTablesStatus, RecordSegment, SnapshotEntry, CameraControl, FrameTransform, ApriltagAdvancedSettings, FieldLayoutInfo, DeviceSettingsData, NetworkStatus, Ipv4Config, PendingNetworkChange, VersionInfo, ImportResult, StagedPackage, UpdateStatus, LogEntry, LogUsage } from '../types';
 import { apiClient } from '../api/client';
 
 // the `&peer=` part of a WebRTC signalling URL
@@ -453,6 +453,19 @@ export class ApiService {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const dto = await response.json();
     return { confThreshold: dto.ConfThreshold, nmsThreshold: dto.NmsThreshold, modelId: dto.ModelId };
+  }
+
+  async getObjectDetectionTracking(sinkId: number): Promise<ObjectTracking> {
+    const response = await fetch(`${this.baseUrl}/objectDetectionSink/tracking?sinkId=${sinkId}`);
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
+    const dto = await response.json();
+    return { enabled: dto.Enabled, minIoU: dto.MinIoU, minHits: dto.MinHits, maxAgeMs: dto.MaxAgeMs, classAware: dto.ClassAware };
+  }
+
+  async setObjectDetectionTracking(sinkId: number, t: ObjectTracking): Promise<void> {
+    const query = `sinkId=${sinkId}&enabled=${t.enabled}&minIoU=${t.minIoU}&minHits=${t.minHits}&maxAgeMs=${t.maxAgeMs}&classAware=${t.classAware}`;
+    const response = await fetch(`${this.baseUrl}/objectDetectionSink/tracking?${query}`, { method: 'PUT' });
+    if (!response.ok) throw new Error((await response.text()) || `HTTP ${response.status}`);
   }
 
   async setObjectDetectionThresholds(sinkId: number, confThreshold: number, nmsThreshold: number): Promise<void> {

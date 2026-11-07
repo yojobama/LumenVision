@@ -567,7 +567,9 @@ namespace Server
                 ObjectDetectionModelId = model.Id,
                 ObjectDetectionConfThreshold = persisted.ObjectDetectionConfThreshold,
                 ObjectDetectionNmsThreshold = persisted.ObjectDetectionNmsThreshold,
+                ObjectTracking = persisted.ObjectTracking,
             });
+            if (persisted.ObjectTracking is ObjectTrackingDto tracking) ManagerWrapper.Instance.SetObjectDetectionTracking(id, ToNative(tracking));
             return true;
         }
 
@@ -581,6 +583,30 @@ namespace Server
             sink.ObjectDetectionConfThreshold = confThreshold;
             sink.ObjectDetectionNmsThreshold = nmsThreshold;
             DB.Instance.Save();
+        }
+
+        private static ObjectTrackingConfig ToNative(ObjectTrackingDto dto) => new ObjectTrackingConfig
+        {
+            enabled = dto.Enabled, minIoU = dto.MinIoU, minHits = dto.MinHits, maxAgeMs = dto.MaxAgeMs, classAware = dto.ClassAware,
+        };
+
+        // Turns an ObjectDetectionSink's tracking on or off and sets it (see ObjectTrackingDto); remembered on the sink and restored with it.
+        public void SetObjectDetectionTracking(int sinkId, ObjectTrackingDto tracking)
+        {
+            Sink sink = RequireSink(sinkId, SinkType.ObjectDetectionSink);
+            if (!(tracking.MinIoU >= 0.01 && tracking.MinIoU <= 0.99)) throw Server.Web.ApiException.BadRequest("minIoU must be 0.01 to 0.99");
+            if (tracking.MinHits < 1 || tracking.MinHits > 30) throw Server.Web.ApiException.BadRequest("minHits must be 1 to 30");
+            if (tracking.MaxAgeMs < 50 || tracking.MaxAgeMs > 10000) throw Server.Web.ApiException.BadRequest("maxAgeMs must be 50 to 10000");
+            ManagerWrapper.Instance.SetObjectDetectionTracking(sinkId, ToNative(tracking));
+            sink.ObjectTracking = tracking;
+            DB.Instance.Save();
+        }
+
+        public ObjectTrackingDto GetObjectDetectionTracking(int sinkId)
+        {
+            RequireSink(sinkId, SinkType.ObjectDetectionSink);
+            ObjectTrackingConfig native = ManagerWrapper.Instance.GetObjectDetectionTracking(sinkId);
+            return new ObjectTrackingDto(native.enabled, native.minIoU, native.minHits, native.maxAgeMs, native.classAware);
         }
 
         // After a model's default cutoffs changed: the detectors running on it follow, unless their own cutoffs were set on the sink.
@@ -713,6 +739,7 @@ namespace Server
                         throw Server.Web.ApiException.BadRequest("this object detection node predates model tracking and cannot be copied; create it again");
                     newId = AddObjectDetectionSink(name, original.ObjectDetectionModelId.Value,
                         original.ObjectDetectionConfThreshold, original.ObjectDetectionNmsThreshold);
+                    if (original.ObjectTracking is ObjectTrackingDto copiedTracking) SetObjectDetectionTracking(newId, copiedTracking);
                     break;
                 default:
                     throw Server.Web.ApiException.BadRequest($"{original.Type} nodes cannot be copied");

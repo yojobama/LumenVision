@@ -114,6 +114,16 @@ export interface Model {
   provider: number;
 }
 
+// An object detection sink's tracking settings. With it on, every detection also carries trackId (-1 until the object has been seen minHits
+// times in a row) and its velocity in pixels per second.
+export interface ObjectTracking {
+  enabled: boolean;
+  minIoU: number;     // least overlap with a track's predicted box for a detection to continue it
+  minHits: number;    // sightings in a row before an object gets an id
+  maxAgeMs: number;   // how long a track survives unseen
+  classAware: boolean;
+}
+
 // Extra fields AddSinkModal collects; handleAddSink dispatches on `type` to choose which apply.
 export interface AddSinkOptions {
   tagSize?: number;
