@@ -119,7 +119,7 @@ void EdgeBAppendTagCorners(const AprilTagFieldPose& pose, double tagSize, std::v
 	}
 }
 
-const cv::Mat kEdgeBCamera = (cv::Mat_<double>(3, 3) << 700, 0, 520, 0, 700, 260, 0, 0, 1);
+const cv::Mat kEdgeBCamera = cv::Mat(cv::Matx<double, 3, 3>(700, 0, 520, 0, 700, 260, 0, 0, 1));
 
 bool EdgeBAllFinite(const nlohmann::json& pose)
 {

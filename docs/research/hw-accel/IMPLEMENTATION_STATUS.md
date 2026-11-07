@@ -227,3 +227,34 @@ translation error 0.0039 to 0.0034 of the distance; corner RMS 0.82-0.96 px (lib
 mutual rotation delta between the two rises from 3.5 to 5.5 deg while both stay near the truth). The worst cases of about 120 deg are pose-ambiguity flips on tags under 20 px, in every
 build. Library and LumenCore tests: the apriltag, pose, edge, multitag and overlay tests pass (1,061,446 assertions) in the ASan+UBSan WSL build against 1.10.1; the GPU-only tests were skipped
 there (software Vulkan only).
+
+## Seventh round: OpenCV 5.0.0 to 5.1.0 (x64 only; the board has not been measured)
+
+`scripts/install-deps.sh` now builds OpenCV `5.1.0` (and opencv_contrib `5.1.0`) with the flags it used for 5.0; an existing 5.0 install is detected by `pkg-config --modversion` and rebuilt. The CI cache
+key hashes the script, so it refreshes itself. The Windows `C:/lumen-deps` copy is hand-built and stays on 5.0 until it is rebuilt by hand. `find_package(OpenCV 5.0 ...)` keeps its minimum of 5.0 until code
+that needs a 5.1 call (the object tracker's `cv::linearAssignment`) arrives.
+
+Source changes: the `cv::Mat_<double>(r, c) << a, b, c` comma initializer, removed in 5.1 and already deprecated in 5.0, is replaced by `cv::Mat(cv::Matx<double, r, c>(...))` in `ApriltagDetector.cpp`,
+`ObjectDetectionSink.cpp` and six test files (it compiles on both versions). Nothing else needed changing: `NMSBoxesBatched`, `StereoSGBM`, the calibration calls and the saturating `cvRound` family build and
+behave as before.
+
+Tests, WSL ASan+UBSan build, `LumenCoreTests "~[hitl]"`: 214 test cases, 208 passed and 6 skipped on 5.0 and on 5.1, linked against `libopencv_core.so.501` (assertion counts 1,007,449 and 995,937: some tests
+loop for a fixed time, so the count varies with speed).
+
+`tools/opencv-bench` times the OpenCV calls LumenCore makes (median of 400 or more runs, 3 alternating rounds, 12 threads, the same source built against each version, Ryzen desktop under WSL):
+
+| call | 5.0.0 | 5.1.0 | change |
+|---|---|---|---|
+| `calibrateCamera`, 24 views of a 9x6 board (final RMS 0.409808 on both) | 32.45 ms | 22.18 ms | -32% |
+| `warpPerspective` 1280x720 | 0.681 ms | 0.408 ms | -40% |
+| `findChessboardCorners` 1280x720, 9x6 | 3.41 ms | 3.37 ms | -1% |
+| `NMSBoxesBatched`, 400 boxes | 0.430 ms | 0.408 ms | -5% |
+| `solvePnP` (IPPE square, 4 points / iterative, 8 points) | 0.0087 / 0.396 ms | 0.0087 / 0.408 ms | 0% / +3% |
+| `cvtColor` BGR to gray / to I420 | 0.051 / 0.068 ms | 0.053 / 0.068 ms | +4% / 0% |
+| `undistortPoints`, 1000 points | 0.051 ms | 0.055-0.067 ms | +7% to +30% |
+| `StereoSGBM` 3-way, 640x480, 64 disparities | 8.2 ms | 9.1 ms | about +10% |
+| `resize` 1280x720 to 640x360 | 0.054-0.093 ms | 0.053-0.094 ms | within noise |
+
+The two slower rows (`undistortPoints`, `StereoSGBM`) are small in absolute terms and `StereoSGBM`'s runs overlap (7.8-9.3 ms against 9.1-9.3 ms); neither is large enough to matter at the rates the pipeline runs, but both are worth
+a look on the board, where the 5.1 notes' Arm work (KleidiCV 26.09, vectorised imgproc kernels) is the part that could change. Whether the board's OpenCV build has KleidiCV enabled was not checked. Run
+`tools/opencv-bench` there with both versions before drawing a conclusion.

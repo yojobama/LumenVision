@@ -173,7 +173,7 @@ endif()
 
 # --- Required dependencies (every configuration needs these) ---------------------------------
 if(NOT DEFINED OpenCV_DIR AND EXISTS "/usr/local/lib/cmake/opencv5")
-    # /usr/local may hold both OpenCV 5.0 and a stale 4.x install with similarly named config directories, so point find_package at
+    # /usr/local may hold both OpenCV 5.x and a stale 4.x install with similarly named config directories, so point find_package at
     # the 5.x one explicitly. Presets override OpenCV_DIR; this is only the default for the install-deps.sh Linux layout.
     set(OpenCV_DIR "/usr/local/lib/cmake/opencv5" CACHE PATH "OpenCV 5.x config directory")
 endif()
@@ -252,7 +252,7 @@ if(LUMEN_WITH_CODEC_STEREO)
     endif()
     set(CS_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
     set(CS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    # Its harness pkg-configs the system opencv4, which collides with OpenCV 5.0; LumenCore doesn't need it.
+    # Its harness pkg-configs the system opencv4, which collides with OpenCV 5.x; LumenCore doesn't need it.
     set(CS_BUILD_HARNESS OFF CACHE BOOL "" FORCE)
     set(CS_BUILD_PIPELINE ON CACHE BOOL "" FORCE)
     add_subdirectory("${CMAKE_SOURCE_DIR}/third_party/codec-stereo" codec-stereo)

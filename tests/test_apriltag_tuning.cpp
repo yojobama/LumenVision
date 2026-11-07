@@ -496,7 +496,7 @@ TEST_CASE("a tag's pose matches libapriltag's own estimate, with and without len
 		if (!distortion.empty()) {
 			std::vector<cv::Point2d> corners, flatCorners;
 			for (int i = 0; i < 4; i++) corners.emplace_back(detection->p[i][0], detection->p[i][1]);
-			cv::Mat K = (cv::Mat_<double>(3, 3) << focal, 0, 320, 0, focal, 240, 0, 0, 1);
+			cv::Mat K = cv::Mat(cv::Matx<double, 3, 3>(focal, 0, 320, 0, focal, 240, 0, 0, 1));
 			cv::undistortPoints(corners, flatCorners, K, distortion, cv::noArray(), K);
 			float correspondences[4][4];
 			const float tagCorners[4][2] = { { -1, -1 }, { 1, -1 }, { 1, 1 }, { -1, 1 } };

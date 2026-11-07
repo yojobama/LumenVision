@@ -14,7 +14,7 @@
 #
 #   --check         verify what's installed/built and report what's missing; installs nothing
 #   --jobs N        parallelism for from-source builds (default: nproc)
-#   --skip-opencv   skip the OpenCV 5.0 source build (useful once it's already built and cached)
+#   --skip-opencv   skip the OpenCV 5.1 source build (useful once it's already built and cached)
 #   --with-webrtc   also build libdatachannel (slow)
 #   --with-nt4      also fetch ntcore/wpiutil
 #   --with-rknn     also fetch the RKNN runtime (aarch64 only)
@@ -174,10 +174,10 @@ install_base() {
 }
 
 # ---------------------------------------------------------------------------
-# 2. OpenCV 5.0, built from source with opencv_contrib
+# 2. OpenCV 5.1, built from source with opencv_contrib
 # ---------------------------------------------------------------------------
 # Built from source into /usr/local (the distro ships 4.x); opencv_contrib provides ArUco for ChArUco calibration
-OPENCV_VERSION="5.0.0"
+OPENCV_VERSION="5.1.0"
 
 # True unless the dedicated FFmpeg prefix exists and the installed OpenCV videoio needs another libavcodec (compared by SONAME, so no rpath is needed)
 opencv_ffmpeg_matches() {
@@ -561,7 +561,7 @@ build_codec_stereo() {
         (
             cd "$build_dir"
             # -DCMAKE_POSITION_INDEPENDENT_CODE=ON: the static library is linked into libLumenCore.so.
-            # -DCS_BUILD_HARNESS=OFF: the harness uses the system opencv4, which conflicts with the OpenCV 5.0 in /usr/local.
+            # -DCS_BUILD_HARNESS=OFF: the harness uses the system opencv4, which conflicts with the OpenCV 5.x in /usr/local.
             cmake -S .. -B . -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
                 -DCS_BUILD_PIPELINE=ON -DCS_BUILD_TOOLS=ON -DCS_BUILD_TESTS=ON \
                 -DCS_BUILD_HARNESS=OFF -DCS_ENABLE_REF_SAD=ON -DCS_ENABLE_LAVC=ON \

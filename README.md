@@ -38,7 +38,7 @@ as the `.so` exists.
    - Inside WSL, for the `x64` configurations: `./scripts/install-deps.ps1 -Target wsl`
    - On the Orange Pi, for the `ARM64` configurations: `./scripts/install-deps.ps1 -Target pi`
      (or run `scripts/install-deps.sh` directly over SSH)
-   - `install-deps.sh` builds OpenCV 5.0 and a few other dependencies from source; expect the
+   - `install-deps.sh` builds OpenCV 5.1 and a few other dependencies from source; expect the
      first run to take an hour or more, especially on the Pi's ARM cores.
 3. Open `LumenVision.sln` in Visual Studio, pick a configuration, build.
 4. `git submodule update --init` before building with `LUMEN_WITH_VULKAN_APRILTAG` (on by

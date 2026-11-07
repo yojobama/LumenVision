@@ -69,7 +69,7 @@ TEST_CASE("AprilTagFieldLayout loads WPILib-format JSON and converts quaternions
 TEST_CASE("SolveMultiTagPnP recovers a known camera pose from two tags at different field poses", "[multitag]") {
 	const double tagSize = 0.1651;
 	const double fx = 900, fy = 900, cx = 640, cy = 480;
-	cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+	cv::Mat cameraMatrix = cv::Mat(cv::Matx<double, 3, 3>(fx, 0, cx, 0, fy, cy, 0, 0, 1));
 	cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
 
 	// Two tags at different positions and orientations.
@@ -80,7 +80,7 @@ TEST_CASE("SolveMultiTagPnP recovers a known camera pose from two tags at differ
 	AprilTagFieldPose tag2;
 	tag2.translation = { 3.0, -1.0, 0.8 };
 	// tag2 rotated 20deg about its own Y axis relative to tag1
-	cv::Mat rvecTag2 = (cv::Mat_<double>(3, 1) << 0, 0.349, 0);
+	cv::Mat rvecTag2 = cv::Mat(cv::Matx<double, 3, 1>(0, 0.349, 0));
 	cv::Mat rmatTag2;
 	cv::Rodrigues(rvecTag2, rmatTag2);
 	tag2.rotation = cv::Matx33d(
@@ -90,7 +90,7 @@ TEST_CASE("SolveMultiTagPnP recovers a known camera pose from two tags at differ
 
 	// ground truth: the camera's own pose IN FIELD frame
 	cv::Vec3d cameraPositionInField(0.2, 0.1, 0.6);
-	cv::Mat rvecCameraInField = (cv::Mat_<double>(3, 1) << 0.05, -0.1, 0.02);
+	cv::Mat rvecCameraInField = cv::Mat(cv::Matx<double, 3, 1>(0.05, -0.1, 0.02));
 	cv::Mat rmatCameraInField;
 	cv::Rodrigues(rvecCameraInField, rmatCameraInField);
 
@@ -131,7 +131,7 @@ TEST_CASE("SolveMultiTagPnP recovers a known camera pose from two tags at differ
 TEST_CASE("SolveMultiTagPnP returns null with fewer than two tags", "[multitag]") {
 	std::vector<cv::Point3d> objectPoints = { {0,0,0}, {1,0,0}, {1,1,0}, {0,1,0} };
 	std::vector<cv::Point2d> imagePoints = { {100,100}, {200,100}, {200,200}, {100,200} };
-	cv::Mat cameraMatrix = (cv::Mat_<double>(3, 3) << 900, 0, 640, 0, 900, 480, 0, 0, 1);
+	cv::Mat cameraMatrix = cv::Mat(cv::Matx<double, 3, 3>(900, 0, 640, 0, 900, 480, 0, 0, 1));
 	cv::Mat distCoeffs = cv::Mat::zeros(4, 1, CV_64F);
 
 	nlohmann::json result = ApriltagDetector::SolveMultiTagPnP(objectPoints, imagePoints, cameraMatrix, distCoeffs, 1);

@@ -4,7 +4,7 @@
 
 namespace {
 
-cv::Mat Camera() { return (cv::Mat_<double>(3, 3) << 800, 0, 320, 0, 800, 240, 0, 0, 1); }
+cv::Mat Camera() { return cv::Mat(cv::Matx<double, 3, 3>(800, 0, 320, 0, 800, 240, 0, 0, 1)); }
 
 int CountColour(const cv::Mat& image, const cv::Vec3b& colour)
 {

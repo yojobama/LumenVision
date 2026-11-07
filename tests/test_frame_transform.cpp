@@ -73,8 +73,8 @@ TEST_CASE("a transformed calibration projects points where the transformed image
 				REQUIRE(transformed.imageWidth == outSize.width);
 				REQUIRE(transformed.imageHeight == outSize.height);
 
-				cv::Mat K = (cv::Mat_<double>(3, 3) << calibration.fx, 0, calibration.cx, 0, calibration.fy, calibration.cy, 0, 0, 1);
-				cv::Mat Kt = (cv::Mat_<double>(3, 3) << transformed.fx, 0, transformed.cx, 0, transformed.fy, transformed.cy, 0, 0, 1);
+				cv::Mat K = cv::Mat(cv::Matx<double, 3, 3>(calibration.fx, 0, calibration.cx, 0, calibration.fy, calibration.cy, 0, 0, 1));
+				cv::Mat Kt = cv::Mat(cv::Matx<double, 3, 3>(transformed.fx, 0, transformed.cx, 0, transformed.fy, transformed.cy, 0, 0, 1));
 				// A mirrored or rotated image is what the same scene looks like through a camera turned or mirrored the same way, so the
 				// transformed model sees each point with its x/y mixed by the pixel map's linear part.
 				std::vector<cv::Point3d> turned;

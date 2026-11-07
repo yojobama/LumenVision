@@ -121,10 +121,9 @@ void ApriltagDetector::SetCalibration(const CameraCalibrationResult& calibration
 	// m_CameraMatrix must exist whenever m_HasCalibration does; multi-tag PnP needs intrinsics even
 	// when the fitted distortion is zero.
 	if (m_HasCalibration) {
-		m_CameraMatrix = (cv::Mat_<double>(3, 3) <<
-			calibration.fx, 0, calibration.cx,
+		m_CameraMatrix = cv::Mat(cv::Matx<double, 3, 3>(calibration.fx, 0, calibration.cx,
 			0, calibration.fy, calibration.cy,
-			0, 0, 1);
+			0, 0, 1));
 	}
 	// OpenCV rejects a count of distortion coefficients other than 4, 5, 8, 12 or 14 (k1 and k2 alone is common): bring it to one it takes
 	const std::vector<double> distortion = NormalisedDistortionCoefficients(calibration.distCoeffs);
@@ -176,7 +175,7 @@ void ApriltagDetector::ApplyFrameSizeLocked(int frameWidth, int frameHeight)
 	m_DetectionInfo.fy = fy;
 	m_DetectionInfo.cx = cx;
 	m_DetectionInfo.cy = cy;
-	m_CameraMatrix = (cv::Mat_<double>(3, 3) << fx, 0, cx, 0, fy, cy, 0, 0, 1);
+	m_CameraMatrix = cv::Mat(cv::Matx<double, 3, 3>(fx, 0, cx, 0, fy, cy, 0, 0, 1));
 	m_PoseUsable = usable;
 }
 

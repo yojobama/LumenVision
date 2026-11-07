@@ -23,10 +23,9 @@ void ObjectDetectionSink::SetCalibration(const CameraCalibrationResult& calibrat
 	m_HasCalibration = calibration.fx > 0.0 && calibration.fy > 0.0;
 	if (!m_HasCalibration) return;
 	m_Calibration = calibration;
-	m_CameraMatrix = (cv::Mat_<double>(3, 3) <<
-		calibration.fx, 0, calibration.cx,
+	m_CameraMatrix = cv::Mat(cv::Matx<double, 3, 3>(calibration.fx, 0, calibration.cx,
 		0, calibration.fy, calibration.cy,
-		0, 0, 1);
+		0, 0, 1));
 	// a count of coefficients OpenCV rejects (k1 and k2 alone, say) would make every undistortPoints throw
 	const std::vector<double> distortion = NormalisedDistortionCoefficients(calibration.distCoeffs);
 	m_DistCoeffs = distortion.empty() ? cv::Mat::zeros(5, 1, CV_64F) : cv::Mat(distortion, true);
