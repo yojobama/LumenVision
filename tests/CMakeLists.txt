@@ -26,6 +26,7 @@ add_executable(LumenCoreTests
     test_object_tracker.cpp
     test_object_tracker_footage.cpp
     test_object_tracker_replay.cpp
+    test_object_tracker_bench.cpp
     test_camera_calibrator.cpp
     test_apriltag_tuning.cpp
     test_result_packet.cpp

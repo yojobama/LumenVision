@@ -7,6 +7,7 @@
 #include "IDetectionBackend.h"
 #include "Logger.h"
 #include <opencv2/imgproc.hpp>
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <map>
@@ -278,6 +279,47 @@ TEST_CASE("the velocity reported is the ball's, in pixels per second, at 30, 60 
 		CHECK(vx / counted == Catch::Approx(240.0).epsilon(0.12));
 		CHECK(vy / counted == Catch::Approx(60.0).epsilon(0.25));
 	}
+}
+
+TEST_CASE("changing the tracking settings while frames flow is safe", "[tracker][footage][threads]") {
+	auto logger = std::make_shared<Logger>("LumenCoreTests-object-tracker.log");
+	auto source = std::make_shared<LockstepSource>(logger, "race-source");
+	ObjectDetectionSink sink(logger, "race-sink", std::make_shared<ColourBackend>());
+	REQUIRE(sink.BindSource(source));
+	source->Toggle(true);
+	static_cast<ISink&>(sink).Toggle(true);
+
+	std::atomic<bool> stop{ false };
+	std::thread requests([&] {
+		// what the REST handlers do: switch tracking on and off and change its settings, from another thread than the one running the sink
+		for (int i = 0; !stop; i++) {
+			ObjectTrackingConfig config;
+			config.enabled = i % 3 != 0;
+			config.minHits = 1 + i % 4;
+			config.maxAgeMs = 100 + (i % 5) * 100;
+			sink.SetTracking(config);
+			(void)sink.GetTracking();
+			std::this_thread::sleep_for(std::chrono::microseconds(300));
+		}
+	});
+	for (int frame = 0; frame < 80; frame++) {
+		cv::Mat image(180, 320, CV_8UC3, cv::Scalar(20, 20, 20));
+		cv::circle(image, cv::Point(40 + 3 * frame, 90), 11, Palette()[0], cv::FILLED);
+		const uint64_t captureUs = 20'000'000ull + static_cast<uint64_t>(frame) * 16'667ull;
+		source->Publish(image, captureUs);
+		SourceResult result;
+		for (int wait = 0; wait < 2000 && result.captureTimeUs != captureUs; wait++) {
+			result = sink.GetLatestResult();
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		REQUIRE(result.captureTimeUs == captureUs);
+		REQUIRE(result.json.has_value());
+		REQUIRE(result.json->size() == 1);
+	}
+	stop = true;
+	requests.join();
+	static_cast<ISink&>(sink).Toggle(false);
+	source->Toggle(false);
 }
 
 TEST_CASE("with tracking off the sink's output has no track fields", "[tracker][footage]") {

@@ -258,3 +258,46 @@ loop for a fixed time, so the count varies with speed).
 The two slower rows (`undistortPoints`, `StereoSGBM`) are small in absolute terms and `StereoSGBM`'s runs overlap (7.8-9.3 ms against 9.1-9.3 ms); neither is large enough to matter at the rates the pipeline runs, but both are worth
 a look on the board, where the 5.1 notes' Arm work (KleidiCV 26.09, vectorised imgproc kernels) is the part that could change. Whether the board's OpenCV build has KleidiCV enabled was not checked. Run
 `tools/opencv-bench` there with both versions before drawing a conclusion.
+
+## Eighth round: object tracking in ObjectDetectionSink (x64 only; the board has not been measured)
+
+`ObjectDetectionSink` published each frame's boxes on their own, so nothing said that a box in one frame was the same ball as a box in the next. `LumenCore/ObjectTracker.{h,cpp}` adds a SORT-style tracker: each
+frame the tracks move to where their velocity says they are, the detections are matched to them with the optimal assignment (`cv::linearAssignment`, new in OpenCV 5.1, on `1 - IoU`, a pair below `minIoU`
+or of another class forbidden by an infinite cost), matched tracks are corrected by an alpha-beta filter, unmatched detections start tentative tracks, and tracks unseen for `maxAgeMs` end. Time is the
+frames' capture time, so velocities are in pixels per second at 30, 60 or 120 fps. A track gets its id (monotonic per sink, never reused) after `minHits` sightings in a row; until then `trackId` is -1, so a
+one-frame false positive takes none. Tracking is off by default; with it off the sink's output is unchanged. With it on each detection's JSON also carries `trackId`, `vxPxPerS` and `vyPxPerS` (web UI,
+REST, the recording sidecar) and the annotated frame labels it `#id`. The PhotonVision-compatible NetworkTables packet is not touched.
+
+Settings (`ObjectTrackingConfig`: `enabled`, `minIoU` 0.1, `minHits` 3, `maxAgeMs` 500, `classAware`) go through `Manager::Set/GetObjectDetectionTracking`, are validated, persisted on the sink and restored
+with it and copied with the node (`GET/PUT /api/objectDetectionSink/tracking`, an Inspector section for an Object Detection node). `webui/src/api/generated.ts` was not regenerated (it comes from a running
+server's OpenAPI document); the UI calls the route directly, as it does for the thresholds.
+
+Tests, all on OpenCV 5.1.0 in the WSL ASan+UBSan build:
+- `tests/test_object_tracker.cpp`: ids persist for a steady object; two identical objects crossing between frames keep their ids where a nearest-neighbour matcher swaps them; occlusions shorter and longer
+  than `maxAgeMs`; other classes never match; confirmation after `minHits`; same velocity at 30/60/120 fps; resets on a size change or time running backwards; empty, NaN, zero-area, duplicate and repeated-time
+  input; and `cv::linearAssignment` against an exhaustive search on 300 random rectangular matrices with forbidden pairs.
+- `tests/test_object_tracker_footage.cpp`: rendered footage with exact ground truth goes through a real `ObjectDetectionSink` frame by frame (a detector that finds each ball by its colour, so overlapping
+  balls stay two boxes). Two crossing balls: 0 id switches. A ball behind a bar: same track. Six bouncing balls with 5% missed detections and 5% false-positive speckles over 300 frames: 4 id switches, 2 tracks
+  that were ever on two balls, 0 confirmed false positives (the thresholds in the test are 5 and 3). Velocity within 12% of the truth at 30, 60 and 120 fps. A real YOLOv8n on `bus.jpg` panned two pixels a
+  frame for 50 frames: one id for the bus, three for the people (up to four visible).
+- `tests/test_object_tracker_replay.cpp`: replays `RecordSink` sidecars (`.jsonl`) through the tracker with no model; a committed fixture is tested, and `LUMEN_TRACK_REPLAY=<folder> LumenCoreTests "[.replay]"`
+  prints ids, ids a minute, mean track life and detections without an id for real recordings. This is the check to run on match footage once the board is back.
+- `Server.Tests/ObjectTrackingTests.cs` (11 cases): defaults, set/get through to the native detector, persistence and old records, validation (400 and nothing changed), a non-detector sink, a copied node.
+- A race test (settings changed from another thread while frames flow), run under ThreadSanitizer: 0 reports. `tests/tsan.supp` named OpenCV 5.0's sonames (`.so.500`), so on 5.1 (`.so.501`) every OpenCV worker-pool
+  hand-over was reported again; the entries now match any soname.
+- Whole non-hardware suite on 5.1 (ASan+UBSan): 231 test cases (214 before this work, plus 17), 225 passed, 6 skipped as before.
+
+Speed (`LumenCoreTests "[.bench]"`, a Debug-configured test binary against the Release OpenCV 5.1, Ryzen desktop, 3 runs agreeing within 3%; the tracker's own code is therefore slower than a Release build's,
+the solver is not):
+
+| detections per frame | `Update` median / p99 | the assignment alone |
+|---|---|---|
+| 5 | 3.7 / 6 us | 1.0 us |
+| 20 | 16 / 25-34 us | 7.6 us |
+| 50 | 71 / 95-115 us | 51 us |
+| 100 | 255 / 335-410 us | 231 us |
+| 200 | 1.0 ms / 1.2-1.5 ms | 1.09 ms |
+
+At the 5-30 objects a field camera sees, tracking costs tens of microseconds a frame, well under 1% of a 120 fps frame; it only reaches a millisecond at 200 objects, where the solver's cubic growth is the
+cost. The sink reports the time as a `track` stage in `/api/profile`. On the board, measure it with `scripts/bench-pi.sh 60 tracking-on` on an Object Detection graph with tracking off and on, and build
+`tools/opencv-bench` there for the OpenCV side; neither has been done.
