@@ -65,6 +65,22 @@ jobs:
       - name: Test
         run: ctest --preset ci-linux-arm64 --output-on-failure
 
+      # Measuring tools for the board, which has no compiler: the OpenCV micro-benchmark and the optimised test binary (its hidden
+      # "[.bench]" tests and the hardware tests run there against the package's own libraries)
+      - name: Build opencv-bench
+        run: |
+          cmake -S tools/opencv-bench -B out/opencv-bench -DOpenCV_DIR=/usr/local/lib/cmake/opencv5
+          cmake --build out/opencv-bench
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arm64-bench-tools
+          path: |
+            out/opencv-bench/opencv_bench
+            out/build/ci-linux-arm64/stage/Release/LumenCoreTests
+            out/build/ci-linux-arm64/stage/Release/libLumenCore.so
+          if-no-files-found: error
+
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
