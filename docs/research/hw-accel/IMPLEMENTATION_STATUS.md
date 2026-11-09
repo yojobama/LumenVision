@@ -418,3 +418,9 @@ The hand-off between the camera node and the detector adds nothing measurable (t
 Consequence for the PhotonVision comparison above: the camera's exposure was not pinned. PhotonVision's default AprilTag pipeline sets a manual exposure of 20 (2 ms) on the camera; the LumenVision runs were
 taken with whatever state the camera was in, which (from the 14-16 ms they showed) was most likely auto exposure, so the exposure-matched LumenVision frame age is probably lower than the table shows (6 ms at 2 ms exposure), not higher.
 The comparison should be repeated with the exposure fixed for both before its latency column is quoted as exact.
+
+What a short exposure costs in accuracy. `profiles/harness/corpus_groups.py` re-scores the desktop corpus (vkapriltag 1.10.1, decimation 1, a 60 px tag tilted 25 degrees, six random placements per row, corner error against the exact
+corners) by the two things exposure trades against: image noise (a short exposure or low light) and blur (a long exposure with motion). Noise: sigma 8, 20 and 40 grey levels of 255 gave 6/6 tags found and a median corner error of 0.158, 0.135 and 0.139 px; a dark image (0-20% of the range) 0.162 px and a
+low-contrast one (35-55%) 0.136 px, both 6/6. Blur: sigma 0.8 px gave 6/6 at 0.205 px, sigma 1.2 px 5/6 at 0.180 px, and sigma 1.6 and 2.0 px found none. So on this detector the corners are robust to heavy noise and to dim, flat images (adaptive thresholding), and it is blur, which a long exposure puts
+in anything that moves, that loses tags. The synthetic noise is additive and Gaussian; a real sensor at a very short exposure in a dim room has shot noise, gain noise and JPEG artefacts that this does not model. `exposure_accuracy.py` runs the same question on the board (tags per frame, how many are stable,
+and corner jitter on a static scene against the camera's exposure); it was run once with no tag in view, so there are no results from it yet.
