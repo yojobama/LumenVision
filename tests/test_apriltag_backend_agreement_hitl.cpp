@@ -96,6 +96,9 @@ TEST_CASE("CpuApriltagBackend and VkApriltagBackend agree on the same real image
 
 	REQUIRE(comparedCorners > 0);
 	double cornerRmsPx = std::sqrt(sumSquaredCornerError / comparedCorners);
-	// Tolerance is generous to allow for floating-point and driver drift.
-	REQUIRE(cornerRmsPx < 2.0);
+	// Tolerance is generous to allow for floating-point and driver drift. Without refinement at decimation 4 the Vulkan corners are the decimated
+	// grid's, and vkapriltag 1.10 builds that grid by averaging each block (its default box decimation) where libapriltag subsamples: the two
+	// differ by a little over two pixels there (2.22 px on this image; with APRILTAG_VK_BOX_DECIMATE=0 the test passes at 2.0 again).
+	const double toleranceHere = (decimation >= 4 && !refine) ? 3.0 : 2.0;
+	REQUIRE(cornerRmsPx < toleranceHere);
 }

@@ -63,6 +63,21 @@ private:
 	void WritePacket(AVPacket* packet);          // into the current file, its timestamps offset to the file's start; caller holds m_Mutex
 	void EnforceRetention();                     // caller must already hold m_Mutex
 
+	// The first frames of a recording wait here (as BGR copies: holding a camera's pooled or hardware buffers this long would starve it) until the
+	// source's real frame rate has been measured from their capture times, so the encoder opens with it instead of the configured fps. A hardware
+	// encoder budgets its bits per frame from the rate it is told: told 30 fps it spends twice the bitrate on a 60 fps camera. A leading frame
+	// that is more than a second older than the one after it (the source's last frame from before this sink started) is dropped, since its capture
+	// time would hold the picture still for that long.
+	struct PrerollFrame {
+		cv::Mat bgr;
+		SourceResult result; // without its frame
+	};
+	void AddToPreroll(const SourceResult& result);   // caller holds m_Mutex
+	void FlushPreroll(bool atStop);                  // caller holds m_Mutex
+	double EncoderFps() const;                       // the measured rate, or the configured one until it is known
+	std::vector<PrerollFrame> m_Preroll;
+	double m_MeasuredFps = 0.0;                      // 0 until measured
+
 	bool EnsureEncoderInitialized(int width, int height); // caller must already hold m_Mutex
 	void ShutdownEncoder();                                // caller must already hold m_Mutex
 	int64_t NextPts(const SourceResult& result);         // the frame's pts from its capture time, always above the previous one; caller holds m_Mutex

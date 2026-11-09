@@ -152,11 +152,12 @@ bool RecordSink::EnsureEncoderInitialized(int width, int height)
 	m_CodecContext->height = height;
 	// a fine, fixed time base: frames carry their real capture times, so the file plays at the rate it was captured at (variable frame rate)
 	m_CodecContext->time_base = AVRational{ 1, kPtsTimeBaseDen };
-	m_CodecContext->framerate = AVRational{ m_Config.fps, 1 };
+	const int encoderFps = std::max(1, static_cast<int>(std::lround(EncoderFps())));
+	m_CodecContext->framerate = AVRational{ encoderFps, 1 };
 	m_CodecContext->pix_fmt = AV_PIX_FMT_YUV420P;
 	m_CodecContext->bit_rate = static_cast<int64_t>(m_Config.bitrateKbps) * 1000;
 	// the keyframes come from time (EncodeAndWrite forces one every kKeyframeIntervalSeconds); this is only the ceiling for a camera faster than the configured fps
-	m_CodecContext->gop_size = std::max(m_Config.fps * kKeyframeIntervalSeconds, 240);
+	m_CodecContext->gop_size = std::max(encoderFps * kKeyframeIntervalSeconds, 240);
 	// no B-frames, so MP4 muxing needs no DTS/PTS reordering
 	m_CodecContext->max_b_frames = 0;
 	// MP4 wants SPS/PPS in extradata (the avcC box), not repeated before every keyframe
@@ -228,6 +229,7 @@ bool RecordSink::OpenSegmentFiles()
 	m_VideoStream = avformat_new_stream(m_FormatContext, nullptr);
 	avcodec_parameters_from_context(m_VideoStream->codecpar, m_CodecContext);
 	m_VideoStream->time_base = m_CodecContext->time_base;
+	m_VideoStream->avg_frame_rate = m_CodecContext->framerate;
 
 	if (avio_open(&m_FormatContext->pb, videoPath.string().c_str(), AVIO_FLAG_WRITE) < 0) {
 		if (m_Logger) m_Logger->EnterLog(LogLevel::Error, "RecordSink: avio_open failed for " + videoPath.string());
@@ -409,12 +411,54 @@ void RecordSink::EncodeAndWrite(const Frame& frame, const SourceResult& result)
 	}
 }
 
+double RecordSink::EncoderFps() const
+{
+	return m_MeasuredFps > 0.0 ? m_MeasuredFps : static_cast<double>(std::max(1, m_Config.fps));
+}
+
+void RecordSink::AddToPreroll(const SourceResult& result)
+{
+	PrerollFrame entry;
+	entry.bgr = result.frame->AsBgr().clone();
+	entry.result = result;
+	entry.result.frame.reset();
+	m_Preroll.push_back(std::move(entry));
+
+	// a leading frame from before this sink started: its capture time is far behind the next one's
+	while (m_Preroll.size() >= 2 && m_Preroll[1].result.captureTimeUs > m_Preroll[0].result.captureTimeUs + 1'000'000ull)
+		m_Preroll.erase(m_Preroll.begin());
+
+	// enough to measure: eight frames, or two and half a second of them
+	const size_t count = m_Preroll.size();
+	const uint64_t spanUs = m_Preroll.back().result.captureTimeUs - m_Preroll.front().result.captureTimeUs;
+	if (count >= 8 || (count >= 2 && spanUs >= 500'000ull)) FlushPreroll(false);
+}
+
+void RecordSink::FlushPreroll(bool atStop)
+{
+	if (m_Preroll.empty()) return;
+	// a rate from the capture times of the frames waiting; fewer than two frames (a still image) or no time between them keep the configured one
+	if (m_Preroll.size() >= 2 && m_Preroll.back().result.captureTimeUs > m_Preroll.front().result.captureTimeUs) {
+		const double spanSeconds = static_cast<double>(m_Preroll.back().result.captureTimeUs - m_Preroll.front().result.captureTimeUs) / 1e6;
+		m_MeasuredFps = std::clamp(static_cast<double>(m_Preroll.size() - 1) / spanSeconds, 1.0, 240.0);
+		if (m_Logger) m_Logger->EnterLog("RecordSink: the source delivers " + std::to_string(m_MeasuredFps) + " frames per second (configured " + std::to_string(m_Config.fps) + ")");
+	} else {
+		m_MeasuredFps = static_cast<double>(std::max(1, m_Config.fps));
+	}
+	(void)atStop;
+	std::vector<PrerollFrame> waiting;
+	waiting.swap(m_Preroll);
+	for (PrerollFrame& entry : waiting) EncodeAndWrite(Frame(entry.bgr), entry.result);
+}
+
 void RecordSink::Process(const std::vector<SourceResult>& results)
 {
 	std::lock_guard<std::mutex> lock(m_Mutex);
 	for (const SourceResult& result : results) {
 		if (result.frame.has_value() && !result.frame.value().empty()) {
-			EncodeAndWrite(*result.frame, result);
+			// until the source's rate is known the frames wait (see PrerollFrame); a later change of frame size reopens the encoder at the rate found
+			if (m_MeasuredFps <= 0.0) AddToPreroll(result);
+			else EncodeAndWrite(*result.frame, result);
 		}
 	}
 }
@@ -423,7 +467,9 @@ void RecordSink::OnStopped()
 {
 	// ISink::Toggle(false) has already joined the processing thread, so Process() cannot be running concurrently
 	std::lock_guard<std::mutex> lock(m_Mutex);
+	FlushPreroll(true); // a recording that ended before eight frames came (or of one still picture) still gets what it had
 	CloseCurrentSegment();
+	m_MeasuredFps = 0.0; // the next recording measures its own source
 }
 
 #endif // LUMEN_WITH_RECORD

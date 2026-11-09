@@ -215,3 +215,177 @@ TEST_CASE("a recording of a fast source plays at the speed it was captured at, n
 	std::filesystem::remove_all(folder, ignored);
 	std::filesystem::remove(clip, ignored);
 }
+
+// ---- the recording's timing against what the source delivers ----
+
+#include "RecordSink.h"
+#include <fstream>
+#include <mutex>
+
+namespace {
+
+// a source that publishes exactly the frames it is given, each with a capture time of the caller's choosing
+class ScriptedSource : public ISource {
+public:
+	ScriptedSource(std::shared_ptr<Logger> logger, std::string id) : ISource(logger, id) {}
+	void Publish(const cv::Mat& bgr, uint64_t captureUs)
+	{
+		std::lock_guard<std::mutex> lock(m_Mutex);
+		m_Frame = bgr.clone();
+		m_CaptureUs = captureUs;
+		m_Pending = true;
+	}
+
+protected:
+	void CaptureFrame() override
+	{
+		{
+			std::lock_guard<std::mutex> lock(m_Mutex);
+			if (m_Pending) {
+				m_Pending = false;
+				SetLatestResult(SourceResult(std::nullopt, Frame(m_Frame), m_CaptureUs));
+				return;
+			}
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+
+private:
+	std::mutex m_Mutex;
+	cv::Mat m_Frame;
+	uint64_t m_CaptureUs = 0;
+	bool m_Pending = false;
+};
+
+struct Clip { bool opened = false; int packets = 0; double seconds = 0.0; };
+
+// packets and playing time of the first video stream of an MP4 (last packet's end, from its timestamp and duration)
+Clip ReadClip(const std::filesystem::path& path)
+{
+	Clip clip;
+	AVFormatContext* format = nullptr;
+	if (avformat_open_input(&format, path.string().c_str(), nullptr, nullptr) < 0) return clip;
+	if (avformat_find_stream_info(format, nullptr) >= 0) {
+		const int video = av_find_best_stream(format, AVMEDIA_TYPE_VIDEO, -1, -1, nullptr, 0);
+		if (video >= 0) {
+			clip.opened = true;
+			AVPacket* packet = av_packet_alloc();
+			int64_t end = 0;
+			while (av_read_frame(format, packet) >= 0) {
+				if (packet->stream_index == video) {
+					clip.packets++;
+					end = std::max(end, packet->pts + packet->duration);
+				}
+				av_packet_unref(packet);
+			}
+			av_packet_free(&packet);
+			clip.seconds = end * av_q2d(format->streams[video]->time_base);
+		}
+	}
+	avformat_close_input(&format);
+	return clip;
+}
+
+std::filesystem::path FirstMp4(const std::filesystem::path& folder)
+{
+	for (const auto& entry : std::filesystem::directory_iterator(folder))
+		if (entry.path().extension() == ".mp4") return entry.path();
+	return {};
+}
+
+}
+
+TEST_CASE("a recording measures the source's frame rate and drops a stale first frame", "[record]") {
+	const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lumencore-test-record-measured";
+	std::error_code ignored;
+	std::filesystem::remove_all(folder, ignored);
+	std::filesystem::create_directories(folder);
+	const std::string logFile = (std::filesystem::temp_directory_path() / "lumencore-test-record-measured.log").string();
+	std::filesystem::remove(logFile, ignored);
+
+	auto logger = std::make_shared<Logger>(logFile);
+	RecordSinkConfig config;
+	config.dstFolder = folder.string();
+	config.encoderName = "libx264";
+	config.bitrateKbps = 1000;
+	config.fps = 30; // the configured rate, which the source does not deliver
+	auto sink = std::make_shared<RecordSink>(logger, "measured-sink", config);
+	auto source = std::make_shared<ScriptedSource>(logger, "scripted-source");
+	REQUIRE(sink->BindSource(source));
+	source->Toggle(true);
+	static_cast<ISink&>(*sink).Toggle(true);
+
+	cv::Mat picture = cv::imread(std::string(LUMEN_TEST_DATA_DIR) + "/bus.jpg");
+	REQUIRE_FALSE(picture.empty());
+	cv::resize(picture, picture, cv::Size(320, 240));
+
+	// the source's last frame from before the sink started: its capture time is three seconds behind the frames that follow
+	const uint64_t start = 50'000'000ull;
+	source->Publish(picture, start - 3'000'000ull);
+	std::this_thread::sleep_for(std::chrono::milliseconds(150));
+	// then 90 frames at 90 fps (11.1 ms apart in capture time, 15 ms apart in wall time so the sink keeps up with all of them)
+	const int fresh = 90;
+	for (int i = 0; i < fresh; i++) {
+		source->Publish(picture, start + static_cast<uint64_t>(i) * 1'000'000ull / 90ull);
+		std::this_thread::sleep_for(std::chrono::milliseconds(15));
+	}
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	static_cast<ISink&>(*sink).Toggle(false);
+	source->Toggle(false);
+
+	const std::filesystem::path video = FirstMp4(folder);
+	REQUIRE_FALSE(video.empty());
+	const Clip clip = ReadClip(video);
+	REQUIRE(clip.opened);
+	// the stale frame is gone: the clip plays for about the span of the fresh frames (1 s), not three seconds more
+	INFO("packets " << clip.packets << ", seconds " << clip.seconds);
+	CHECK(clip.packets >= fresh - 10);
+	CHECK(clip.packets <= fresh);
+	CHECK(clip.seconds > 0.7);
+	CHECK(clip.seconds < 1.4);
+
+	// and the encoder was told what the source delivers, not the configured 30 fps
+	std::ifstream log(logFile);
+	const std::string text((std::istreambuf_iterator<char>(log)), std::istreambuf_iterator<char>());
+	INFO(text);
+	CHECK(text.find("the source delivers 9") != std::string::npos); // 90 fps, measured as 90.0 (or a hair under)
+
+	sink.reset();
+	source.reset();
+	std::filesystem::remove_all(folder, ignored);
+}
+
+TEST_CASE("a recording of one still picture still produces a file", "[record]") {
+	const std::filesystem::path folder = std::filesystem::temp_directory_path() / "lumencore-test-record-still";
+	std::error_code ignored;
+	std::filesystem::remove_all(folder, ignored);
+	std::filesystem::create_directories(folder);
+
+	auto logger = std::make_shared<Logger>((std::filesystem::temp_directory_path() / "lumencore-test-record-still.log").string());
+	RecordSinkConfig config;
+	config.dstFolder = folder.string();
+	config.encoderName = "libx264";
+	auto sink = std::make_shared<RecordSink>(logger, "still-sink", config);
+	auto source = std::make_shared<ScriptedSource>(logger, "still-source");
+	REQUIRE(sink->BindSource(source));
+	source->Toggle(true);
+	static_cast<ISink&>(*sink).Toggle(true);
+
+	cv::Mat picture = cv::imread(std::string(LUMEN_TEST_DATA_DIR) + "/bus.jpg");
+	REQUIRE_FALSE(picture.empty());
+	cv::resize(picture, picture, cv::Size(320, 240));
+	source->Publish(picture, 60'000'000ull);
+	std::this_thread::sleep_for(std::chrono::milliseconds(300));
+	static_cast<ISink&>(*sink).Toggle(false); // fewer than two frames ever arrived: they are written when the recording stops
+	source->Toggle(false);
+
+	const std::filesystem::path video = FirstMp4(folder);
+	REQUIRE_FALSE(video.empty());
+	const Clip clip = ReadClip(video);
+	REQUIRE(clip.opened);
+	CHECK(clip.packets == 1);
+
+	sink.reset();
+	source.reset();
+	std::filesystem::remove_all(folder, ignored);
+}
