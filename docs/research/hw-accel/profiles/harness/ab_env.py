@@ -10,6 +10,19 @@ label = sys.argv[2]
 env = [a for a in sys.argv[3:] if '=' in a]
 sys.argv = ['x', 'ultrafast']
 exec(open('/tmp/mc_test.py').read().split('\ndef main():')[0])
+import os
+# AB_TUNING=default: the detector as shipped (no refine preset, no margin gate). AB_BACKEND=CPU: libapriltag instead of Vulkan (AB_THREADS: its threads).
+if os.environ.get('AB_TUNING') == 'default':
+    VK_EXTRA.clear()
+if os.environ.get('AB_BACKEND') == 'CPU':
+    VK_BACKEND = 'APRILTAG_BACKEND_CPU'
+    if os.environ.get('AB_THREADS'):
+        VK_EXTRA['nthreads'] = int(os.environ['AB_THREADS'])
+# AB_CAMERA=stereo: the V workload's detector runs on the stereo camera's whole 2560x720@60 frame (AB_W/AB_H/AB_FPS change the mode) instead of the Lenovo camera at 1280x720@30
+CAM_PATH, CAM_W, CAM_H, CAM_FPS = LENOVO, 1280, 720, 30
+if os.environ.get('AB_CAMERA') == 'stereo':
+    CAM_PATH = '/dev/v4l/by-path/platform-fc800000.usb-usb-0:1:1.0-video-index0'
+    CAM_W, CAM_H, CAM_FPS = int(os.environ.get('AB_W', 2560)), int(os.environ.get('AB_H', 720)), int(os.environ.get('AB_FPS', 60))
 # V1 and W1 are V and W with the Vulkan detectors at decimation 1 (the default is 2)
 variant = workload
 if workload in ('V1', 'W1', 'S1'):
@@ -53,9 +66,9 @@ def build():
         srcs += halves
         sinks.append(vk('ab-left-vk', halves[0], 1280, 720))
         return srcs, sinks, pollers
-    lenovo = create_camera('ab-lenovo', LENOVO); srcs.append(lenovo)
-    set_mode(lenovo, 1280, 720, 30)
-    lenovoVk = vk('ab-lenovo-vk', lenovo, 1280, 720)
+    lenovo = create_camera('ab-lenovo', CAM_PATH); srcs.append(lenovo)
+    set_mode(lenovo, CAM_W, CAM_H, CAM_FPS)
+    lenovoVk = vk('ab-lenovo-vk', lenovo, CAM_W, CAM_H)
     sinks.append(lenovoVk)
     if workload == 'V':
         return srcs, sinks, pollers
@@ -106,7 +119,18 @@ def main():
         req('POST', '/profile/reset')
         j0, t0 = jiffies(p), time.time()
         sampler = Sampler(); sampler.start()
-        time.sleep(SECONDS)
+        # tags in the first detector's latest result, polled five times a second, and the service's resident memory
+        tag_counts, rss = [], []
+        window_end = time.time() + SECONDS
+        while time.time() < window_end:
+            try:
+                r = req('GET', '/sink/getResult?SinkID=%d' % sinks[0])
+                tag_counts.append(len((r or {}).get('tags', [])) if isinstance(r, dict) else 0)
+            except Exception:
+                pass
+            if len(tag_counts) % 25 == 1:
+                rss.append(rss_mb())
+            time.sleep(0.2)
         sampler.stop = True; sampler.join()
         j1, t1 = jiffies(p), time.time()
         prof = profile()
@@ -120,6 +144,8 @@ def main():
                'service_cores': round(cores, 3),
                'cpu_busy_A55_A76': ['%.0f' % (sum(c['A55'] for c in sampler.cpu) / len(sampler.cpu)), '%.0f' % (sum(c['A76'] for c in sampler.cpu) / len(sampler.cpu))],
                'gpu_load': round(sum(sampler.gpu) / len(sampler.gpu)),
+               'rss_mb': round(sum(rss) / len(rss)) if rss else None,
+               'tags_per_frame': round(sum(tag_counts) / len(tag_counts), 2) if tag_counts else None,
                'mjpeg tile frames': [q.frames for q in pollers]}
         for name in ('ab-lenovo-vk', 'ab-left-vk', 'ab-right-vk'):
             short = name.replace('ab-', '')

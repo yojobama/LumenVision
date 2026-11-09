@@ -407,6 +407,11 @@ branch (vkapriltag 1.10.1, OpenCV 5.1):
 | 3 detectors, decimation 2 | 4.1-4.5 to 1.7-2.5 ms | 0.50 to 0.29 cores | 27 to 17% |
 | 3 detectors, decimation 1 | 11-16 to 7.4-9.3 ms | 1.28 to 0.83 cores | 86 to 57% |
 
+Against PhotonVision v2026.3.4 on the same board, cameras and scene (AprilTags at decimation 1, 1280x720@30): LumenVision's Vulkan detector uses 0.31 cores
+against 2.29 and reports an 18 ms frame age against 38 ms; its CPU backend 1.67 cores; the NPU detector on the same YOLOv8n model 0.08 cores against 0.74
+and 29 ms against 39 ms; at 2560x720@60 LumenVision delivers 60 fps where PhotonVision reported 30. The Vulkan path uses more memory (360 MB against 280 MB) and
+3-10% of the GPU. Method, caveats and every number are in `docs/research/hw-accel/IMPLEMENTATION_STATUS.md`.
+
 Accuracy (a synthetic corpus with ground truth, RX 9060 XT): corner error 0.209 to 0.189 px median at decimation 1, with the
 same tags found and no wrong ids, and rotation error 6.1 to 5.1 degrees (libapriltag 6.4-6.6). OpenCV 5.1 makes
 `calibrateCamera` 32% and `warpPerspective` 40% faster on x64. The write-ups, the raw runs and how to repeat them are in

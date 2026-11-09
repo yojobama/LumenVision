@@ -345,3 +345,55 @@ that long; and the 6.9-8 Mbit/s, against a 4000 kbps target, was the hardware en
 it has measured the source's rate from their capture times, drops a leading frame more than a second older than the next, and opens the encoder with the measured rate; a recording that ends with fewer than two frames
 (a still picture) writes what it had. On `dev98`: 20.09 s of wall time gives a 19.99 s clip, 1200 frames, 60.0 fps, 9.84 MB (3.94 Mbit/s) at 1280x480 and 9.76 MB at 2560x720. The 120 fps camera of the original report
 is not on this board, so 120 fps itself was not tried.
+
+## Tenth round: LumenVision against PhotonVision v2026.3.4 on the board
+
+PhotonVision v2026.3.4 (the latest stable release, April 2026) and this branch's `dev98` build, one after the other on the same Orange Pi 5 Plus, the same cameras and the same scene (a screen showing a field of tag36h11
+markers: 16-22 tags in the Lenovo camera's view). Both ran without a calibration, so neither computed poses, and both were left at their defaults except as noted. PhotonVision is its release jar (`photonvision-v2026.3.4-linuxarm64.jar`,
+sha256 `ccaf5e86...cd975dc`, matching the release's published digest) on OpenJDK 25 on the board's Armbian image, run with `java -jar`; it recognised the board as RK3588 and loaded its RKNN support. Its default AprilTag pipeline is
+tag36h11, decimate 1, 4 threads, refine edges on, decision margin 35. LumenVision's is the Vulkan detector as shipped (also with the ultrafast refine preset and margin gate the earlier rounds used, and with the CPU backend on 4 threads, which runs the same
+libapriltag algorithm as PhotonVision), decimation 1 or 2. Each run: 15 s warm-up, then 60 s, two runs each; the camera mode is 1280x720 MJPEG at 30 fps. Raw lines, the tables and the scripts are in `profiles/photonvision-comparison/` and `profiles/harness/`
+(`pv_measure.py` and `pvctl.py`/`pvws.py` drive and read PhotonVision's own web socket; `sysmon.py` measures the process and the board for both; `ab_env.py`, `lv_npu_measure.py` and `compare_summary.py` do the LumenVision side and the tables).
+The PhotonVision setup was: activate the camera (`POST /api/utils/assignUnmatchedCamera`), select the 1280x720 MJPEG 30 fps mode, and for the object-detection run add a pipeline of type 4 and select the bundled COCO model.
+
+AprilTag detection, Lenovo camera, 1280x720@30:
+
+| system | decimation | result rate | latency (mean / p95) | process CPU | RSS | GPU | tags per frame |
+|---|---|---|---|---|---|---|---|
+| PhotonVision (CPU, 4 threads) | 1 | 29.7 fps | 38.0 / 40.0 ms | 2.29 cores | 280 MB | 0% | 19.2 |
+| LumenVision, Vulkan | 1 | 30.0 fps | 18.4 / 19.4 ms | 0.31 cores | 360 MB | 10% | 22.3 |
+| LumenVision, Vulkan, ultrafast refine + margin 4 | 1 | 30.0 fps | 17.7 / 18.0 ms | 0.21 cores | 360 MB | 9% | 21.2 |
+| LumenVision, CPU (libapriltag, 4 threads) | 1 | 30.0 fps | 31.2 / 35.2 ms | 1.67 cores | 195 MB | 0% | 22.5 |
+| PhotonVision | 2 | 29.7 fps | 27.1 / 30.7 ms | 1.24 cores | 282 MB | 0% | 16.3 |
+| LumenVision, Vulkan | 2 | 30.0 fps | 15.6 / 15.9 ms | 0.21 cores | 246 MB | 3% | 16.0 |
+| LumenVision, Vulkan, ultrafast refine + margin 4 | 2 | 30.0 fps | 14.6 / 15.3 ms | 0.15 cores | 246 MB | 3% | 16.1 |
+| LumenVision, CPU (libapriltag, 4 threads) | 2 | 30.0 fps | 19.0 / 20.1 ms | 0.56 cores | 181 MB | 0% | 15.1 |
+
+Object detection, the same YOLOv8n COCO `.rknn` (PhotonVision ships it; LumenVision decodes the same split-head export), confidence 0.25, NMS 0.45, Lenovo camera:
+
+| system | result rate | latency | process CPU | RSS | NPU load | detections per frame |
+|---|---|---|---|---|---|---|
+| PhotonVision | 29.8 fps | 39.2 ms | 0.74 cores | 238 MB | 15.1% | 1.31 |
+| LumenVision | 30.0 fps | 28.8 ms | 0.08 cores | 170 MB | 13.3% | 1.24 |
+
+LumenVision's 16.1 ms of work per frame there is 1.4 ms on the RGA (scale and colour conversion), 13.6 ms on the NPU and 0.6 ms of decoding and NMS.
+
+A heavier load, the stereo camera's whole 2560x720 frame at 60 fps (its view held no tags, so this is the cost of handling the frames):
+
+| system | decimation | result rate | latency (mean / p95) | process CPU | RSS |
+|---|---|---|---|---|---|
+| PhotonVision | 1 / 2 | 30.0 / 30.2 fps | 38.1 / 33.6 ms | 1.73 / 1.23 cores | 338 MB |
+| LumenVision, Vulkan | 1 / 2 | 60.0 / 60.1 fps | 20.0 / 19.8 ms | 0.15 / 0.15 cores | 520 / 295 MB |
+| LumenVision, CPU, 4 threads | 1 / 2 | 60.0 / 60.0 fps | 24.1 / 21.3 ms | 0.94 / 0.42 cores | 203 / 191 MB |
+
+In short: on the same board and scene LumenVision gives the same results at the camera's rate with about a seventh of PhotonVision's CPU for AprilTags on the GPU (0.31 against 2.29 cores at decimation 1) and about a ninth for the NPU detector
+(0.08 against 0.74), and with roughly half the latency; its CPU backend, which runs the same algorithm, still uses less (1.67 against 2.29 cores at decimation 1, 0.56 against 1.24 at decimation 2) with a hardware JPEG decode. At 2560x720@60 it
+delivers every frame where PhotonVision reported 30 fps. The costs: LumenVision's Vulkan path holds more memory (360 MB against 280 MB at 720p, 520 MB against 338 MB at 2560x720 with decimation 1, from the GPU buffers) and uses the GPU
+(3-10%), where PhotonVision's detection runs on the CPU only.
+
+How far to trust it. Latency is the figure each system reports for a frame's age when its result is published (PhotonVision's `latency` in its result message, LumenVision's `age` stage), both defined from the capture to the publish; neither was checked against
+an external clock, LumenVision stamps a frame with the V4L2 driver's timestamp and PhotonVision with its own capture time, so the gap may be larger than shown, not smaller. PhotonVision's web socket throttles its result stream (about 12 messages a second), so its latency
+is a sample and its rate is the one it reports itself; CPU, memory and load are measured by the same script on the process for both. Neither system's detections were scored against ground truth: tag counts differ at decimation 1 (19 against 22), so LumenVision's
+defaults accept more candidates, which this scene cannot tell apart from false positives. PhotonVision was not on its own image (the same jar on this board's Armbian with a stock JDK 25), which may differ from a tuned install. The Lenovo camera is capped at 30 fps, so
+the 1280x720 rows show cost at the camera's rate, not the most either system can process; the 2560x720 rows are the only ones where PhotonVision's rate fell short. One board, one scene, one model. PhotonVision's own object-detection numbers (its page of
+RKNN model benchmarks) were not repeated here. After the runs PhotonVision, its configuration and the JDK were removed from the board.

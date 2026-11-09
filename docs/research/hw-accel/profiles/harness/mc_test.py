@@ -5,6 +5,7 @@ import json, os, re, subprocess, sys, threading, time, urllib.request, urllib.pa
 A = 'http://127.0.0.1:5800/api'
 LENOVO = '/dev/v4l/by-path/platform-fc880000.usb-usb-0:1:1.0-video-index0'
 VK_EXTRA = {'refineEdges': 'true', 'refineMode': 'REFINE_ULTRAFAST', 'probeMargin': 4} if 'ultrafast' in sys.argv else {}
+VK_BACKEND = 'APRILTAG_BACKEND_VULKAN'  # ab_env.py switches it with AB_BACKEND=CPU
 STEREO_SOURCE_ID = 50123440  # the existing LenovoCamera0 source, which currently holds the stereo camera
 
 
@@ -138,7 +139,7 @@ def set_mode(src, w, h, fps, fmt=5):
 
 def vk(name, src, w, h):
     sid = int(req('POST', '/apriltagSink/createWithBackend?' + urllib.parse.urlencode(
-        dict({'name': name, 'tagSize': 0.1651, 'backend': 'APRILTAG_BACKEND_VULKAN', 'frameWidth': w, 'frameHeight': h}, **VK_EXTRA))))
+        dict({'name': name, 'tagSize': 0.1651, 'backend': VK_BACKEND, 'frameWidth': w, 'frameHeight': h}, **VK_EXTRA))))
     req('PATCH', '/sink/bind?SinkID=%d&SourceID=%d' % (sid, src))
     req('PATCH', '/sink/toggle?SinkID=%d&Enabled=true' % sid)
     return sid
