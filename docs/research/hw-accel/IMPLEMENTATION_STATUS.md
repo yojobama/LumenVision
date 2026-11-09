@@ -397,3 +397,24 @@ is a sample and its rate is the one it reports itself; CPU, memory and load are 
 defaults accept more candidates, which this scene cannot tell apart from false positives. PhotonVision was not on its own image (the same jar on this board's Armbian with a stock JDK 25), which may differ from a tuned install. The Lenovo camera is capped at 30 fps, so
 the 1280x720 rows show cost at the camera's rate, not the most either system can process; the 2560x720 rows are the only ones where PhotonVision's rate fell short. One board, one scene, one model. PhotonVision's own object-detection numbers (its page of
 RKNN model benchmarks) were not repeated here. After the runs PhotonVision, its configuration and the JDK were removed from the board.
+
+### Where the frame age goes (added after the PhotonVision round)
+
+The frame age both systems report starts at the camera's capture timestamp, so it includes what the camera does before software sees the frame. `profiles/harness/latency_break.py` and `exposure_age.py` measured it on the board
+(Lenovo camera, one Vulkan detector, decimation 2, per-stage timers from `/api/profile`):
+
+| camera mode (MJPEG, 30 fps) | camera node: capture to decoded frame | of which hardware JPEG decode | detector `detect` | detector frame age |
+|---|---|---|---|---|
+| 320x180 | 1.6 ms | 0.26 | 0.41 | 2.1 ms |
+| 864x480 | 2.6 ms | 0.59 | 0.65 | 3.2 ms |
+| 1280x720 | 5.2 ms | 1.06 | 0.99 | 6.2 ms |
+| 1600x896 | 8.8 ms | 1.55 | 1.35 | 10.2 ms |
+
+At 1280x720 with the exposure varied by hand (auto exposure off, the camera's "Exposure Time, Absolute" in units of 0.1 ms): detector frame age 5.0 ms at 0.5 ms exposure, 7.0 at 2 ms, 11.2 at 8 ms, 12.3 at 15 ms, 13.9 at 31 ms,
+while `detect` stayed at 1-2 ms. With the camera's auto exposure on (its default) the same graph reads 14.1 ms of frame age (decode 1.3, detect 2.1; decimation 1: 17.4 ms with detect 5.4).
+So the frame age is mostly the camera's exposure, readout and USB transfer, which grow with exposure time and frame size, and the service's own share (decode plus detect) is 2-3.5 ms at decimation 2.
+The hand-off between the camera node and the detector adds nothing measurable (the detector's age minus the camera node's equals its `process` time).
+
+Consequence for the PhotonVision comparison above: the camera's exposure was not pinned. PhotonVision's default AprilTag pipeline sets a manual exposure of 20 (2 ms) on the camera; the LumenVision runs were
+taken with whatever state the camera was in, which (from the 14-16 ms they showed) was most likely auto exposure, so the exposure-matched LumenVision frame age is probably lower than the table shows (6 ms at 2 ms exposure), not higher.
+The comparison should be repeated with the exposure fixed for both before its latency column is quoted as exact.
