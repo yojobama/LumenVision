@@ -301,3 +301,47 @@ the solver is not):
 At the 5-30 objects a field camera sees, tracking costs tens of microseconds a frame, well under 1% of a 120 fps frame; it only reaches a millisecond at 200 objects, where the solver's cubic growth is the
 cost. The sink reports the time as a `track` stage in `/api/profile`. On the board, measure it with `scripts/bench-pi.sh 60 tracking-on` on an Object Detection graph with tracking off and on, and build
 `tools/opencv-bench` there for the OpenCV side; neither has been done.
+
+## Ninth round: the board (Orange Pi 5 Plus), imagetest42 against this branch
+
+The board came back after the rounds above, so the x64-only results were checked on it. `imagetest42` is the release built from the commit before this work (vkapriltag 1.9.0, OpenCV 5.0); `dev97` and `dev98`
+are `release.yml` runs of this branch's head (vkapriltag 1.10.1, OpenCV 5.1, the tracker, the recording and overlay changes), downloaded from the run's artifacts and installed with `dpkg -i`. The service was left
+on `dev98`; `lumenvision-backend_0.0.0-imagetest42_arm64.deb` is on the v0.0.0-imagetest42 release if it has to go back. The image was fresh (no graph, no models, no recordings), so the workloads are the harness's own
+(`profiles/harness/ab_env.py V|V1|W|W1`: the Lenovo camera at 1280x720@30 and the stereo camera's two halves at 1280x720@60, Vulkan detectors with the ultrafast refine preset and probeMargin 4, 40 s after a 12 s
+warm-up, two runs per cell, the service restarted for each). Raw lines: `profiles/base-imagetest42.jsonl` and `profiles/new-dev97.jsonl`. The camera scenes were not controlled between the two sets.
+
+| workload | | imagetest42 | dev97 | change |
+|---|---|---|---|---|
+| **V**: one detector, decimation 2 | `detect` | 3.12 ms | 1.67 | -47% |
+| | GPU submit and wait | 2.30 ms | 1.31 | -43% |
+| | service CPU, GPU load | 0.11 cores, 6% | 0.07, 4% | -34%, -33% |
+| **V1**: one detector, decimation 1 | `detect` | 8.02 ms | 4.16 | -48% |
+| | GPU submit and wait | 5.94 ms | 3.34 | -44% |
+| | service CPU, GPU load | 0.24 cores, 17.5% | 0.13, 11% | -47%, -37% |
+| **W**: three detectors, decimation 2 | `detect` (Lenovo / left / right) | 4.18 / 4.12 / 4.49 ms | 1.73 / 2.50 / 2.41 | -59% / -39% / -46% |
+| | service CPU, GPU load | 0.50 cores, 27% | 0.29, 17% | -42%, -37% |
+| **W1**: three detectors, decimation 1 | `detect` (Lenovo / left / right) | 16.1 / 13.2 / 11.1 ms | 9.30 / 8.13 / 7.42 | -42% / -38% / -33% |
+| | service CPU, GPU load | 1.28 cores, 86% | 0.83, 57% | -36%, -34% |
+
+The library's own change log reports 2.549 / 1.230 ms to 1.058 / 0.743 ms (decimation 1 / 2) on this board; the cells above show the same direction and a similar size. The three-detector decimation-1 case, which
+kept the GPU at 86% on `imagetest42`, now leaves a third free. Accuracy was measured on the desktop only (the previous round); there is no ground truth on the board.
+
+OpenCV 5.1 on the board (`tools/opencv-bench`, built by `release.yml` on the arm64 runner, median of 3 runs, 8 threads; there is no 5.0 build to compare with on arm64): resize 1280x720 to 640x360 0.086 ms,
+letterbox 0.17, `cvtColor` to gray 0.13 and to I420 0.21, `warpPerspective` 1.82, `undistortPoints` (1000 points) 0.10, `solvePnP` IPPE square 0.020 and iterative 0.85, `findChessboardCorners` 7.7,
+`calibrateCamera` (24 views) 40.4 (RMS 0.409350, against 0.409808 on x64), `NMSBoxesBatched` (400) 1.04, `StereoSGBM` 21.6 ms.
+
+Hardware tests (`LumenCoreTests "[hitl]"`, the optimised test binary from the same run): all pass (10 test cases, 3 skipped: no `.rknn` models on a fresh image). One failed on `dev97`: the CPU/Vulkan agreement test at
+decimation 4 without edge refinement (corner RMS 2.22 px against a limit of 2.0). With `APRILTAG_VK_BOX_DECIMATE=0` every case passes, so it is 1.10's block-averaging decimation (the default now) placing the unrefined
+corners about a quarter of a pixel-block away from libapriltag's subsampled ones, not a fault; the test allows 3.0 px for that one case.
+
+Tracking on the board: `profiles/harness/tracking_ab.py` uploads YOLOv8n (ONNX, CPU: the image has no RKNN model) and a looping video of the panned bus photo (`make_bus_pan.py`), makes an Object Detection node and
+measures it with tracking off and on, 40 s each. The `track` stage costs 0.017 ms a frame (p95 0.020 ms) with five objects in view, against 405 ms for the CPU inference; the service's CPU is 1.109 cores off and 1.110 on.
+The tracker's own benchmark on the Cortex-A76 (`LumenCoreTests "[.bench]"`, Release): `Update` 1.8 us at 5 detections, 11 us at 20, 58 us at 50, 233 us at 100, 0.93 ms at 200. The tracker tests (23 cases with the
+recording ones) pass on the board, the one with the real YOLO model included.
+
+Recording, found by recording on the board (`profiles/harness/record_check.py`, the default encoder, which is `h264_rkmpp`): 20 s of the stereo camera at 60 fps came out as a 22.9 s clip at 52 fps of 19.7 MB.
+The frames were right (1202); the extra 2.9 s was the first frame, which the source hands a sink that starts after it (its last frame from when the camera opened, 2.9 s old), and its capture time held the picture still
+that long; and the 6.9-8 Mbit/s, against a 4000 kbps target, was the hardware encoder budgeting bits per frame at the configured 30 fps while 60 arrived. `RecordSink` now keeps the first frames (as BGR copies) until
+it has measured the source's rate from their capture times, drops a leading frame more than a second older than the next, and opens the encoder with the measured rate; a recording that ends with fewer than two frames
+(a still picture) writes what it had. On `dev98`: 20.09 s of wall time gives a 19.99 s clip, 1200 frames, 60.0 fps, 9.84 MB (3.94 Mbit/s) at 1280x480 and 9.76 MB at 2560x720. The 120 fps camera of the original report
+is not on this board, so 120 fps itself was not tried.
