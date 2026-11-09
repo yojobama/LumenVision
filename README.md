@@ -1,73 +1,112 @@
 # LumenVision
 
-A PhotonVision-style FRC vision coprocessor: AprilTag detection (CPU or Vulkan-accelerated),
-YOLOv8/v11 object detection, camera calibration, WebRTC live view, NetworkTables 4 publishing,
-and stereo depth — targeting an Orange Pi 5 / 5 Plus (RK3588) in production, with any Linux box
-(WSL2 included) usable for development.
+A PhotonVision-style FRC vision coprocessor for the Orange Pi 5 family (RK3588), with any Linux box (WSL2
+included) or Windows machine usable for development. It does:
 
-See `docs/history/IMPLEMENTATION_PLAN.md` for the design rationale behind the original phases
-and `ROADMAP.md` for what's being worked on next (a robot-side vendordep, a CMake +
-native-Windows build, side-by-side stereo cameras, explicit capture resolution, and better
-hardware utilisation). This file is the quick-start.
+- **AprilTag detection** on the CPU (libapriltag) or the GPU (vkapriltag, Vulkan compute), with single-tag poses, a
+  field-layout multi-tag solve and a floor-constrained solve;
+- **YOLOv8/v11 object detection** on the NPU (RKNN) or ONNX Runtime, with optional **tracking** (stable ids and
+  velocities for the detected objects);
+- **camera and stereo calibration**, **stereo depth**, and **depth fusion** with detections;
+- **recording** (segmented MP4 plus a per-frame telemetry sidecar), **WebRTC and MJPEG live view**, **snapshots**;
+- **NetworkTables 4 publishing** and a robot-side Java vendordep (`lumenlib`) with a PhotonLib-compatible layer;
+- a React **WebUI** for building the pipeline graph and managing the device (network, backups, updates, logs).
+
+It ships as a `.deb` and as flashable images for the Orange Pi 5, 5 Plus, 5B, 5 Pro, 5 Max and 5 Ultra (see
+[Releases](#releases-and-deploying-to-the-orange-pi)).
+
+`docs/history/IMPLEMENTATION_PLAN.md` and `docs/history/STEREO_IMPLEMENTATION_PLAN.md` describe how the system was
+first built, `docs/NATIVE_API_PLAN.md` and `docs/RELEASE_NOTES_native_api.md` the node API and the move away from
+PhotonVision's pipeline model, `docs/RENAME.md` the FRCV to LumenVision rename, and `ROADMAP.md` the plan written when
+the CMake and native-Windows work started (parts of it have since landed). Measurements on the board are in
+`docs/research/hw-accel/IMPLEMENTATION_STATUS.md`. This file is the quick-start.
 
 ## Architecture
 
-- **`LumenCore/`** — the C++ core: sources (camera/video/image), sinks (AprilTag, object
-  detection, calibration, NetworkTables, WebRTC), built as `libLumenCore.so`.
-- **`Server/`** — a .NET 10 ASP.NET Core (Kestrel) web server, gluing the C++ library (via SWIG
-  bindings) to the WebUI.
-- **`webui/`** — the React/Vite WebUI.
-- **`third_party/vkapriltag/`** — git submodule; Vulkan-compute AprilTag detection
-  (`git submodule update --init` after cloning).
-- **`third_party/codec-stereo/`** — git submodule; stereo depth via hardware video-encoder
-  motion vectors (see `docs/history/STEREO_IMPLEMENTATION_PLAN.md`).
+- **`LumenCore/`**: the C++ core: sources (camera, video, image, ROI/crop), sinks and detectors (AprilTag, object
+  detection, stereo depth, depth fusion, recording, MJPEG, WebRTC, NetworkTables), built as `libLumenCore.so`
+  (`LumenCore.dll` on Windows).
+- **`Server/`**: a .NET 10 ASP.NET Core (Kestrel) server that gives the C++ library (through SWIG-generated bindings
+  in `Server/Interop/`) a REST API, a `/ws/state` push channel and the WebUI. Its graph (sources, sinks, settings)
+  is persisted on the device.
+- **`webui/`**: the React/Vite WebUI.
+- **`lumenlib/`** and **`robot/`**: the robot-side Java vendordep and an example robot project.
+- **`third_party/vkapriltag/`**: git submodule, Vulkan-compute AprilTag detection (pinned to `v1.10.1`).
+- **`third_party/codec-stereo/`**: git submodule, stereo depth from hardware video-encoder motion vectors.
+- **`scripts/`**: dependency installer, `.deb` and board-image builders, the systemd unit, `deploy.ps1`.
+- **`tools/`**: `lumen-bench` (AprilTag refine-mode benchmark) and `opencv-bench` (times the OpenCV calls LumenCore
+  makes, so a version or a board can be compared).
+- **`tests/`**, **`Server.Tests/`**: the C++ (Catch2) and C# (xUnit) suites.
+- **`graph-profiles/`**, **`field-layouts/`**, **`models/`**: a shipped example graph, the WPILib field layouts (2022 to
+  2026) and a place for object-detection models.
+
+Clone with `git clone --recurse-submodules`, or run `git submodule update --init` afterwards.
 
 ## Building
 
-**No CMake, no Linux-native build (yet — see `ROADMAP.md`).** Visual Studio drives everything:
-`LumenCore.vcxproj` builds inside WSL2 (`Debug|x64` / `Release|x64`, local dev) or remotely on
-the Orange Pi over SSH via the Remote_GCC toolset (`Debug|ARM64` / `Release|ARM64`, the actual
-target). `Server.csproj` consumes the built `.so` as a prebuilt artefact — it does not build
-LumenCore itself, so `dotnet publish` works even from a machine with no C++ toolchain, as long
-as the `.so` exists.
+LumenCore is built with CMake (3.25 or later) through the presets in `CMakePresets.json`; the Server is a normal .NET 10
+project that builds LumenCore for you.
 
-1. Copy `LumenCore/Local.props.example` to `LumenCore/Local.props` and fill in your WSL distro
-   name and/or the Orange Pi's SSH details (gitignored — never commit a password there; Visual
-   Studio's Connection Manager handles credentials separately).
-2. Run the dependency script **on the machine that will compile**:
-   - Inside WSL, for the `x64` configurations: `./scripts/install-deps.ps1 -Target wsl`
-   - On the Orange Pi, for the `ARM64` configurations: `./scripts/install-deps.ps1 -Target pi`
-     (or run `scripts/install-deps.sh` directly over SSH)
-   - `install-deps.sh` builds OpenCV 5.1 and a few other dependencies from source; expect the
-     first run to take an hour or more, especially on the Pi's ARM cores.
-3. Open `LumenVision.sln` in Visual Studio, pick a configuration, build.
-4. `git submodule update --init` before building with `LUMEN_WITH_VULKAN_APRILTAG` (on by
-   default) — `third_party/vkapriltag` needs to be checked out.
+| Preset | For |
+|---|---|
+| `wsl-x64-debug`, `wsl-x64-release` | Linux x64, including WSL2 (local development) |
+| `pi-arm64-debug`, `pi-arm64-release` | building on the Orange Pi itself (Rockchip RKNN and RGA on) |
+| `windows-x64-debug`, `windows-x64-release`, `windows-x64-vs` | native Windows (MSVC) |
+| `ci-linux-x64`, `ci-linux-arm64`, `ci-windows-x64` | what CI builds; `ci-linux-arm64` is what the `.deb` is made from |
+
+1. **Dependencies.** Run `scripts/install-deps.sh` on the machine that compiles (Ubuntu 24.04 or Debian 13). It installs
+   the system packages and builds OpenCV 5.1 (with opencv_contrib), FFmpeg and the other libraries that have no suitable
+   package. Useful flags: `--with-nt4`, `--with-webrtc`, and on the Pi `--with-rknn --with-mpp --with-ffmpeg-rockchip`
+   (`--with-bundled-ffmpeg` on x64, for the `.deb`); `--check` only reports what is missing. Expect the first run to take
+   an hour or more, longer on the Pi's cores. From Windows, `scripts/install-deps.ps1 -Target wsl|pi` runs it over WSL or
+   SSH. **LumenCore requires OpenCV 5.1 or later.** On native Windows the dependencies are built or unpacked by hand; copy
+   `CMakeUserPresets.json.example` to `CMakeUserPresets.json` and point it at them (OpenCV, ONNX Runtime, WPILib, vcpkg).
+2. **LumenCore:** `cmake --preset wsl-x64-release && cmake --build --preset wsl-x64-release`. The library lands in
+   `out/build/<preset>/stage/<config>/`. `-DLUMEN_TARGET_CPU=cortex-a76.cortex-a55` tunes an arm64 build for the RK3588.
+3. **Server:** `dotnet build Server -c Release` (or `dotnet publish -r linux-arm64`). It runs `cmake --build --preset`
+   for the preset it derives from the runtime identifier (`-p:LumenCorePreset=<preset>` overrides), but only if that preset
+   was configured already, and fails if the native library or the `Server/Interop` bindings (written by a CMake
+   configure) are missing.
+4. **WebUI:** `cd webui && npm ci && npm run dev` (proxies `/api` and `/ws` to a server on port 5800), or `npm run build`.
+
+The server listens on port 5800 (an FRC team network passes 5800 to 5810).
 
 ### Feature flags
 
-Set as MSBuild preprocessor defines in `LumenCore.vcxproj` (`LumenCommonDefines` /
-`LumenPlatformDefines`), not build options — there's no CMake to hold them yet:
+CMake options (`-DLUMEN_WITH_<NAME>=ON|OFF`); the presets set the platform ones. Disabled features still exist in the
+generated C# API and throw when used, so the API is the same everywhere.
 
 | Flag | Default | Notes |
 |---|---|---|
-| `LUMEN_WITH_ONNX` | on, all platforms | Stock ONNX Runtime, CPU execution provider only |
-| `LUMEN_WITH_NT4` | on, all platforms | Needs `ntcore`/`wpiutil`/`wpinet` (install-deps.sh `--with-nt4`) |
-| `LUMEN_WITH_WEBRTC` | on, all platforms | Needs `libdatachannel` (install-deps.sh `--with-webrtc`) |
-| `LUMEN_WITH_VULKAN_APRILTAG` | on, all platforms | Needs the `vkapriltag` submodule + a Vulkan compute device; falls back to CPU automatically if none is found |
-| `LUMEN_WITH_RKNN` | ARM64 only | The Orange Pi's NPU; `RknnDetectionBackend` runs object detection on it (zero-copy input prepared by RGA and per-NPU-core pinning are still open, see ROADMAP.md C1) |
-| `LUMEN_WITH_CODEC_STEREO` | on, all platforms | Needs the `codec-stereo` submodule (install-deps.sh builds it by default, unconditionally); `STEREO_BACKEND_SGBM` remains available without this flag |
+| `LUMEN_WITH_ONNX` | on | ONNX Runtime object detection (CPU execution provider) |
+| `LUMEN_WITH_NT4` | on | NetworkTables 4 publishing; needs `ntcore`/`wpiutil`/`wpinet` (`install-deps.sh --with-nt4`) |
+| `LUMEN_WITH_WEBRTC` | on | WebRTC live view; needs `libdatachannel` (`--with-webrtc`) |
+| `LUMEN_WITH_RECORD` | on | `RecordSink`: segmented MP4 recording with a telemetry sidecar (needs FFmpeg) |
+| `LUMEN_WITH_VULKAN_APRILTAG` | on | Vulkan AprilTag backend (the `vkapriltag` submodule, a Vulkan compute device); falls back to the CPU backend if none is found |
+| `LUMEN_WITH_CODEC_STEREO` | on | the `codec-stereo` depth backends (needs the submodule); `STEREO_BACKEND_SGBM` works without it |
+| `LUMEN_WITH_RKNN` | off (aarch64 presets on) | the NPU object-detection backend |
+| `LUMEN_WITH_RGA` | off (aarch64 presets on) | Rockchip RGA hardware scaling and colour conversion |
 
-## Deploying to the Orange Pi
+## Releases and deploying to the Orange Pi
 
-`scripts/deploy.ps1` — publishes the server self-contained for `linux-arm64` (no .NET needed on
-the Pi), builds the WebUI, copies both plus the Visual-Studio-built `libLumenCore.so` to
-`/opt/lumenvision`, and installs/restarts the `lumenvision` systemd unit
-(`scripts/lumenvision.service`). Run it from Windows after building the `ARM64`/`Release`
-configuration in Visual Studio.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds on GitHub's arm64 and x64 runners and publishes a
+GitHub Release with:
 
-The unit `Conflicts=photonvision.service`, since both want exclusive access to the same camera
-device(s) — see `ROADMAP.md`'s notes on running the two side by side for benchmarking.
+- `lumenvision-backend_<version>_arm64.deb` (and an `amd64` one without the Rockchip parts): the self-contained backend
+  with its runtime libraries, the systemd unit and the sudoers rule the Settings page needs;
+- `lumenvision-<board>_<version>.img.xz` for each Orange Pi 5, 5 Plus, 5B, 5 Pro, 5 Max and 5 Ultra: Armbian (Debian 13,
+  vendor kernel) with the Mali G610 Vulkan driver and the package preinstalled; flash it and the board comes up as
+  `lumenvision.local`;
+- `lumenlib.json`, the robot vendordep (see below).
+
+A manual `workflow_dispatch` run builds the same artefacts without publishing; it also uploads the arm64
+`opencv-bench` and an optimised `LumenCoreTests`, for measuring on a board that has no compiler.
+
+To update a running board, upload the `.deb` on the **Settings** page (it is checked, then installed by a systemd unit that
+survives the server restarting), or `sudo dpkg -i lumenvision-backend_*_arm64.deb`. `scripts/deploy.ps1` is the older
+route for a development board: it publishes the server self-contained for `linux-arm64`, builds the WebUI and copies both,
+with a `libLumenCore.so` built on the Pi, to `/opt/lumenvision`. The unit `Conflicts=photonvision.service`, since both want
+exclusive access to the same cameras.
 
 ## NetworkTables
 
@@ -165,7 +204,7 @@ stale" badge when a saved calibration is for a different resolution).
 ## AprilTag detection
 
 `ApriltagSink` runs on the CPU (libapriltag) or on the GPU through the vkapriltag submodule (Vulkan compute,
-pinned to tag `v1.7.0`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
+pinned to tag `v1.10.1`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
 `PATCH /api/apriltagSink/backend` (or `refine*` parameters on `createWithBackend`); `GET /api/apriltagSink/tuning` returns what is actually in effect.
 
 - **Refine edges** sharpens corner positions. On the Vulkan backend its implementation is selectable with `refineMode`
@@ -179,27 +218,64 @@ pinned to tag `v1.7.0`); Vulkan falls back to CPU when no usable device exists. 
   offer that extension, but its unified memory already takes the frame as a direct write, so it reports `copy`.
   Setting the `APRILTAG_VK_REFINE` environment variable (`upstream|exact|fast|ultrafast`) overrides the mode inside the
   library, and the log warns when it differs from the request.
-- Measured on the reference 1280x800 image (RX 9060 XT, Windows, 50 iterations, decimation 2): CPU 9.57 ms; Vulkan
-  upstream 1.22 ms, exact 1.12 ms, fast 1.01 ms, ultra-fast 0.76 ms. `lumen-bench --refine-mode=<mode|all>` reproduces
-  this on any machine.
+- **vkapriltag 1.10** turns its accuracy work on by default (a profile-fit edge refinement, retries for quads with a grey
+  margin or fitted a cell too far out, a third corrected bit, per-family limits, early rejection of dark quads, block-averaging
+  decimation, a noise-adaptive contrast floor) and is faster; each can be switched off with an environment variable
+  (for example `APRILTAG_VK_BOX_DECIMATE=0`; see the library's CHANGELOG). Measurements are under [Performance](#performance).
+  A tag that cannot be posed (a zero tag size, no calibration) is reported without a pose rather than stopping the detector.
+- `lumen-bench --refine-mode=<mode|all>` (`tools/lumen-bench`) times the refine modes on any machine.
 
 ## Object detection
 
 Upload a YOLOv8 or YOLOv11 export via `POST /api/model/upload` (multipart: `model`, optional
 `labels`, plus `variant`/`inputSize`/thresholds as form fields), then create a sink with
 `POST /api/objectDetectionSink/create` referencing the returned model id. The backend (ONNX
-Runtime vs RKNN/NPU) is picked automatically from the uploaded file's extension — `.onnx`
+Runtime vs RKNN/NPU) is picked automatically from the uploaded file's extension: `.onnx`
 (`ultralytics export format=onnx`) runs on ONNX Runtime's CPU execution provider; `.rknn` runs on
-the Pi's NPU via `RknnDetectionBackend`. A `.rknn` export is produced offline with
-`rknn-toolkit2` on an x86 host — there's no on-device or in-repo converter yet.
+the Pi's NPU via `RknnDetectionBackend`, with the frame scaled and converted on the RGA. A `.rknn` export is produced offline,
+on an x86 host, with `scripts/convert-yolo-rknn.py` (rknn-toolkit2 only runs there; the script's header has the container
+command and the split-head ONNX export it needs). Confidence and overlap (NMS) cutoffs can be changed on a running
+detector (`PATCH /api/objectDetectionSink/thresholds`).
+
+### Tracking
+
+Off by default. With it on (`PUT /api/objectDetectionSink/tracking?sinkId=&enabled=true`, or the *Track objects* switch
+in the node's inspector) every detection also carries `trackId` and `vxPxPerS`/`vyPxPerS` (the box centre's velocity in
+pixels per second) in the sink's JSON, in the recording sidecar and in the annotated frame (`#id`). The tracker is
+SORT-style: each frame the tracks are moved by their velocity, detections are matched to them by the optimal assignment
+(`cv::linearAssignment` on `1 - IoU`, so it needs OpenCV 5.1), matched tracks are corrected by an alpha-beta filter and
+tracks unseen for `maxAgeMs` end. Time is the frames' capture time, so velocities are right at 30, 60 or 120 fps. An object
+gets an id after `minHits` sightings in a row (until then `trackId` is -1, so a one-frame false positive takes none); ids are
+never reused. Parameters: `minIoU` (0.1), `minHits` (3), `maxAgeMs` (500), `classAware` (true); they are saved with the sink and
+copied with the node. The PhotonVision-compatible NetworkTables packet does not carry track ids. On the board tracking
+costs about 17 microseconds a frame with a handful of objects.
+
+## Recording
+
+`RecordSink` records any frame-producing node (a raw camera, or a detector's annotated output) into a folder as
+segments: `segment_000000.mp4`, `segment_000001.mp4`, ... plus a JSON-Lines **sidecar** per segment with one line per
+frame (`frameNumber`, `captureTimeUs`, `producedTimeUs` and the node's JSON, so a recording of a detector carries its
+detections and track ids). The MP4 is fragmented, so a power cut loses at most the last keyframe interval (2 s), and a new
+file starts every `segmentSeconds` (300) on a keyframe; `maxFolderSizeBytes` / `maxFileCount` delete the oldest segments.
+The encoder is the board's hardware one (`h264_rkmpp`) where there is one and `libx264` elsewhere, at 4000 kbps by default.
+
+Frames are timed by their **capture time**, so a clip plays at the speed it was captured at whatever the camera's frame
+rate (it is a variable-frame-rate file), and the encoder is opened with the rate it measures from the first frames, so the
+bitrate means what it says: a 20 s recording at 60 fps on the board is a 20 s clip, 60 fps, about 10 MB.
+
+`POST /api/recordSink/create` (then bind and toggle it like any sink), `GET /api/recordSink/{id}/segments`,
+`GET /api/recordSink/{id}/download`; `POST /api/recordSink/node?NodeID=&enabled=` records one node without managing a sink,
+and each node's `config/recording` topic does the same from the robot. A recording stopped on purpose stays stopped after a
+restart. The sidecars also feed the tracker offline (`LUMEN_TRACK_REPLAY=<folder> LumenCoreTests "[.replay]"`).
 
 ## Live view
 
 `WebRTCSink` streams any single frame-producing node (a raw camera, or a detector's annotated
-output) over WebRTC (`libdatachannel` + ffmpeg `libx264`; hardware encoding via `h264_rkmpp` on
-the Pi is a follow-up). Signalling is plain REST (`/api/webrtcSink/*`), not a persistent
-WebSocket — LumenVision uses non-trickle ICE on its side, so one offer/answer/candidate exchange
-over ordinary HTTP requests is enough.
+output) over WebRTC (`libdatachannel`; FFmpeg `libx264`, or `h264_rkmpp` on the board's hardware encoder).
+Signalling is plain REST (`/api/webrtcSink/*`), not a persistent
+WebSocket: LumenVision uses non-trickle ICE on its side, so one offer/answer/candidate exchange
+over ordinary HTTP requests is enough. `MjpegSink` (`/api/mjpegSink/*`) serves the same nodes as MJPEG for tiles and as the
+fallback when WebRTC cannot connect; the board encodes JPEG in hardware too.
 
 ## Stereo depth
 
@@ -318,28 +394,57 @@ The Settings page (`/settings`) manages the coprocessor itself. Everything is st
 shell. The HTTP API has no authentication, so **anyone who can reach the server's port can restart, reboot, re-address or update the board**. Keep it on the
 robot network or put it behind something that authenticates.
 
+## Performance
+
+On the Orange Pi 5 Plus (RK3588, Mali-G610), with the harness in `docs/research/hw-accel/profiles/harness/` (Vulkan detectors with
+the ultrafast refine preset, `probeMargin` 4), release `imagetest42` (vkapriltag 1.9.0, OpenCV 5.0) against the current
+branch (vkapriltag 1.10.1, OpenCV 5.1):
+
+| workload | detect time | service CPU | GPU load |
+|---|---|---|---|
+| 1 detector, decimation 2 | 3.1 to 1.7 ms | 0.11 to 0.07 cores | 6 to 4% |
+| 1 detector, decimation 1 | 8.0 to 4.2 ms | 0.24 to 0.13 cores | 17 to 11% |
+| 3 detectors, decimation 2 | 4.1-4.5 to 1.7-2.5 ms | 0.50 to 0.29 cores | 27 to 17% |
+| 3 detectors, decimation 1 | 11-16 to 7.4-9.3 ms | 1.28 to 0.83 cores | 86 to 57% |
+
+Accuracy (a synthetic corpus with ground truth, RX 9060 XT): corner error 0.209 to 0.189 px median at decimation 1, with the
+same tags found and no wrong ids, and rotation error 6.1 to 5.1 degrees (libapriltag 6.4-6.6). OpenCV 5.1 makes
+`calibrateCamera` 32% and `warpPerspective` 40% faster on x64. The write-ups, the raw runs and how to repeat them are in
+`docs/research/hw-accel/IMPLEMENTATION_STATUS.md`; `scripts/bench-pi.sh` samples a running service's stage timers, CPU
+frequencies and accelerator load.
 
 ## Tests
 
 - **C++ (`tests/`, Catch2):** configure with `-DLUMEN_BUILD_TESTS=ON` (the `ci-*` presets do) and build the
-  `LumenCoreTests` target. The calibration tests (`[calibration]`) drive `CameraCalibrator` and
-  `StereoCalibrator` with synthetic checkerboard renders; the AprilTag tests (`[apriltag]`) include a
-  Vulkan-versus-CPU agreement check in every refine mode, which needs a Vulkan device. The target links
-  against the shared LumenCore library; on Windows `LUMEN_BUILD_TESTS` makes LumenCore export all its
-  symbols so the test executable can link (production builds do not), and the native dependency
-  folders must be on `PATH`. The `[constrained]`, `[frames]` and `[packet]` tests cover the floor-constrained solver, the
-  WPILib frame conversions and the result packet's golden file.
+  `LumenCoreTests` target; `ctest --preset ci-linux-x64` runs it. Tags select areas: `[calibration]` drives
+  `CameraCalibrator` and `StereoCalibrator` with synthetic checkerboard renders; `[apriltag]` and `[pose]` cover the detectors
+  (including a Vulkan-versus-CPU agreement check in every refine mode, which needs a Vulkan device); `[tracker]` covers the
+  object tracker (unit tests, rendered footage with ground truth through a real `ObjectDetectionSink`, a real YOLO model on
+  a panning photo, and replay of a recorded sidecar); `[record]` the recording sink's timing; `[constrained]`, `[frames]` and
+  `[packet]` the floor-constrained solver, the WPILib frame conversions and the result packet's golden file. Tests tagged
+  `[hitl]` need the board's hardware (Vulkan on the Mali, the NPU, the hardware codecs) and are skipped without it; hidden
+  tests (`[.bench]`, `[.replay]`) are diagnostics run by name. The target links against the shared LumenCore library; on
+  Windows `LUMEN_BUILD_TESTS` makes LumenCore export all its symbols so the test executable can link (production builds do
+  not), and the native dependency folders must be on `PATH`. The sanitiser builds (`-DLUMEN_SANITIZE=address,undefined` or
+  `thread`) and the arm64 sanitiser workflow are described in `docs/research/hw-accel/SANITISERS_AND_PROFILING.md`.
 - **C# (`Server.Tests/`, xUnit):** `dotnet test Server.Tests` after building LumenCore for your preset
-  (pass `-p:LumenCorePreset=` as for `Server.csproj`). It covers calibration result persistence,
-  calibration session error paths, the legacy-record handling in `DB.Load` and the AprilTag refine-mode
-  persistence and defaults, and the NT control service; on Windows the
-  native dependency folders must be on `PATH`, as when running the Server.
+  (pass `-p:LumenCorePreset=` as for `Server.csproj`). It covers calibration result persistence and session error paths,
+  the graph's load and restore paths, the AprilTag and object-detector settings (refine modes, tracking), model handling, the
+  device-settings services and the NT control service; on Windows the native dependency folders must be on `PATH`, as when
+  running the Server.
+- **Java (`lumenlib/`):** `cd lumenlib && ./gradlew test`.
+- **CI:** `.github/workflows/ci.yml` builds and tests Linux x64 on every push to `main` and every pull request.
 
 ## Known gaps
 
-See `docs/history/IMPLEMENTATION_PLAN.md`'s phase status lines for the authoritative historical
-record, and `ROADMAP.md` for what's planned next. Currently: RKNN object detection runs but still
-takes BGR input prepared on the CPU rather than a buffer prepared by RGA (ROADMAP.md C1); a stored calibration
-is applied to an AprilTag detector bound to the camera; and WebRTC has been verified by
-compiling/linking against the real libraries, not
-against an actual browser ICE handshake in this environment.
+- The HTTP API has **no authentication** (see Security under Device settings): keep the board on the robot network.
+- `.rknn` models are produced offline on an x86 host (`scripts/convert-yolo-rknn.py`); nothing converts on the board.
+- Tracking is IoU-based: an object that moves farther than its own size between two frames (a very low frame rate or a very
+  fast object) will not be matched.
+- On native Windows the third-party libraries (OpenCV, ONNX Runtime, WPILib) are not fetched for you.
+- A camera cannot be copied in the graph (a device opens once), and ChArUco boards are not supported for stereo calibration.
+- The speed and accuracy figures above come from one board and one desktop GPU; `docs/research/hw-accel/` says what each
+  was measured on and what was not.
+
+See `docs/history/IMPLEMENTATION_PLAN.md`'s phase status lines for the historical record and `ROADMAP.md` for the plan
+written at the start of the CMake and Windows work.
