@@ -12,7 +12,7 @@ included) or Windows machine usable for development. It does:
 - **NetworkTables 4 publishing** and a robot-side Java vendordep (`lumenlib`) with a PhotonLib-compatible layer;
 - a React **WebUI** for building the pipeline graph and managing the device (network, backups, updates, logs).
 
-It ships as a `.deb` and as flashable images for the Orange Pi 5, 5 Plus, 5B, 5 Pro, 5 Max and 5 Ultra (see
+It ships as a `.deb` and as flashable images for the Orange Pi 5, 5 Plus, 5B, 5 Pro and 5 Max (see
 [Releases](#releases-and-deploying-to-the-orange-pi)).
 
 `docs/history/IMPLEMENTATION_PLAN.md` and `docs/history/STEREO_IMPLEMENTATION_PLAN.md` describe how the system was
@@ -94,7 +94,7 @@ GitHub Release with:
 
 - `lumenvision-backend_<version>_arm64.deb` (and an `amd64` one without the Rockchip parts): the self-contained backend
   with its runtime libraries, the systemd unit and the sudoers rule the Settings page needs;
-- `lumenvision-<board>_<version>.img.xz` for each Orange Pi 5, 5 Plus, 5B, 5 Pro, 5 Max and 5 Ultra: Armbian (Debian 13,
+- `lumenvision-<board>_<version>.img.xz` for each Orange Pi 5, 5 Plus, 5B, 5 Pro and 5 Max: Armbian (Debian 13,
   vendor kernel) with the Mali G610 Vulkan driver and the package preinstalled; flash it and the board comes up as
   `lumenvision.local`;
 - `lumenlib.json`, the robot vendordep (see below).

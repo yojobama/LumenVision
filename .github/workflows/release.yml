@@ -175,7 +175,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     strategy:
       matrix:
-        board: [orangepi5, orangepi5-plus, orangepi5b, orangepi5pro, orangepi5-max, orangepi5-ultra]
+        board: [orangepi5, orangepi5-plus, orangepi5b, orangepi5pro, orangepi5-max]
     steps:
       - uses: actions/checkout@v4
 

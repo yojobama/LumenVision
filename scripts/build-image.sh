@@ -10,7 +10,7 @@
 #
 # Usage: VERSION=1.2.3 scripts/build-image.sh <board-slug>
 #   board-slug - one of: orangepi5 orangepi5-plus orangepi5b orangepi5pro orangepi5-max
-#                orangepi5-ultra
+#                orangepi5-ultra (not in the release matrix: Armbian publishes no Trixie vendor image for it as of 2026-11)
 #   VERSION    - package version given to build-deb.sh; required
 #   DEB_FILE   - path to the lumenvision-backend_*_arm64.deb; defaults to the single .deb in the repo root
 # Produces: lumenvision-<slug>_<VERSION>.img.xz in the repo root.
