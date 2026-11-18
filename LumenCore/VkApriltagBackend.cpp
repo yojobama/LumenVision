@@ -7,6 +7,7 @@
 #include <map>
 #include "FramePool.h"
 #include <cstdlib>
+#include <iostream>
 #include <stdexcept>
 #include <string>
 
@@ -105,8 +106,9 @@ std::vector<std::string> VkApriltagBackend::ListDevices()
 	std::vector<std::string> names;
 	try {
 		for (const vk::DeviceCaps& caps : vk::Context::EnumerateDevices()) names.push_back(caps.name);
-	} catch (const std::exception&) {
-		// no Vulkan loader or driver: no devices to choose from
+	} catch (const std::exception& e) {
+		// no Vulkan loader or driver: no devices to choose from. Say why on stderr (the journal), otherwise an empty list looks like a machine without a GPU.
+		std::cerr << "Vulkan device enumeration found no usable GPU: " << e.what() << std::endl;
 	}
 	return names;
 }

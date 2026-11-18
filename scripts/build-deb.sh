@@ -82,6 +82,16 @@ if [[ -n "$MISSING_FFMPEG" ]]; then
 fi
 
 cp scripts/lumenvision.service "$STAGE_DIR/etc/systemd/system/lumenvision.service"
+# The unit pins the Vulkan loader to the board's libmali driver (VK_ICD_FILENAMES). That variable replaces the loader's normal search, so on an ordinary
+# amd64 machine, where /usr/share/vulkan/icd.d/mali.json does not exist, it leaves the loader with no driver at all and none of the machine's GPUs
+# (Intel, NVIDIA, AMD) is found. Only the arm64 package keeps the pin.
+if [[ "$DEB_ARCH" != "arm64" ]]; then
+    sed -i '/^# Pins the Vulkan ICD/,/^Environment=VK_ICD_FILENAMES=/d' "$STAGE_DIR/etc/systemd/system/lumenvision.service"
+    if grep -q 'VK_ICD_FILENAMES' "$STAGE_DIR/etc/systemd/system/lumenvision.service"; then
+        echo "the $DEB_ARCH package's lumenvision.service still pins VK_ICD_FILENAMES - the pin removal in build-deb.sh no longer matches scripts/lumenvision.service" >&2
+        exit 1
+    fi
+fi
 cp scripts/journald-lumenvision.conf "$STAGE_DIR/etc/systemd/journald.conf.d/lumenvision.conf"
 
 # Same device permissions as install-deps.sh --with-mpp
@@ -136,6 +146,13 @@ else
     MAINTAINER="LumenVision <noreply@example.invalid>"
 fi
 
+# An ordinary amd64 machine needs a Vulkan driver for its GPU to run the Vulkan AprilTag detector: Mesa's (Intel, AMD) from this package list, or the
+# vendor's own (NVIDIA's proprietary driver ships its Vulkan ICD). Without one the detector falls back to the CPU backend. The boards' images carry libmali.
+RECOMMENDS_LINE=""
+if [[ "$DEB_ARCH" != "arm64" ]]; then
+    RECOMMENDS_LINE="Recommends: mesa-vulkan-drivers"
+fi
+
 cat > "$STAGE_DIR/DEBIAN/control" <<EOF
 Package: $PKG_NAME
 Version: $VERSION
@@ -144,7 +161,8 @@ Priority: optional
 Architecture: $DEB_ARCH
 Installed-Size: $INSTALLED_SIZE_KB
 Depends: avahi-daemon, libdrm2, libvulkan1, libssl3
-Maintainer: $MAINTAINER
+${RECOMMENDS_LINE:+$RECOMMENDS_LINE
+}Maintainer: $MAINTAINER
 Description: LumenVision vision coprocessor backend
  Self-contained FRC vision coprocessor server (camera capture, AprilTag/object detection,
  WebRTC live preview, NetworkTables publishing). Every from-source runtime dependency
