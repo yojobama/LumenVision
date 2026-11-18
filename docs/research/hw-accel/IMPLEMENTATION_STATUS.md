@@ -424,3 +424,47 @@ corners) by the two things exposure trades against: image noise (a short exposur
 low-contrast one (35-55%) 0.136 px, both 6/6. Blur: sigma 0.8 px gave 6/6 at 0.205 px, sigma 1.2 px 5/6 at 0.180 px, and sigma 1.6 and 2.0 px found none. So on this detector the corners are robust to heavy noise and to dim, flat images (adaptive thresholding), and it is blur, which a long exposure puts
 in anything that moves, that loses tags. The synthetic noise is additive and Gaussian; a real sensor at a very short exposure in a dim room has shot noise, gain noise and JPEG artefacts that this does not model. `exposure_accuracy.py` runs the same question on the board (tags per frame, how many are stable,
 and corner jitter on a static scene against the camera's exposure); it was run once with no tag in view, so there are no results from it yet.
+
+## Eleventh round: the `imagetest44` image on the board
+
+The release image `lumenvision-orangepi5-plus_0.0.0-imagetest44.img.xz` (vkapriltag 1.10.1, OpenCV 5.1.0, object tracking, the recording and overlay fixes) was flashed to a new card and run on the Orange Pi 5 Plus, with the same
+cameras (the Lenovo camera and the stereo camera) as the ninth round. The optimised test binary and `opencv_bench` are the `arm64-bench-tools` artifact of the same release run (43631766336); the harness scripts are
+`profiles/harness/`; the raw Vulkan lines are `profiles/new-imagetest44.jsonl`. The service ran the image's own `lumenvision-backend 0.0.0-imagetest44` throughout (one temporary `Server.dll` swap, below, was reverted and its
+checksum checked).
+
+| check | result |
+|---|---|
+| boot, service, name | after a reboot the Pi answered SSH again in about 40 s, with the service and avahi (the packaged IPv4-only config) active, `lumenvision.local` and the web UI (port 5800) answering, the clock synced and no failed units; a marker written to the log before the reboot was in the previous boot's journal (a clean shutdown persists `/var/log`) |
+| kernel log | no GPU faults, card errors or hung tasks; the usual RK3588 messages (PCIe links with nothing attached, `rknpu` region requests, debugfs name clashes). One `rga: ... no core match` during the tests is a test that hands the RGA an impossible conversion on purpose |
+| `LumenCoreTests` (optimised build) | 278 test cases: 266 passed, 12 skipped (no `.rknn` models on the image; one OpenCV-on-Linux case), 5,932,016 assertions all passed; `"[hitl]"`: 13 cases, 10 passed, 3 skipped (the `.rknn` ones), 423 assertions |
+| OpenCV 5.1.0 bench (8 threads) | as in the ninth round: resize 0.085 ms, letterbox 0.16, `warpPerspective` 1.80, `solvePnP` IPPE 0.020, `findChessboardCorners` 7.7, `calibrateCamera` 40.2 (RMS 0.409350, as before), `NMSBoxesBatched` 1.05, `StereoSGBM` 21.5 |
+| Vulkan device list | `/api/apriltagSink/gpuDevices` returns `["Mali-G610"]`; `/api/device/accelerators` reports the memory controller, GPU, NPU and CPU clusters |
+| tracking (`tracking_ab.py`, YOLOv8n on the CPU runtime, the panned bus video) | `track` stage 0.017 ms (p95 0.020) against 410 ms of inference; service CPU 1.110 cores off, 1.111 on; detections carry `trackId` and a velocity |
+| recording (`record_check.py`, h264_rkmpp, 20 s) | 1280x480@60: 20.03 s of wall time, a 20.0 s clip, 1200 frames, 60.0 fps, 9.92 MB (3.97 Mbit/s); 2560x720@60: 19.99 s, 1200 frames, 60.0 fps, 9.91 MB |
+| NPU object detection (`lv_npu_measure.py`, a YOLO11 `.rknn` tag detector, Lenovo camera 1280x720@30) | 30 fps; RGA 1.41 ms, NPU run 15.1 ms, 16.9 ms of work a frame, frame age 29.4 ms, 0.104 cores, NPU load 15%, 41.6 C; no detections (the model finds tags and the scene had none), so this is the cost of the path, not of its accuracy |
+| web UI: Enter in the Add Sink dialog | the original report (Enter opened a file dialog) does not happen: with an Object Detection model selected, Enter in the name field adds the sink. Every button in the dialog's form is typed (`button`, only "Add Sink" is `submit`), and with no model uploaded "Add Sink" is disabled so Enter does nothing |
+
+Vulkan AprilTag workloads (`ab_env.py`, the Lenovo camera at 1280x720@30 and the stereo camera's halves at 1280x720@60, ultrafast refine, probeMargin 4; 40 s after a 12 s warm-up, two runs per cell):
+
+| workload | | imagetest42 | dev97 | imagetest44 |
+|---|---|---|---|---|
+| **V**: one detector, decimation 2 | `detect` / GPU submit and wait | 3.12 / 2.30 ms | 1.67 / 1.31 | 1.98 / 1.44 |
+| | service CPU, GPU load | 0.11 cores, 6% | 0.07, 4% | 0.14, 4% |
+| **V1**: one detector, decimation 1 | `detect` / GPU submit and wait | 8.02 / 5.94 ms | 4.16 / 3.34 | 4.98 / 3.79 |
+| | service CPU, GPU load | 0.24 cores, 17.5% | 0.13, 11% | 0.22, 12% |
+
+The single-detector cells are within about 20% of `dev97` and about 37% below `imagetest42`. Two things differ from the ninth round and are not controlled: the web UI was open in a browser during these runs (its two
+WebSocket channels push a snapshot a second, which is the extra service CPU), and the cameras' scenes. The three-detector cells (W, W1) are not comparable at all: the stereo camera's halves saw almost nothing this time (their
+`vk-tags` stage was 0.00-0.01 ms, against 0.1-0.3 ms before), so their `detect` times (1.1 and 1.4 ms) measure empty frames; they are in the raw file and not quoted as a speed-up.
+
+Not covered: calibration (no chessboard in view), the tilted-tag pose overlay (no tag in view), the exposure sweep, the 120 fps camera, and PhotonVision-style accuracy against ground truth.
+
+Found on the way:
+
+- **Stopping the service took 30 s whenever the web UI was open** (0.83 s without it): `systemctl stop lumenvision` waited out the .NET host's whole shutdown timeout. `/ws/state` and `/ws/logs` waited in `ReceiveAsync` on the request's own
+  token only, so Kestrel's graceful shutdown could not finish while a browser tab was connected (every restart, update and reboot with a tab open paid it). Fixed in `StateChannel` and `LogChannel`: when the application starts
+  stopping, the server sends the client a close frame (`EndpointUnavailable`), which a browser answers at once, and cuts off a client that stays silent after 2 s. (Cancelling the receive instead aborts the socket without telling the
+  client.) `Server.Tests/Edge/WebSocketShutdownTests.cs` runs a real Kestrel host with both endpoints and two clients: on the old handlers the stop took the configured 25 s, now it is under 1.5 s (2-4 s for a silent client).
+  On the board, with the fixed `Server.dll` swapped in and the UI connected: 1.0 s, then 0.1 s. The 314 Server tests pass.
+- **The server's resource monitor runs `sudo cat /sys/kernel/debug/rknpu/load` every two seconds**, and each call writes three lines to `auth.log`: about 8 KB a minute (0.5 MB an hour), which is what filled the RAM log
+  (`armbian-ramlog`, 47 MB, written to the card only above 75% full and at a clean shutdown) on the old card and made its logs short-lived. Not changed here.
