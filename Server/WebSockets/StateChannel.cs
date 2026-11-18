@@ -39,21 +39,25 @@ namespace Server.WebSockets
             using WebSocket socket = await context.WebSockets.AcceptWebSocketAsync();
             var id = Guid.NewGuid();
             _clients[id] = socket;
+            using var ending = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            using CancellationTokenRegistration stopping = CloseWhenStopping(context, socket, ending);
             try
             {
                 // one-way channel; this loop only detects the close handshake or a dropped connection
                 var buffer = new byte[256];
                 while (socket.State == WebSocketState.Open)
                 {
-                    var result = await socket.ReceiveAsync(buffer, context.RequestAborted);
+                    var result = await socket.ReceiveAsync(buffer, ending.Token);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                        // answers the client's close; when the server sent the first one (it is stopping) the handshake is already complete
+                        if (socket.State == WebSocketState.CloseReceived)
+                            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
                         break;
                     }
                 }
             }
-            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException)
+            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or InvalidOperationException)
             {
                 // client vanished without a close handshake - just drop it
             }
@@ -61,6 +65,37 @@ namespace Server.WebSockets
             {
                 _clients.TryRemove(id, out _);
             }
+        }
+
+        // How long a client gets to answer the server's close frame before the connection is cut.
+        internal static readonly TimeSpan CloseAnswerTimeout = TimeSpan.FromSeconds(2);
+
+        // A connection still parked in ReceiveAsync when the service is stopped keeps Kestrel's graceful shutdown waiting until the host's 30 s timeout
+        // runs out (found on the board: every stop with the web UI open took 30 s, 0.8 s without). When the application starts stopping, this sends the client
+        // a close frame (a browser answers it at once, which ends the receive loop with a finished handshake) and cuts off one that stays silent after
+        // CloseAnswerTimeout. Cancelling the receive instead would abort the socket without telling the client why. `ending` is the token the receive loop waits on.
+        internal static CancellationTokenRegistration CloseWhenStopping(HttpContext context, WebSocket socket, CancellationTokenSource ending)
+        {
+            if (context.RequestServices.GetService(typeof(IHostApplicationLifetime)) is not IHostApplicationLifetime lifetime) return default;
+            return lifetime.ApplicationStopping.Register(() => _ = TellClientThenEndAsync(socket, ending));
+        }
+
+        private static async Task TellClientThenEndAsync(WebSocket socket, CancellationTokenSource ending)
+        {
+            try
+            {
+                if (socket.State == WebSocketState.Open)
+                {
+                    using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                    await socket.CloseOutputAsync(WebSocketCloseStatus.EndpointUnavailable, "server stopping", limit.Token);
+                }
+                await Task.Delay(CloseAnswerTimeout, ending.Token);
+            }
+            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException or InvalidOperationException)
+            {
+                // a send already in flight, or the socket is gone: either way the connection ends now
+            }
+            try { ending.Cancel(); } catch (ObjectDisposedException) { /* the handler has already finished */ }
         }
 
         // A client that stops reading (a frozen or throttled browser tab, a dead network path) fills its TCP window and its send never completes:

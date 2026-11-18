@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
 using System;
 using System.Net.WebSockets;
 using System.Text;
@@ -32,6 +33,9 @@ namespace Server.WebSockets
             Action<LogEntry> onEntry = entry => { if (entry.Level >= minimum) queue.Writer.TryWrite(entry); };
             LogHub.Instance.Added += onEntry;
             using var finished = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted);
+            // the server stopping ends the connection too (see StateChannel.CloseWhenStopping): a socket left parked in ReceiveAsync keeps Kestrel's graceful
+            // shutdown waiting for the host's 30 s timeout
+            using CancellationTokenRegistration stopping = StateChannel.CloseWhenStopping(context, socket, finished);
             try
             {
                 // the receive loop only notices the client closing
@@ -43,7 +47,13 @@ namespace Server.WebSockets
                         while (socket.State == WebSocketState.Open)
                         {
                             var result = await socket.ReceiveAsync(buffer, finished.Token);
-                            if (result.MessageType == WebSocketMessageType.Close) break;
+                            if (result.MessageType == WebSocketMessageType.Close)
+                            {
+                                // answers the client's close; when the server sent the first one (it is stopping) the handshake is already complete
+                                if (socket.State == WebSocketState.CloseReceived)
+                                    await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                                break;
+                            }
                         }
                     }
                     catch (Exception ex) when (ex is WebSocketException or OperationCanceledException) { /* dropped */ }
@@ -58,7 +68,7 @@ namespace Server.WebSockets
                 }
                 await receiving;
             }
-            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException)
+            catch (Exception ex) when (ex is WebSocketException or OperationCanceledException or ObjectDisposedException or InvalidOperationException)
             {
                 // client went away
             }
