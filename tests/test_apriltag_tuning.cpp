@@ -587,9 +587,10 @@ TEST_CASE("the Vulkan backend's pose from vkapriltag's detector matches the CPU 
 		if (!vkRan || vk["pose"].is_null()) SKIP("no usable Vulkan compute device");
 		REQUIRE(vk.contains("pose"));
 		REQUIRE(vk.contains("reprojErr"));
-		// the library gives one solution: no second pose, no ambiguity ratio
+		// the library gives one solution: no second pose; the ambiguity is reported as 0 (consumers read a missing one as "no pose")
 		REQUIRE_FALSE(vk.contains("altPose"));
-		REQUIRE_FALSE(vk.contains("poseAmbiguity"));
+		REQUIRE(vk.contains("poseAmbiguity"));
+		REQUIRE(vk["poseAmbiguity"].get<double>() == 0.0);
 		// corners differ by a fraction of a pixel (about 0.5 mm here); distortion adds the pinhole model's error
 		const double tolerance = distortion.empty() ? 0.005 : 0.03;
 		for (const char* axis : { "x", "y", "z" }) {

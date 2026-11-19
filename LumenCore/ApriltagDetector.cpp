@@ -594,6 +594,9 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 							detectionJson["pose"] = PoseToJson(libraryPose.R, libraryPose.t);
 							detectionJson["reprojErr"] = TagReprojectionErrorPixels(libraryPose.R, libraryPose.t, m_DetectionInfo.tagsize,
 								m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, *detection);
+							// There is one solution and no ambiguity measure, but consumers (lumenlib's hasPose(), PhotonLib's ambiguity gate) read a
+							// missing or negative poseAmbiguity as "no pose", so report 0 (unambiguous) like the one-solution case below.
+							detectionJson["poseAmbiguity"] = 0.0;
 							if (wantsFrame) {
 								for (int k = 0; k < 9; k++) overlayRotation[k] = libraryPose.R[k];
 								for (int k = 0; k < 3; k++) overlayTranslation[k] = libraryPose.t[k];
