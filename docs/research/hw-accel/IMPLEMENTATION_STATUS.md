@@ -468,3 +468,26 @@ Found on the way:
   On the board, with the fixed `Server.dll` swapped in and the UI connected: 1.0 s, then 0.1 s. The 314 Server tests pass.
 - **The server's resource monitor runs `sudo cat /sys/kernel/debug/rknpu/load` every two seconds**, and each call writes three lines to `auth.log`: about 8 KB a minute (0.5 MB an hour), which is what filled the RAM log
   (`armbian-ramlog`, 47 MB, written to the card only above 75% full and at a clean shutdown) on the old card and made its logs short-lived. Not changed here.
+
+
+## Twelfth round: vkapriltag 2.0.0-pre2 on the board
+
+The branch `vkapriltag-2.0` (the submodule at `v2.0.0-pre2`, `VkApriltagBackend` on the public `Detector`, poses from the library's detector) was built by the release workflow (a manual run, run 44501196604) and installed on the Orange Pi 5 Plus as `lumenvision-backend 0.0.0-dev103`; the raw lines are `profiles/new-vkapriltag2-pre2.jsonl`.
+
+| check | result |
+|---|---|
+| native tests on the Mali-G610 (`LumenCoreTests "[apriltag]"`, the Vulkan cases run, none skipped) | 51 cases, 490 assertions, all passed, including the CPU-versus-Vulkan agreement test on the sample image |
+| service | active after the package was installed over `imagetest44` |
+
+Vulkan AprilTag workloads (`ab_env.py` V and V1: the Lenovo camera at 1280x720@30, one detector, decimation 2 and 1; 40 s after a 12 s warm-up, two runs per cell, the web UI closed, **no tag in view**). The version under test and its baseline were measured in one session, so the cells are comparable with each other (not with the eleventh round's, where the UI was open):
+
+| configuration | | vkapriltag 1.10.1 (imagetest46) | 2.0.0-pre2 |
+|---|---|---|---|
+| shipped defaults (refine "exact" on 1.10.1, the profile fit on 2.0, no margin gate) | V `detect` / tag stage / service CPU | 4.17 / 2.13 ms / 0.395 cores | 3.05 / 1.23 ms / 0.273 |
+| | V1 `detect` / tag stage / service CPU | 7.81 / 2.22 ms / 0.499 | 6.44 / 1.22 ms / 0.348 |
+| the harness preset (ultrafast refine, `probeMargin` 4; on 2.0 the refine is the profile fit, `probeMargin` 4) | V `detect` / tag stage / service CPU | 2.26 / 0.26 ms / 0.163 | 2.35 / 0.53 ms / 0.189 |
+| | V1 `detect` / tag stage / service CPU | 5.95 / 0.31 ms / 0.270 | 5.70 / 0.49 ms / 0.251 |
+
+At the defaults 2.0 is 27% (V) and 18% (V1) faster per frame and uses about 30% less service CPU, mostly in the tag stage (candidate rejection). Against the old ultrafast preset, which refined only quads that already decode and which 2.0 no longer has, it is within 4% at decimation 2 and 4% faster at decimation 1, with a slightly more expensive tag stage. The scene had no tag in view, so these are costs of rejecting non-tag candidates, not of decoding or posing tags; accuracy against ground truth and the pose path on a real tag were not measured on the board (the poses are tested against the CPU backend's on the desktop only: `[apriltag][pose][vulkan]`).
+
+What changed in the code: `VkApriltagBackend` on the public `Detector`, one shared `Device` per GPU with a stream per sink, the four candidate filters as detector options; poses solved by the library's detector (the pinhole model on the detection's homography), so the Vulkan backend publishes no `altPose` / `poseAmbiguity` and no undistorted-corner reseed, and the web UI no longer offers pose iterations; the refine mode is fixed to the profile fit (`REFINE_PROFILE`); libapriltag is the unpatched upstream build and serves the CPU backend. A per-sink `maxHamming` below 2 only filters after the decode.

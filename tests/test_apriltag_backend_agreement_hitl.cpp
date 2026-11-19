@@ -33,7 +33,7 @@ TEST_CASE("CpuApriltagBackend and VkApriltagBackend agree on the same real image
 	const int decimation = GENERATE(1, 2, 4);
 	const bool refine = GENERATE(false, true);
 	// the CPU backend always runs upstream's refine_edges; the Vulkan backend must agree with it in every mode
-	const RefineEdgesMode mode = GENERATE(REFINE_UPSTREAM, REFINE_EXACT, REFINE_FAST, REFINE_ULTRAFAST);
+	const RefineEdgesMode mode = GENERATE(REFINE_UPSTREAM, REFINE_ULTRAFAST); // the Vulkan backend ignores the mode (vkapriltag 2.0)
 	INFO("decimation " << decimation << ", refineEdges " << refine << ", refineMode " << static_cast<int>(mode));
 
 	ApriltagTuning tuning;
@@ -53,8 +53,8 @@ TEST_CASE("CpuApriltagBackend and VkApriltagBackend agree on the same real image
 	REQUIRE(vkBackend->GetQuadDecimate() == static_cast<float>(decimation));
 	REQUIRE(vkBackend->GetRefineEdges() == refine);
 	REQUIRE(cpuBackend.GetRefineEdges() == refine);
-	REQUIRE(vkBackend->GetRefineModeSupported());
-	REQUIRE(vkBackend->GetRefineMode() == mode);
+	REQUIRE_FALSE(vkBackend->GetRefineModeSupported());
+	REQUIRE(vkBackend->GetRefineMode() == REFINE_PROFILE);
 	REQUIRE_FALSE(cpuBackend.GetRefineModeSupported());
 	REQUIRE(cpuBackend.GetRefineMode() == REFINE_UPSTREAM);
 

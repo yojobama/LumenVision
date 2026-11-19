@@ -28,7 +28,7 @@ if(LUMEN_WITH_VULKAN_APRILTAG)
     # VkApriltagBackend.h includes vkapriltag headers, whose PRIVATE LumenCore linkage does not propagate.
     find_package(Vulkan REQUIRED)
     target_compile_definitions(lumen-bench PRIVATE LUMEN_WITH_VULKAN_APRILTAG)
-    target_link_libraries(lumen-bench PRIVATE apriltag vkapriltag::vkapriltag Vulkan::Vulkan)
+    target_link_libraries(lumen-bench PRIVATE apriltag::apriltag vkapriltag::vkapriltag Vulkan::Vulkan)
 endif()
 
 if(LUMEN_WITH_CODEC_STEREO)

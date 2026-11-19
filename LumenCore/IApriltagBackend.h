@@ -12,17 +12,21 @@ enum ApriltagBackendKind {
 	APRILTAG_BACKEND_VULKAN
 };
 
-// Edge-refinement implementation (vkapriltag's RefineEdgesMethod). Plain (unscoped) enum for SWIG, as above. Only the Vulkan backend
-// honours it; the CPU backend always runs upstream's refine_edges.
+// Edge-refinement implementation. Plain (unscoped) enum for SWIG, as above. Only the first four were selectable with vkapriltag 1.x; vkapriltag 2.0 removed
+// the fast, ultrafast and upstream methods and runs one profile-fit refinement whatever is requested, so the Vulkan backend ignores the request and
+// reports REFINE_PROFILE (GetRefineModeSupported() is false). The values stay so that saved graphs, the REST API and the UI keep working. The CPU
+// backend always runs upstream's refine_edges.
 //   REFINE_UPSTREAM  upstream's compiled refine_edges() (the reference)
 //   REFINE_EXACT     upstream's arithmetic without libm modf(); bit-identical to REFINE_UPSTREAM
 //   REFINE_FAST      single-precision inner loop; not bit-identical
 //   REFINE_ULTRAFAST as REFINE_FAST, and only quads that already decode unrefined are refined
+//   REFINE_PROFILE   vkapriltag 2.0's profile fit (the only refinement the Vulkan backend has)
 enum RefineEdgesMode {
 	REFINE_UPSTREAM,
 	REFINE_EXACT,
 	REFINE_FAST,
-	REFINE_ULTRAFAST
+	REFINE_ULTRAFAST,
+	REFINE_PROFILE
 };
 
 // Tag family (plain enum for SWIG). Both backends decode any of these; the Vulkan GPU pass reads the tag size and border polarity from the family.
@@ -62,7 +66,7 @@ struct ApriltagTuning {
 	int nthreads = 0;
 	float quadDecimate = 0.0f;
 	bool refineEdges = true;
-	RefineEdgesMode refineMode = REFINE_EXACT;
+	RefineEdgesMode refineMode = REFINE_EXACT; // vkapriltag 2.0 ignores it (see RefineEdgesMode)
 	ApriltagFamilyKind family = APRILTAG_FAMILY_36H11;
 	float quadSigma = 0.0f;
 	int maxHamming = 2;
@@ -110,6 +114,13 @@ public:
 	// where the last Detect() spent its time, as (stage, microseconds), for the node's stage profile. Empty for a backend that does not break
 	// its work down (the whole call is then profiled as "detect").
 	virtual void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const { (void)out; }
+	// Pose solved inside the backend (vkapriltag 2.0's detector does it from the detection's homography under a pinhole model). A backend that does
+	// reports SolvesPoses(); ApriltagDetector then calls ConfigurePose() with the intrinsics (pixels) and tag size before each Detect() (all zeros switch
+	// the pose off) and reads GetPose(i) for the i-th detection of the returned list: R row-major, t and the error in the tag size's unit. False when
+	// there is no pose for it. Backends that return false from SolvesPoses() leave the solve to ApriltagDetector.
+	virtual bool SolvesPoses() const { return false; }
+	virtual void ConfigurePose(double fx, double fy, double cx, double cy, double tagSize) { (void)fx; (void)fy; (void)cx; (void)cy; (void)tagSize; }
+	virtual bool GetPose(int index, double* R, double* t, double& error) const { (void)index; (void)R; (void)t; (void)error; return false; }
 	// the GPU the backend runs on; empty on the CPU backend
 	virtual std::string GetGpuDeviceName() const { return std::string(); }
 	// the margin gate in effect (see ApriltagTuning::probeMargin); 0 on the CPU backend, which has none

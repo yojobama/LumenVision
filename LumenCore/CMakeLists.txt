@@ -194,44 +194,17 @@ target_include_directories(LumenCore PUBLIC ${OpenCV_INCLUDE_DIRS})
 
 # SgbmStereoBackend (STEREO_BACKEND_SGBM) is pure OpenCV with no feature flag: always available on every platform.
 
-# --- apriltag: exactly one, enforced by the build graph ---------------------------------------
-# The system apriltag and vkapriltag's FetchContent copy build a library with the same SONAME (libapriltag.so.3), and only the
-# patched 3.4.5 build exports the symbols VkApriltagBackend needs (quad_decode_index, reconcile_detections): exactly one apriltag may exist.
-#
-# When LUMEN_WITH_VULKAN_APRILTAG is ON, vkapriltag's subdirectory is added first and its FetchContent-built `apriltag` target is the
-# one apriltag everything links against, including CpuApriltagBackend.cpp. When OFF, find_package(apriltag) resolves the installed build.
+# --- apriltag: libapriltag (CPU backend, pose solve) and, optionally, vkapriltag --------------
+# vkapriltag 2.0 has its own decode and no libapriltag dependency (its default configure fetches nothing), so the installed upstream build is the
+# only libapriltag in the process.
+find_package(apriltag REQUIRED CONFIG)
+target_link_libraries(LumenCore PRIVATE apriltag::apriltag)
 if(LUMEN_WITH_VULKAN_APRILTAG)
     find_package(Vulkan REQUIRED)
     set(VKAPRILTAG_BUILD_APPS OFF CACHE BOOL "" FORCE)
     set(VKAPRILTAG_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-
-    # vkapriltag (pinned to an upstream commit, unpatched) calls target_compile_options(apriltag PRIVATE -std=gnu17) unconditionally.
-    # When `apriltag` is an ALIAS of an installed package (FETCHCONTENT_TRY_FIND_PACKAGE_MODE=ALWAYS) CMake rejects that call, so this override
-    # skips ALIAS targets and forwards every other call exactly (arguments bracket-quoted so ';' survives). The NOT COMMAND guard overrides once.
-    if(NOT COMMAND _target_compile_options)
-        function(target_compile_options tgt)
-            if(TARGET "${tgt}")
-                get_target_property(_lumen_aliased "${tgt}" ALIASED_TARGET)
-                if(_lumen_aliased)
-                    message(STATUS "Skipping target_compile_options on ALIAS target '${tgt}' (-> ${_lumen_aliased}) - options are meaningless on an installed package")
-                    return()
-                endif()
-            endif()
-            set(_lumen_args "")
-            math(EXPR _lumen_last "${ARGC} - 1")
-            foreach(_lumen_i RANGE 0 ${_lumen_last})
-                string(APPEND _lumen_args " [==[${ARGV${_lumen_i}}]==]")
-            endforeach()
-            cmake_language(EVAL CODE "_target_compile_options(${_lumen_args})")
-        endfunction()
-    endif()
-
     add_subdirectory("${CMAKE_SOURCE_DIR}/third_party/vkapriltag/apriltags_vulkan" vkapriltag)
-    # vkapriltag's library creates a plain `apriltag` target (not a namespaced alias); link against that.
-    target_link_libraries(LumenCore PRIVATE apriltag vkapriltag::vkapriltag Vulkan::Vulkan)
-else()
-    find_package(apriltag REQUIRED CONFIG)
-    target_link_libraries(LumenCore PRIVATE apriltag::apriltag)
+    target_link_libraries(LumenCore PRIVATE vkapriltag::vkapriltag Vulkan::Vulkan)
 endif()
 
 # --- Optional: codec-stereo (hardware-motion-vector stereo depth submodule) -------------------

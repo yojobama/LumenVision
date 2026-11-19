@@ -76,7 +76,7 @@ if(LUMEN_WITH_VULKAN_APRILTAG)
     find_package(Vulkan REQUIRED)
     target_sources(LumenCoreTests PRIVATE test_apriltag_backend_agreement_hitl.cpp)
     target_compile_definitions(LumenCoreTests PRIVATE LUMEN_WITH_VULKAN_APRILTAG)
-    target_link_libraries(LumenCoreTests PRIVATE apriltag vkapriltag::vkapriltag Vulkan::Vulkan)
+    target_link_libraries(LumenCoreTests PRIVATE apriltag::apriltag vkapriltag::vkapriltag Vulkan::Vulkan)
 endif()
 
 if(LUMEN_WITH_WEBRTC OR LUMEN_WITH_RECORD)

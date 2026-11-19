@@ -279,70 +279,30 @@ build_opencv() {
 # ---------------------------------------------------------------------------
 # 3. AprilTag (AprilRobotics)
 # ---------------------------------------------------------------------------
-# Built from the patched v3.4.5 source vkapriltag uses (both of its patches) and installed as the only apriltag: both the CPU
-# backend and VkApriltagBackend load libapriltag.so.3, and only the patch exports the symbols the latter needs.
+# Upstream v3.4.5, unpatched, installed as the only apriltag: the CPU backend and the pose solve of both backends use libapriltag. (vkapriltag 1.x
+# needed two patches and shared this library; vkapriltag 2.0 has its own decode and no libapriltag dependency.)
 APRILTAG_TAG="${APRILTAG_TAG:-v3.4.5}"
 
 build_apriltag() {
-    log "AprilTag ${APRILTAG_TAG} (patched for vkapriltag)"
+    log "AprilTag ${APRILTAG_TAG}"
 
-    # vkapriltag's patches, applied in this order (the second one needs the first)
-    local patch_dir="$BUILD_ROOT/../third_party/vkapriltag/apriltags_vulkan/cmake/patches"
-    # resolve relative to this script's location too, in case BUILD_ROOT isn't under the repo
-    if [[ ! -d "$patch_dir" ]]; then
-        patch_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/third_party/vkapriltag/apriltags_vulkan/cmake/patches"
-    fi
-    local patch_files=("$patch_dir/apriltag-expose-decode-steps.patch" "$patch_dir/apriltag-expose-code-probe.patch")
-    for patch_file in "${patch_files[@]}"; do
-        if [[ ! -f "$patch_file" ]]; then
-            fail "can't find vkapriltag's apriltag patch $(basename "$patch_file") - is the third_party/vkapriltag submodule checked out at v1.7.0 or later? (git submodule update --init)"
-            return 1
-        fi
-    done
-
-    # Stamp the install with the SHA-256 of the vkapriltag patches and rebuild when they change (the patches
-    # add symbols, not headers); under /usr/local/lib so the CI dependency caches keep it
-    local stamp="$PREFIX/lib/apriltag/lumenvision-patch.sha256"
-    local want_sha
-    want_sha="$(cat "${patch_files[@]}" | sha256sum | cut -d' ' -f1)"
-    if require_header /usr/local/include/apriltag/apriltag_pose.h 2>/dev/null \
-        && [[ -f "$stamp" && "$(cat "$stamp")" == "$want_sha" ]]; then
-        log "apriltag already installed under /usr/local (built with the current vkapriltag patches)"
+    # Stamp the install with the tag and rebuild when it differs (or when the install is an older, patched build); under /usr/local/lib so
+    # the CI dependency caches keep it
+    local stamp="$PREFIX/lib/apriltag/lumenvision-version"
+    if require_header /usr/local/include/apriltag/apriltag_pose.h 2>/dev/null         && [[ -f "$stamp" && "$(cat "$stamp")" == "$APRILTAG_TAG" ]]; then
+        log "apriltag already installed under /usr/local"
         return 0
-    fi
-
-    # purge only installed packages, since apt-get purge aborts on any unknown name; both the
-    # Ubuntu t64 and plain Debian names are checked
-    local installed_apriltag_pkgs=()
-    for pkg in libapriltag-dev libapriltag3t64 libapriltag-utils3t64 libapriltag3 libapriltag-utils3; do
-        dpkg -s "$pkg" >/dev/null 2>&1 && installed_apriltag_pkgs+=("$pkg")
-    done
-    if [[ "${#installed_apriltag_pkgs[@]}" -gt 0 ]]; then
-        warn "purging apt's apriltag package(s) [${installed_apriltag_pkgs[*]}] - it would collide (same SONAME, older/unpatched) with the patched build this project needs"
-        sudo apt-get purge -y "${installed_apriltag_pkgs[@]}"
     fi
 
     if [[ "$CHECK_ONLY" -eq 1 ]]; then
-        note_missing "AprilTag ${APRILTAG_TAG} (patched) not installed, or built with older vkapriltag patches"
+        note_missing "AprilTag ${APRILTAG_TAG} not installed under /usr/local"
         return 0
     fi
 
-    local src="$BUILD_ROOT/apriltag-patched"
+    local src="$BUILD_ROOT/apriltag-src"
     if [[ ! -d "$src" ]]; then
         git clone --branch "$APRILTAG_TAG" --depth 1 https://github.com/AprilRobotics/apriltag.git "$src"
     fi
-    (
-        cd "$src"
-        # reset to the pristine tag so a previously applied patch version does not conflict
-        git reset --hard -q
-        git clean -fdq -e build
-        # strip CRLF: git apply rejects a CRLF patch against the LF clone
-        for patch_file in "${patch_files[@]}"; do
-            git apply <(sed 's/\r$//' "$patch_file")
-        done
-        # the code-probe patch uses _Thread_local, which upstream's C99 build (-Wpedantic with -Werror) rejects
-        sed -i 's/C_STANDARD 99/C_STANDARD 11/' CMakeLists.txt
-    )
     mkdir -p "$src/build"
     (
         cd "$src/build"
@@ -352,7 +312,7 @@ build_apriltag() {
         sudo ldconfig
     )
     sudo mkdir -p "$(dirname "$stamp")"
-    echo "$want_sha" | sudo tee "$stamp" >/dev/null
+    echo "$APRILTAG_TAG" | sudo tee "$stamp" >/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -483,8 +443,7 @@ EOF
 # ---------------------------------------------------------------------------
 # 5b. vkapriltag — builds the third_party/vkapriltag submodule's static library.
 # ---------------------------------------------------------------------------
-# vkapriltag is built with FetchContent's private apriltag copy; only libvkapriltag.a is used, so the
-# system apriltag from build_apriltag() is the one loaded at runtime.
+# vkapriltag 2.0 fetches nothing (no libapriltag); only libvkapriltag.a is used.
 build_vkapriltag() {
     log "vkapriltag (Vulkan AprilTag detection submodule)"
 

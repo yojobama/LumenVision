@@ -1,4 +1,5 @@
 #include "ApriltagDetector.h"
+#include <algorithm>
 #include <cmath>
 #include <map>
 #include "DistortionCoefficients.h"
@@ -14,7 +15,6 @@
 #include <array>
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
 #include "VkApriltagBackend.h"
-#include <vkapriltag/PoseEstimator.h>
 #include <stdexcept>
 #endif
 
@@ -197,10 +197,6 @@ void ApriltagDetector::BuildBackendLocked(int frameWidth, int frameHeight)
 					msg += " (requested decimation " + std::to_string(m_Tuning.quadDecimate) +
 						" isn't an integer that divides the frame size)";
 				m_Logger->EnterLog(msg);
-				std::string envOverride = VkApriltagBackend::RefineEnvOverride();
-				if (!envOverride.empty())
-					m_Logger->EnterLog(LogLevel::Warning, "APRILTAG_VK_REFINE=" + envOverride +
-						" overrides the requested refine mode");
 			}
 			m_Backend = std::move(vk);
 			m_ActiveBackendKind = APRILTAG_BACKEND_VULKAN;
@@ -398,76 +394,31 @@ nlohmann::json ApriltagDetector::BuildCalibrationJson() const
 
 bool ApriltagDetector::SolveTagPose(const apriltag_detection_t& poseDetection, SolvedTagPose& out)
 {
-	const int iterations = std::max(1, m_Tuning.poseIterations);
-#ifdef LUMEN_WITH_VULKAN_APRILTAG
-	{
-		const double key[5] = { m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, m_DetectionInfo.tagsize };
-		if (!m_PoseEstimator || !std::equal(std::begin(key), std::end(key), std::begin(m_PoseEstimatorKey))) {
-			// one thread: Process() solves a handful of tags per frame, so a worker pool would only add wake-ups
-			// vkapriltag 1.10 throws std::invalid_argument unless the tag size and focal lengths are finite and positive and the principal
-			// point is finite (a zero tag size, an uncalibrated camera): such a tag has no pose, and the detector must keep running
-			try {
-				m_PoseEstimator = std::make_shared<apriltag_vulkan::PoseEstimator>(
-					apriltag_vulkan::CameraIntrinsics{ key[0], key[1], key[2], key[3] }, key[4], 1);
-			} catch (const std::invalid_argument&) {
-				m_PoseEstimator.reset();
-				return false;
-			}
-			std::copy(std::begin(key), std::end(key), std::begin(m_PoseEstimatorKey));
-		}
-		auto* estimator = static_cast<apriltag_vulkan::PoseEstimator*>(m_PoseEstimator.get());
-
-		double corners[4][2];
-		for (int i = 0; i < 4; i++) {
-			corners[i][0] = poseDetection.p[i][0];
-			corners[i][1] = poseDetection.p[i][1];
-		}
-		// the homography seed must match the corners the iteration refines: detection->H belongs to the distorted corners, so with
-		// distortion it is recomputed from the undistorted ones (the tag's [-1,1] square mapped onto the image quad)
-		double H[3][3];
-		if (m_HasDistortion) {
-			float correspondences[4][4] = {
-				{ -1.0f, -1.0f, static_cast<float>(corners[0][0]), static_cast<float>(corners[0][1]) },
-				{ 1.0f, -1.0f, static_cast<float>(corners[1][0]), static_cast<float>(corners[1][1]) },
-				{ 1.0f, 1.0f, static_cast<float>(corners[2][0]), static_cast<float>(corners[2][1]) },
-				{ -1.0f, 1.0f, static_cast<float>(corners[3][0]), static_cast<float>(corners[3][1]) },
-			};
-			zarray_t* list = zarray_create(sizeof(float[4]));
-			for (auto& c : correspondences) zarray_add(list, c);
-			matd_t* homography = homography_compute(list, HOMOGRAPHY_COMPUTE_FLAG_SVD);
-			zarray_destroy(list);
-			if (!homography) return false;
-			for (int r = 0; r < 3; r++)
-				for (int c = 0; c < 3; c++) H[r][c] = MATD_EL(homography, r, c);
-			matd_destroy(homography);
-		} else {
-			if (!poseDetection.H) return false;
-			for (int r = 0; r < 3; r++)
-				for (int c = 0; c < 3; c++) H[r][c] = MATD_EL(poseDetection.H, r, c);
-		}
-
-		const apriltag_vulkan::TagPosePair pair = estimator->EstimateBoth(corners, H, iterations);
-		const apriltag_vulkan::TagPose* first = pair.solution1.valid ? &pair.solution1 : nullptr;
-		const apriltag_vulkan::TagPose* second = pair.solution2.valid ? &pair.solution2 : nullptr;
-		if (!first && !second) return false;
-		const bool firstIsBest = !second || (first && first->error <= second->error);
-		const apriltag_vulkan::TagPose& best = firstIsBest ? *first : *second;
-		auto copy = [](const apriltag_vulkan::TagPose& from, TagPoseData& to) {
-			for (int r = 0; r < 3; r++)
-				for (int c = 0; c < 3; c++) to.R[r * 3 + c] = from.R[r][c];
-			for (int k = 0; k < 3; k++) to.t[k] = from.t[k];
-			to.error = from.error;
-		};
-		copy(best, out.best);
-		out.hasAlternate = first && second;
-		if (out.hasAlternate) copy(firstIsBest ? *second : *first, out.alternate);
-		return true;
-	}
-#endif
+	// libapriltag's orthogonal iteration has no early exit (vkapriltag's estimator, used here before 2.0, stopped once converged), and the value is an
+	// unchecked int from the REST query: converged poses need a few tens of steps, so more than this is only wasted time
+	constexpr int kMaxPoseIterations = 500;
+	const int iterations = std::clamp(m_Tuning.poseIterations, 1, kMaxPoseIterations);
 	// estimate_tag_pose returns invalid pointers for degenerate intrinsics, so callers only get here with valid ones.
 	// Both orthogonal-iteration solutions (as estimate_tag_pose does internally): the lower object-space error is the best pose.
 	// The second is absent (R == nullptr, error HUGE_VAL) when only one minimum was found.
 	apriltag_detection_t detection = poseDetection;
+	// the homography seed must match the corners the iteration refines: detection.H belongs to the distorted corners, so with distortion it is
+	// recomputed from the undistorted ones (the tag's [-1,1] square mapped onto the image quad)
+	matd_t* undistortedH = nullptr;
+	if (m_HasDistortion) {
+		float correspondences[4][4] = {
+			{ -1.0f, -1.0f, static_cast<float>(poseDetection.p[0][0]), static_cast<float>(poseDetection.p[0][1]) },
+			{ 1.0f, -1.0f, static_cast<float>(poseDetection.p[1][0]), static_cast<float>(poseDetection.p[1][1]) },
+			{ 1.0f, 1.0f, static_cast<float>(poseDetection.p[2][0]), static_cast<float>(poseDetection.p[2][1]) },
+			{ -1.0f, 1.0f, static_cast<float>(poseDetection.p[3][0]), static_cast<float>(poseDetection.p[3][1]) },
+		};
+		zarray_t* list = zarray_create(sizeof(float[4]));
+		for (auto& c : correspondences) zarray_add(list, c);
+		undistortedH = homography_compute(list, HOMOGRAPHY_COMPUTE_FLAG_SVD);
+		zarray_destroy(list);
+		if (!undistortedH) return false;
+		detection.H = undistortedH;
+	}
 	m_DetectionInfo.det = &detection;
 	apriltag_pose_t pose1 = {}, pose2 = {};
 	double err1 = 0.0, err2 = 0.0;
@@ -492,6 +443,7 @@ bool ApriltagDetector::SolveTagPose(const apriltag_detection_t& poseDetection, S
 	if (pose1.t) matd_destroy(pose1.t);
 	if (pose2.R) matd_destroy(pose2.R);
 	if (pose2.t) matd_destroy(pose2.t);
+	if (undistortedH) matd_destroy(undistortedH);
 	return haveFirst || haveSecond;
 }
 
@@ -531,6 +483,14 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			// Debug level: this runs every frame and Info would pay a mutex lock plus a file write.
 			m_Logger->EnterLog(LogLevel::Debug, "detecting apriltags using backend=" + m_Backend->Name());
+			// a backend that solves the poses itself (vkapriltag 2.0's detector) is told the intrinsics and tag size first; zeros switch its pose off
+			const bool backendSolvesPose = m_Backend->SolvesPoses();
+			if (backendSolvesPose) {
+				if (m_PoseUsable && m_Tuning.singleTagPose)
+					m_Backend->ConfigurePose(m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, m_DetectionInfo.tagsize);
+				else
+					m_Backend->ConfigurePose(0.0, 0.0, 0.0, 0.0, 0.0);
+			}
 			zarray_t* detections = m_Backend->Detect(gray);
 			lap.Mark("detect");
 			{
@@ -626,6 +586,21 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				// corrupts the heap when freed, so skip pose estimation without valid intrinsics.
 				if (m_PoseUsable && m_Tuning.singleTagPose) {
 					ScopedStage poseStage(SinkProfile(), "pose");
+					if (backendSolvesPose) {
+						// The library's pose comes from the detection's homography under a pinhole model: no undistorted-corner reseed, no second
+						// solution (so no altPose or poseAmbiguity), no iteration count. Same frames as libapriltag's (OpenCV camera axes, tag frame).
+						TagPoseData libraryPose;
+						if (m_Backend->GetPose(i, libraryPose.R, libraryPose.t, libraryPose.error)) {
+							detectionJson["pose"] = PoseToJson(libraryPose.R, libraryPose.t);
+							detectionJson["reprojErr"] = TagReprojectionErrorPixels(libraryPose.R, libraryPose.t, m_DetectionInfo.tagsize,
+								m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, *detection);
+							if (wantsFrame) {
+								for (int k = 0; k < 9; k++) overlayRotation[k] = libraryPose.R[k];
+								for (int k = 0; k < 3; k++) overlayTranslation[k] = libraryPose.t[k];
+								hasOverlayPose = true;
+							}
+						}
+					} else {
 					apriltag_detection_t poseDetection = *detection;
 					if (m_HasDistortion) {
 						std::vector<cv::Point2d> distortedCorners = {
@@ -665,6 +640,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 							for (int k = 0; k < 3; k++) overlayTranslation[k] = solved.best.t[k];
 							hasOverlayPose = true;
 						}
+					}
 					}
 				}
 
