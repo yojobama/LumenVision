@@ -483,6 +483,14 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 
 			// Debug level: this runs every frame and Info would pay a mutex lock plus a file write.
 			m_Logger->EnterLog(LogLevel::Debug, "detecting apriltags using backend=" + m_Backend->Name());
+			// a backend that solves the poses itself (vkapriltag 2.0's detector) is told the intrinsics and tag size first; zeros switch its pose off
+			const bool backendSolvesPose = m_Backend->SolvesPoses();
+			if (backendSolvesPose) {
+				if (m_PoseUsable && m_Tuning.singleTagPose)
+					m_Backend->ConfigurePose(m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, m_DetectionInfo.tagsize);
+				else
+					m_Backend->ConfigurePose(0.0, 0.0, 0.0, 0.0, 0.0);
+			}
 			zarray_t* detections = m_Backend->Detect(gray);
 			lap.Mark("detect");
 			{
@@ -578,6 +586,21 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 				// corrupts the heap when freed, so skip pose estimation without valid intrinsics.
 				if (m_PoseUsable && m_Tuning.singleTagPose) {
 					ScopedStage poseStage(SinkProfile(), "pose");
+					if (backendSolvesPose) {
+						// The library's pose comes from the detection's homography under a pinhole model: no undistorted-corner reseed, no second
+						// solution (so no altPose or poseAmbiguity), no iteration count. Same frames as libapriltag's (OpenCV camera axes, tag frame).
+						TagPoseData libraryPose;
+						if (m_Backend->GetPose(i, libraryPose.R, libraryPose.t, libraryPose.error)) {
+							detectionJson["pose"] = PoseToJson(libraryPose.R, libraryPose.t);
+							detectionJson["reprojErr"] = TagReprojectionErrorPixels(libraryPose.R, libraryPose.t, m_DetectionInfo.tagsize,
+								m_DetectionInfo.fx, m_DetectionInfo.fy, m_DetectionInfo.cx, m_DetectionInfo.cy, *detection);
+							if (wantsFrame) {
+								for (int k = 0; k < 9; k++) overlayRotation[k] = libraryPose.R[k];
+								for (int k = 0; k < 3; k++) overlayTranslation[k] = libraryPose.t[k];
+								hasOverlayPose = true;
+							}
+						}
+					} else {
 					apriltag_detection_t poseDetection = *detection;
 					if (m_HasDistortion) {
 						std::vector<cv::Point2d> distortedCorners = {
@@ -617,6 +640,7 @@ void ApriltagDetector::Process(const std::vector<SourceResult>& results)
 							for (int k = 0; k < 3; k++) overlayTranslation[k] = solved.best.t[k];
 							hasOverlayPose = true;
 						}
+					}
 					}
 				}
 

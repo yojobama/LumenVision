@@ -2,6 +2,8 @@
 #include "VkApriltagBackend.h"
 #include "CpuAffinity.h"
 #include <cstdlib>
+#include <algorithm>
+#include <iterator>
 #include <chrono>
 #include <cmath>
 #include <map>
@@ -195,10 +197,8 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 		// the margin gate in effect: the library lets the environment variable win
 		m_ProbeMargin = EnvFloat("APRILTAG_VK_PROBE_MARGIN", options.probe_margin);
 
-		// the worker pool starts its threads here, so they take this thread's affinity: pin them to the performance cores
-		// whichever thread (the sink's, or an API call's) is building the backend
-		CpuAffinity::ScopedPerformanceAffinity performanceCores;
-		m_VkDetector = std::make_unique<Detector>(options, m_Device);
+		m_Options = options;
+		BuildDetector();
 		} catch (const UnsupportedFrameSize&) {
 			throw;
 		} catch (const std::exception& e) {
@@ -208,6 +208,48 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 		ReleaseResources();
 		throw;
 	}
+}
+
+void VkApriltagBackend::BuildDetector()
+{
+	// the worker pool starts its threads here, so they take this thread's affinity: pin them to the performance cores
+	// whichever thread (the sink's, or an API call's) is building the backend
+	CpuAffinity::ScopedPerformanceAffinity performanceCores;
+	m_VkDetector.reset(); // its lane goes before the new one is made on the same stream
+	m_ImportedFrames.clear(); // imports belong to the detector that made them
+	m_VkDetector = std::make_unique<Detector>(m_Options, m_Device);
+}
+
+void VkApriltagBackend::ConfigurePose(double fx, double fy, double cx, double cy, double tagSize)
+{
+	const double wanted[5] = { fx, fy, cx, cy, tagSize };
+	if (std::equal(std::begin(wanted), std::end(wanted), std::begin(m_PoseConfig))) return;
+	// the library solves poses only for a positive tag size and focal lengths; anything else switches the pose off
+	const bool usable = std::isfinite(fx) && std::isfinite(fy) && std::isfinite(cx) && std::isfinite(cy) && std::isfinite(tagSize) &&
+		fx > 0.0 && fy > 0.0 && tagSize > 0.0;
+	m_Options.intrinsics = usable ? CameraIntrinsics{ fx, fy, cx, cy } : CameraIntrinsics{};
+	m_Options.tag_size = usable ? tagSize : 0.0;
+	std::copy(std::begin(wanted), std::end(wanted), std::begin(m_PoseConfig));
+	try {
+		BuildDetector();
+	} catch (const std::exception& e) {
+		// keep the pose off rather than lose detection
+		std::cerr << "vkapriltag detector rebuild for a new pose configuration failed: " << e.what() << std::endl;
+		m_Options.tag_size = 0.0;
+		m_Options.intrinsics = CameraIntrinsics{};
+		BuildDetector();
+	}
+}
+
+bool VkApriltagBackend::GetPose(int index, double* R, double* t, double& error) const
+{
+	if (index < 0 || static_cast<size_t>(index) >= m_Poses.size() || !m_Poses[index].valid) return false;
+	const TagPose& pose = m_Poses[index];
+	for (int r = 0; r < 3; r++)
+		for (int c = 0; c < 3; c++) R[r * 3 + c] = pose.R[r][c];
+	for (int k = 0; k < 3; k++) t[k] = pose.t[k];
+	error = pose.error;
+	return true;
 }
 
 VkApriltagBackend::~VkApriltagBackend()
@@ -306,9 +348,13 @@ zarray_t* VkApriltagBackend::Detect(const cv::Mat& frame)
 	m_LastStageUs.emplace_back("vk-tags", result.timing.decode_ms * 1000.0);
 
 	ClearResult();
-	for (const Detection& found : result.detections) {
+	m_Poses.clear();
+	const bool havePoses = result.poses.size() == result.detections.size();
+	for (size_t k = 0; k < result.detections.size(); k++) {
+		const Detection& found = result.detections[k];
 		// the library corrects up to two wrong bits; a stricter limit drops the detections that needed more
 		if (found.hamming > m_MaxHamming) continue;
+		m_Poses.push_back(havePoses ? result.poses[k] : TagPose{});
 		auto* detection = new apriltag_detection_t();
 		detection->family = m_Family;
 		detection->id = found.id;

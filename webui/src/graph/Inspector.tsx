@@ -683,12 +683,6 @@ export const Inspector: React.FC<{
                         onChange={e => setAdvanced({ ...advanced, decisionMargin: Math.max(0, parseFloat(e.target.value) || 0) })}
                         className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
                     </label>
-                    <label className="text-xs text-gray-500 dark:text-gray-400" title="Steps of the per-tag pose refinement. More is slower and rarely changes the answer.">
-                      Pose iterations
-                      <input type="number" min={1} max={500} step={1} value={advanced.poseIterations}
-                        onChange={e => setAdvanced({ ...advanced, poseIterations: Math.min(500, Math.max(1, parseInt(e.target.value) || 50)) })}
-                        className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white" />
-                    </label>
                   </div>
                   <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300" title="Solve one robot-relative pose from every visible tag with a known field position (needs a field layout and a calibration).">
                     <input type="checkbox" checked={advanced.multiTag} onChange={e => setAdvanced({ ...advanced, multiTag: e.target.checked })} />

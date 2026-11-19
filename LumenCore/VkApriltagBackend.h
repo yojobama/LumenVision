@@ -15,8 +15,8 @@
 // GPU (Vulkan compute) AprilTag detection via the vkapriltag submodule (third_party/vkapriltag), through its public Detector (vkapriltag 2.0).
 //
 // The library no longer uses libapriltag's types; Detect() converts each of its detections into an apriltag_detection_t (with a libapriltag family
-// and a 3x3 homography) owned by this backend, so pose estimation, JSON and annotation stay backend-independent (pose runs on libapriltag, which
-// the CPU backend needs anyway). The library stops at 2D detection here: its own pose output is not used (no undistorted-corner path).
+// and a 3x3 homography) owned by this backend, so pose estimation, JSON and annotation stay backend-independent (the CPU backend and libapriltag stay for the
+// CPU path). Poses come from the library's detector (SolvesPoses/ConfigurePose/GetPose): it is rebuilt when the intrinsics or tag size change.
 class VkApriltagBackend : public IApriltagBackend {
 public:
 	// Thrown when the GPU is fine but this frame size cannot be run on it (too small to hold a tag, past the pipeline's limits, ...): the detector
@@ -55,6 +55,9 @@ public:
 	// the library's gate, so an APRILTAG_VK_PROBE_MARGIN override shows
 	float GetProbeMargin() const override { return m_ProbeMargin; }
 	void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const override { out = m_LastStageUs; }
+	bool SolvesPoses() const override { return true; }
+	void ConfigurePose(double fx, double fy, double cx, double cy, double tagSize) override;
+	bool GetPose(int index, double* R, double* t, double& error) const override;
 	std::string GetIngestMode() const override { return m_LastFrameImported.load() ? "host-import" : "copy"; }
 
 	// the names of the Vulkan devices a sink can run on, in vkEnumeratePhysicalDevices order (the index ApriltagTuning::gpuDevice takes);
@@ -115,6 +118,11 @@ private:
 	std::vector<std::pair<std::string, double>> m_LastStageUs; // written by Detect(), read by the same thread right after
 	std::shared_ptr<void> m_PackedFrameOwner; // keeps the repacked copy of the last non-contiguous frame alive while the GPU reads it
 
+	// what the detector was built with, kept to rebuild it when the pose configuration changes (ConfigurePose)
+	apriltag_vulkan::DetectorOptions m_Options;
+	double m_PoseConfig[5] = {};
+	std::vector<apriltag_vulkan::TagPose> m_Poses; // aligned with m_Result
+	void BuildDetector();
 	bool m_RefineEdges = true;
 	uint32_t m_Threads = 4;
 	float m_ProbeMargin = 0.0f;

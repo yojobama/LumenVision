@@ -114,6 +114,13 @@ public:
 	// where the last Detect() spent its time, as (stage, microseconds), for the node's stage profile. Empty for a backend that does not break
 	// its work down (the whole call is then profiled as "detect").
 	virtual void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const { (void)out; }
+	// Pose solved inside the backend (vkapriltag 2.0's detector does it from the detection's homography under a pinhole model). A backend that does
+	// reports SolvesPoses(); ApriltagDetector then calls ConfigurePose() with the intrinsics (pixels) and tag size before each Detect() (all zeros switch
+	// the pose off) and reads GetPose(i) for the i-th detection of the returned list: R row-major, t and the error in the tag size's unit. False when
+	// there is no pose for it. Backends that return false from SolvesPoses() leave the solve to ApriltagDetector.
+	virtual bool SolvesPoses() const { return false; }
+	virtual void ConfigurePose(double fx, double fy, double cx, double cy, double tagSize) { (void)fx; (void)fy; (void)cx; (void)cy; (void)tagSize; }
+	virtual bool GetPose(int index, double* R, double* t, double& error) const { (void)index; (void)R; (void)t; (void)error; return false; }
 	// the GPU the backend runs on; empty on the CPU backend
 	virtual std::string GetGpuDeviceName() const { return std::string(); }
 	// the margin gate in effect (see ApriltagTuning::probeMargin); 0 on the CPU backend, which has none
