@@ -37,12 +37,23 @@ TEST_CASE("ApriltagDetector passes the refine mode support flag through from its
 }
 
 #ifdef LUMEN_WITH_VULKAN_APRILTAG
-TEST_CASE("each refine mode maps to its vkapriltag method", "[apriltag][tuning]") {
-	using apriltag_vulkan::RefineEdgesMethod;
-	REQUIRE(VkApriltagBackend::ToRefineMethod(REFINE_UPSTREAM) == RefineEdgesMethod::kUpstream);
-	REQUIRE(VkApriltagBackend::ToRefineMethod(REFINE_EXACT) == RefineEdgesMethod::kExact);
-	REQUIRE(VkApriltagBackend::ToRefineMethod(REFINE_FAST) == RefineEdgesMethod::kFast);
-	REQUIRE(VkApriltagBackend::ToRefineMethod(REFINE_ULTRAFAST) == RefineEdgesMethod::kUltraFast);
+TEST_CASE("the Vulkan backend reports vkapriltag 2.0's one refinement whatever mode is requested", "[apriltag][tuning]") {
+	// vkapriltag 2.0 removed the fast, ultrafast and upstream methods; the requested mode stays in the tuning but changes nothing
+	const std::vector<std::string> devices = VkApriltagBackend::ListDevices(); // callable without a GPU (empty then)
+	if (devices.empty()) SKIP("no Vulkan device");
+	for (RefineEdgesMode mode : { REFINE_UPSTREAM, REFINE_EXACT, REFINE_FAST, REFINE_ULTRAFAST }) {
+		ApriltagTuning tuning;
+		tuning.refineMode = mode;
+		std::unique_ptr<VkApriltagBackend> built;
+		try {
+			built = std::make_unique<VkApriltagBackend>(640, 480, tuning);
+		} catch (const std::exception& e) {
+			SKIP("no usable Vulkan compute device (" << e.what() << ")"); // a software-only device is refused by the library
+		}
+		VkApriltagBackend& backend = *built;
+		REQUIRE(backend.GetRefineMode() == REFINE_PROFILE);
+		REQUIRE_FALSE(backend.GetRefineModeSupported());
+	}
 }
 #endif
 

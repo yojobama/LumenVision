@@ -31,7 +31,7 @@ the CMake and native-Windows work started (parts of it have since landed). Measu
   is persisted on the device.
 - **`webui/`**: the React/Vite WebUI.
 - **`lumenlib/`** and **`robot/`**: the robot-side Java vendordep and an example robot project.
-- **`third_party/vkapriltag/`**: git submodule, Vulkan-compute AprilTag detection (pinned to `v1.10.1`).
+- **`third_party/vkapriltag/`**: git submodule, Vulkan-compute AprilTag detection (pinned to `v2.0.0-pre2`).
 - **`third_party/codec-stereo/`**: git submodule, stereo depth from hardware video-encoder motion vectors.
 - **`scripts/`**: dependency installer, `.deb` and board-image builders, the systemd unit, `deploy.ps1`.
 - **`tools/`**: `lumen-bench` (AprilTag refine-mode benchmark) and `opencv-bench` (times the OpenCV calls LumenCore
@@ -204,20 +204,18 @@ stale" badge when a saved calibration is for a different resolution).
 ## AprilTag detection
 
 `ApriltagSink` runs on the CPU (libapriltag) or on the GPU through the vkapriltag submodule (Vulkan compute,
-pinned to tag `v1.10.1`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
+pinned to tag `v2.0.0-pre2`); Vulkan falls back to CPU when no usable device exists. Pick the backend and tune it with
 `PATCH /api/apriltagSink/backend` (or `refine*` parameters on `createWithBackend`); `GET /api/apriltagSink/tuning` returns what is actually in effect.
 
-- **Refine edges** sharpens corner positions. On the Vulkan backend its implementation is selectable with `refineMode`
-  (`0` upstream, `1` exact — the default, bit-identical to upstream, `2` fast, `3` ultra-fast, which only refines quads
-  that already decode unrefined); `refineModeSupported` is false on the CPU backend, which always runs upstream's.
+- **Refine edges** sharpens corner positions. vkapriltag 2.0 has one refinement, a profile fit, so the Vulkan backend ignores `refineMode`
+  and reports `4` (profile fit) with `refineModeSupported` false; the CPU backend always runs upstream's (`0`). The values `1` to `3`
+  (exact, fast, ultra-fast of vkapriltag 1.x) are still accepted and stored so saved graphs keep loading, but they change nothing.
 - **Refine margin cutoff** (`probeMargin`, grey levels, Vulkan only, `0` = off) skips edge refinement for quads whose decision
   margin before refinement is below it, which saves CPU time on frames full of non-tag shapes. `APRILTAG_VK_PROBE_MARGIN`
   overrides it; `GET /api/apriltagSink/tuning` reports the value in effect.
 - **Frame ingest**: pooled grey frames are page-aligned so a GPU with `VK_EXT_external_memory_host` reads them in place
   (`ingestMode` is `host-import`; `LUMEN_APRILTAG_FRAME_IMPORT=0` forces the upload path). The Orange Pi's Mali driver does not
   offer that extension, but its unified memory already takes the frame as a direct write, so it reports `copy`.
-  Setting the `APRILTAG_VK_REFINE` environment variable (`upstream|exact|fast|ultrafast`) overrides the mode inside the
-  library, and the log warns when it differs from the request.
 - **vkapriltag 1.10** turns its accuracy work on by default (a profile-fit edge refinement, retries for quads with a grey
   margin or fitted a cell too far out, a third corrected bit, per-family limits, early rejection of dark quads, block-averaging
   decimation, a noise-adaptive contrast floor) and is faster; each can be switched off with an environment variable

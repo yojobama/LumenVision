@@ -94,12 +94,13 @@ export interface StoredStereoCalibration {
   CalibratedAtUnixMs: number;
 }
 
-// mirrors LumenCore's RefineEdgesMode (IApriltagBackend.h): which refine_edges implementation the Vulkan backend runs
+// mirrors LumenCore's RefineEdgesMode (IApriltagBackend.h): which refine_edges implementation the Vulkan backend runs (vkapriltag 2.0 has only the profile fit, so the choice is fixed there)
 export const REFINE_EDGES_MODES = [
   { value: 0, label: 'Upstream (reference)' },
   { value: 1, label: 'Exact (bit-identical, default)' },
   { value: 2, label: 'Fast (single precision)' },
   { value: 3, label: 'Ultra-fast (refine only decodable quads)' },
+  { value: 4, label: "Profile fit (the Vulkan detector's only method)" },
 ] as const;
 
 // An uploaded ONNX object detection model (YOLOv8/YOLOv11), as returned by /model/getAll

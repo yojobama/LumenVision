@@ -643,7 +643,7 @@ export const Inspector: React.FC<{
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Refine edges method</label>
                   <select value={refineModeValue} disabled={!refineEdgesValue || !refineModeSupported}
-                    title={refineModeSupported ? 'Exact matches upstream bit for bit; Fast and Ultra-fast trade a little accuracy for speed.' : 'Only the Vulkan backend can choose a refine method; the CPU backend always uses upstream\'s.'}
+                    title="The refine method is fixed: the Vulkan backend uses the profile fit, the CPU backend upstream's."
                     onChange={e => setRefineModeValue(parseInt(e.target.value))}
                     className="w-full px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white disabled:opacity-50">
                     {REFINE_EDGES_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}

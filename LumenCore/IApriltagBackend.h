@@ -12,17 +12,21 @@ enum ApriltagBackendKind {
 	APRILTAG_BACKEND_VULKAN
 };
 
-// Edge-refinement implementation (vkapriltag's RefineEdgesMethod). Plain (unscoped) enum for SWIG, as above. Only the Vulkan backend
-// honours it; the CPU backend always runs upstream's refine_edges.
+// Edge-refinement implementation. Plain (unscoped) enum for SWIG, as above. Only the first four were selectable with vkapriltag 1.x; vkapriltag 2.0 removed
+// the fast, ultrafast and upstream methods and runs one profile-fit refinement whatever is requested, so the Vulkan backend ignores the request and
+// reports REFINE_PROFILE (GetRefineModeSupported() is false). The values stay so that saved graphs, the REST API and the UI keep working. The CPU
+// backend always runs upstream's refine_edges.
 //   REFINE_UPSTREAM  upstream's compiled refine_edges() (the reference)
 //   REFINE_EXACT     upstream's arithmetic without libm modf(); bit-identical to REFINE_UPSTREAM
 //   REFINE_FAST      single-precision inner loop; not bit-identical
 //   REFINE_ULTRAFAST as REFINE_FAST, and only quads that already decode unrefined are refined
+//   REFINE_PROFILE   vkapriltag 2.0's profile fit (the only refinement the Vulkan backend has)
 enum RefineEdgesMode {
 	REFINE_UPSTREAM,
 	REFINE_EXACT,
 	REFINE_FAST,
-	REFINE_ULTRAFAST
+	REFINE_ULTRAFAST,
+	REFINE_PROFILE
 };
 
 // Tag family (plain enum for SWIG). Both backends decode any of these; the Vulkan GPU pass reads the tag size and border polarity from the family.
@@ -62,7 +66,7 @@ struct ApriltagTuning {
 	int nthreads = 0;
 	float quadDecimate = 0.0f;
 	bool refineEdges = true;
-	RefineEdgesMode refineMode = REFINE_EXACT;
+	RefineEdgesMode refineMode = REFINE_EXACT; // vkapriltag 2.0 ignores it (see RefineEdgesMode)
 	ApriltagFamilyKind family = APRILTAG_FAMILY_36H11;
 	float quadSigma = 0.0f;
 	int maxHamming = 2;

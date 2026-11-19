@@ -10,6 +10,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <vulkan/vulkan.h>
 
 using namespace apriltag_vulkan;
 
@@ -21,32 +22,6 @@ uint32_t VkApriltagBackend::ResolveDecimation(float requested, int frameWidth, i
 	if (d < 1) d = 1;
 	while (d > 1 && (frameWidth % d != 0 || frameHeight % d != 0)) d--;
 	return static_cast<uint32_t>(d);
-}
-
-RefineEdgesMethod VkApriltagBackend::ToRefineMethod(RefineEdgesMode mode)
-{
-	switch (mode) {
-	case REFINE_UPSTREAM: return RefineEdgesMethod::kUpstream;
-	case REFINE_FAST: return RefineEdgesMethod::kFast;
-	case REFINE_ULTRAFAST: return RefineEdgesMethod::kUltraFast;
-	case REFINE_EXACT:
-	default: return RefineEdgesMethod::kExact;
-	}
-}
-
-std::string VkApriltagBackend::RefineEnvOverride()
-{
-#ifdef _MSC_VER
-	char* env = nullptr;
-	size_t length = 0;
-	std::string value;
-	if (_dupenv_s(&env, &length, "APRILTAG_VK_REFINE") == 0 && env != nullptr) value = env;
-	std::free(env);
-	return value;
-#else
-	const char* env = std::getenv("APRILTAG_VK_REFINE");
-	return env ? std::string(env) : std::string();
-#endif
 }
 
 // LUMEN_APRILTAG_FRAME_IMPORT=0 uploads every frame, for comparing against the zero-copy path
@@ -65,56 +40,104 @@ static bool FrameImportDisabledByEnv()
 }
 
 namespace {
-// the live shared contexts by requested device index (-1 = automatic); a context lives as long as some sink uses it
-struct ContextEntry {
-	std::weak_ptr<vk::Context> context;
+// the live shared devices by requested device index (-1 = automatic); a device lives as long as some sink uses it
+struct DeviceEntry {
+	std::weak_ptr<Device> device;
 	uint32_t nextStream = 0;
 };
-std::mutex g_ContextMutex;
-std::map<int, ContextEntry> g_Contexts;
+std::mutex g_DeviceMutex;
+std::map<int, DeviceEntry> g_Devices;
 
-// Context::StreamSlot spreads this many streams over a device's compute families; more sinks than this just share queues
+// the library spreads this many streams over a device's compute queues; more sinks than this just share queues
 constexpr uint32_t kExpectedStreams = 4;
+
+// the first line of Device::Describe() is "apriltag_vulkan: using <name> (<type>, Vulkan x.y.z)"
+std::string DeviceNameFrom(const std::string& description)
+{
+	std::string line = description.substr(0, description.find('\n'));
+	const std::string prefix = "apriltag_vulkan: using ";
+	if (line.compare(0, prefix.size(), prefix) == 0) line.erase(0, prefix.size());
+	const size_t paren = line.rfind(" (");
+	if (paren != std::string::npos) line.erase(paren);
+	return line;
 }
 
-VkApriltagBackend::SharedContext VkApriltagBackend::AcquireContext(int deviceIndex)
+float EnvFloat(const char* name, float fallback)
 {
-	std::lock_guard<std::mutex> lock(g_ContextMutex);
-	ContextEntry& entry = g_Contexts[deviceIndex];
-	std::shared_ptr<vk::Context> context = entry.context.lock();
-	if (!context) {
-		vk::ContextOptions options;
+	const char* text = std::getenv(name);
+	if (!text || !*text) return fallback;
+	char* end = nullptr;
+	const float value = std::strtof(text, &end);
+	return end && *end == '\0' ? value : fallback;
+}
+
+const char* FamilyName(ApriltagFamilyKind kind)
+{
+	switch (kind) {
+	case APRILTAG_FAMILY_16H5: return "tag16h5";
+	case APRILTAG_FAMILY_25H9: return "tag25h9";
+	case APRILTAG_FAMILY_STANDARD41H12: return "tagStandard41h12";
+	case APRILTAG_FAMILY_36H11:
+	default: return "tag36h11";
+	}
+}
+}
+
+VkApriltagBackend::SharedDevice VkApriltagBackend::AcquireDevice(int deviceIndex)
+{
+	std::lock_guard<std::mutex> lock(g_DeviceMutex);
+	DeviceEntry& entry = g_Devices[deviceIndex];
+	std::shared_ptr<Device> device = entry.device.lock();
+	if (!device) {
+		DeviceOptions options;
 		options.device_index = deviceIndex;
 		options.expected_streams = kExpectedStreams;
-		context = std::make_shared<vk::Context>(options); // throws without a usable device; nothing is cached then
-		entry.context = context;
+		device = Device::Create(options); // throws without a usable device; nothing is cached then
+		entry.device = device;
 		entry.nextStream = 0;
 	}
-	return SharedContext{ context, entry.nextStream++ };
+	return SharedDevice{ device, entry.nextStream++ };
 }
 
 size_t VkApriltagBackend::LiveContextCount()
 {
-	std::lock_guard<std::mutex> lock(g_ContextMutex);
+	std::lock_guard<std::mutex> lock(g_DeviceMutex);
 	size_t live = 0;
-	for (const auto& entry : g_Contexts) if (!entry.second.context.expired()) live++;
+	for (const auto& entry : g_Devices) if (!entry.second.device.expired()) live++;
 	return live;
 }
 
 std::vector<std::string> VkApriltagBackend::ListDevices()
 {
+	// vkapriltag's public API has no device list, so this asks Vulkan directly, in vkEnumeratePhysicalDevices order (the order its device_index uses)
 	std::vector<std::string> names;
+	VkInstance instance = VK_NULL_HANDLE;
 	try {
-		for (const vk::DeviceCaps& caps : vk::Context::EnumerateDevices()) names.push_back(caps.name);
+		VkApplicationInfo app = { VK_STRUCTURE_TYPE_APPLICATION_INFO };
+		app.apiVersion = VK_API_VERSION_1_1;
+		VkInstanceCreateInfo info = { VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO };
+		info.pApplicationInfo = &app;
+		VkResult result = vkCreateInstance(&info, nullptr, &instance);
+		if (result != VK_SUCCESS) throw std::runtime_error("vkCreateInstance failed (VkResult " + std::to_string(static_cast<int>(result)) + ")");
+		uint32_t count = 0;
+		vkEnumeratePhysicalDevices(instance, &count, nullptr);
+		std::vector<VkPhysicalDevice> devices(count);
+		if (count > 0) vkEnumeratePhysicalDevices(instance, &count, devices.data());
+		for (uint32_t i = 0; i < count; i++) {
+			VkPhysicalDeviceProperties properties;
+			vkGetPhysicalDeviceProperties(devices[i], &properties);
+			names.push_back(properties.deviceName);
+		}
 	} catch (const std::exception& e) {
 		// no Vulkan loader or driver: no devices to choose from. Say why on stderr (the journal), otherwise an empty list looks like a machine without a GPU.
 		std::cerr << "Vulkan device enumeration found no usable GPU: " << e.what() << std::endl;
 	}
+	if (instance != VK_NULL_HANDLE) vkDestroyInstance(instance, nullptr);
 	return names;
 }
 
 VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTuning tuning)
-	: m_FrameWidth(frameWidth), m_FrameHeight(frameHeight), m_RefineMode(tuning.refineMode)
+	: m_FrameWidth(frameWidth), m_FrameHeight(frameHeight), m_RefineMode(tuning.refineMode), m_RefineEdges(tuning.refineEdges)
 {
 	if (frameWidth <= 0 || frameHeight <= 0) {
 		// the GPU pipeline's buffers are sized from these - there is no valid default
@@ -126,11 +149,7 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 	m_FamilyKind = tuning.family;
 	m_MaxHamming = ClampMaxHamming(tuning.maxHamming);
 	m_Family = CreateApriltagFamily(m_FamilyKind);
-	m_Detector = apriltag_detector_create();
-	apriltag_detector_add_family_bits(m_Detector, m_Family, m_MaxHamming);
-	// set explicitly rather than left to apriltag_detector_create(), whose refine_edges default (TRUE) differs from
-	// TagDecoder's documented default (false)
-	m_Detector->refine_edges = tuning.refineEdges;
+	m_ResultList = zarray_create(sizeof(apriltag_detection_t*));
 
 	try {
 		m_Decimation = ResolveDecimation(tuning.quadDecimate, m_GpuWidth, frameHeight);
@@ -139,30 +158,28 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 			throw UnsupportedFrameSize("a " + std::to_string(frameWidth) + "x" + std::to_string(frameHeight) + " frame is too small for the GPU pipeline");
 		}
 
-		// from here a failure is about this frame size or this configuration, not about the device: the context was acquired
-		SharedContext shared = AcquireContext(tuning.gpuDevice);
+		// from here a failure is about this frame size or this configuration, not about the device: the device was acquired
+		SharedDevice shared = AcquireDevice(tuning.gpuDevice);
 		try {
-		m_Context = shared.context;
-		m_Lane = m_Context->CreateLane(m_Context->StreamSlot(shared.stream));
-		m_GpuDeviceName = m_Context->caps().name;
-		// importing needs the extension and an alignment our pool blocks satisfy
-		const vk::DeviceCaps& caps = m_Context->caps();
-		m_HostImportAvailable = !FrameImportDisabledByEnv() && caps.has_external_memory_host &&
-			caps.min_host_pointer_alignment > 0 && FramePool::kBlockAlignment % caps.min_host_pointer_alignment == 0;
+		m_Device = shared.device;
+		m_GpuDeviceName = DeviceNameFrom(m_Device->Describe());
+		// whether the driver accepts the pooled frames is learned on the first import: the library throws when it cannot
+		m_HostImportAvailable = !FrameImportDisabledByEnv();
 
-		DetectorConfig config;
-		config.width = static_cast<uint32_t>(m_GpuWidth);
-		config.height = static_cast<uint32_t>(frameHeight);
-		config.decimation = m_Decimation;
-		config.tag_width = static_cast<uint32_t>(m_Family->width_at_border);
-		config.reversed_border = m_Family->reversed_border;
-		config.normal_border = !m_Family->reversed_border;
-		// 4 threads by default rather than hardware_concurrency() (GPU-bound with a small CPU tail); QuadDecode's pool is
-		// fixed at construction, so changing this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
-		config.cpu_threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
+		DetectorOptions options;
+		options.width = static_cast<uint32_t>(m_GpuWidth);
+		options.height = static_cast<uint32_t>(frameHeight);
+		options.decimation = m_Decimation;
+		options.families = { FamilyName(m_FamilyKind) };
+		options.refine_edges = tuning.refineEdges;
+		// 4 threads by default rather than the whole CPU (GPU-bound with a small CPU tail); the worker pool is fixed at construction, so changing
+		// this rebuilds the backend. Overridable per sink via ApriltagTuning.nthreads.
+		m_Threads = tuning.nthreads > 0 ? static_cast<uint32_t>(tuning.nthreads) : 4;
+		options.cpu_threads = m_Threads;
+		options.stream = shared.stream;
 
 		// The blob filters of the quad search: the sink's tuning when set, else the LUMEN_VK_MIN_* environment variables (for experiments), else the
-		// library's own values.
+		// library's own values. (APRILTAG_VK_MIN_DIFF / _MIN_TAG_PX / _PROBE_MARGIN still override all of these inside the library.)
 		auto blobFilter = [](int tuned, const char* variable, uint32_t fallback) {
 			if (tuned > 0) return static_cast<uint32_t>(tuned);
 			const char* text = std::getenv(variable);
@@ -171,20 +188,17 @@ VkApriltagBackend::VkApriltagBackend(int frameWidth, int frameHeight, ApriltagTu
 			const unsigned long value = std::strtoul(text, &end, 10);
 			return end && *end == '\0' ? static_cast<uint32_t>(value) : fallback;
 		};
-		config.min_white_black_diff = blobFilter(tuning.minWhiteBlackDiff, "LUMEN_VK_MIN_WHITE_BLACK_DIFF", config.min_white_black_diff);
-		config.min_cluster_pixels = blobFilter(tuning.minClusterPixels, "LUMEN_VK_MIN_CLUSTER_PIXELS", config.min_cluster_pixels);
-		config.min_tag_pixels = blobFilter(tuning.minTagPixels, "LUMEN_VK_MIN_TAG_PIXELS", config.min_tag_pixels);
+		options.min_white_black_diff = std::min<uint32_t>(255, blobFilter(tuning.minWhiteBlackDiff, "LUMEN_VK_MIN_WHITE_BLACK_DIFF", options.min_white_black_diff));
+		options.min_cluster_pixels = blobFilter(tuning.minClusterPixels, "LUMEN_VK_MIN_CLUSTER_PIXELS", options.min_cluster_pixels);
+		options.min_tag_pixels = blobFilter(tuning.minTagPixels, "LUMEN_VK_MIN_TAG_PIXELS", options.min_tag_pixels);
+		options.probe_margin = tuning.probeMargin > 0.0f ? tuning.probeMargin : 0.0f;
+		// the margin gate in effect: the library lets the environment variable win
+		m_ProbeMargin = EnvFloat("APRILTAG_VK_PROBE_MARGIN", options.probe_margin);
 
-		// the worker pools below start their threads here, so they take this thread's affinity: pin them to the performance cores
+		// the worker pool starts its threads here, so they take this thread's affinity: pin them to the performance cores
 		// whichever thread (the sink's, or an API call's) is building the backend
 		CpuAffinity::ScopedPerformanceAffinity performanceCores;
-
-		m_GpuDetector = std::make_unique<GpuDetector>(*m_Context, *m_Lane, config);
-		m_QuadDecode = std::make_unique<QuadDecode>(config);
-		// TagDecoder must be told the same decimation as the GPU pass: refine_edges derives its per-edge search radius from it.
-		// APRILTAG_VK_REFINE, if set, overrides the requested method inside the library.
-		m_TagDecoder = std::make_unique<TagDecoder>(m_Detector, m_Decimation, config.cpu_threads,
-			ToRefineMethod(tuning.refineMode), tuning.probeMargin > 0.0f ? tuning.probeMargin : 0.0f);
+		m_VkDetector = std::make_unique<Detector>(options, m_Device);
 		} catch (const UnsupportedFrameSize&) {
 			throw;
 		} catch (const std::exception& e) {
@@ -201,18 +215,27 @@ VkApriltagBackend::~VkApriltagBackend()
 	ReleaseResources();
 }
 
+void VkApriltagBackend::ClearResult()
+{
+	for (apriltag_detection_t* detection : m_Result) {
+		matd_destroy(detection->H);
+		delete detection;
+	}
+	m_Result.clear();
+	if (m_ResultList) zarray_clear(m_ResultList);
+}
+
 void VkApriltagBackend::ReleaseResources()
 {
-	// destroy in reverse dependency order before m_Context (owns the device the others hold
-	// live handles into) and before the detector/family the TagDecoder borrows a pointer to
-	m_TagDecoder.reset();
-	m_QuadDecode.reset();
-	m_GpuDetector.reset();
-	m_Lane.reset();
-	m_Context.reset();
+	// the detector before the device it runs on
+	m_VkDetector.reset();
+	m_Device.reset();
 
-	apriltag_detector_destroy(m_Detector);
-	DestroyApriltagFamily(m_FamilyKind, m_Family);
+	ClearResult();
+	if (m_ResultList) zarray_destroy(m_ResultList);
+	m_ResultList = nullptr;
+	if (m_Family) DestroyApriltagFamily(m_FamilyKind, m_Family);
+	m_Family = nullptr;
 }
 
 bool VkApriltagBackend::ImportFrameIfPossible(const cv::Mat& gray)
@@ -226,9 +249,9 @@ bool VkApriltagBackend::ImportFrameIfPossible(const cv::Mat& gray)
 	const size_t bytes = FramePool::Instance().BlockCapacity(data);
 	if (bytes < gray.total() * gray.elemSize()) return false;
 	try {
-		m_GpuDetector->ImportHostFrame(data, bytes);
+		m_VkDetector->ImportHostFrame(data, bytes);
 	} catch (const std::exception&) {
-		// the driver refused this memory: stop trying and keep uploading
+		// the driver refused this memory (or has no external host memory): stop trying and keep uploading
 		m_HostImportAvailable = false;
 		return false;
 	}
@@ -274,23 +297,34 @@ zarray_t* VkApriltagBackend::Detect(const cv::Mat& frame)
 
 	m_LastFrameImported = ImportFrameIfPossible(gpuFrame);
 	lapStart = std::chrono::steady_clock::now(); // the (rare) first-time import is setup, not a per-frame cost
-	m_GpuDetector->Detect(gpuFrame.data);
-	lap("vk-gpu");
+	// the detector decodes against the picture it is given: the padded copy only repeats the last column, so corners are unchanged
+	const Result& result = m_VkDetector->Detect(gpuFrame.data);
 
-	// the library's own split of that call: the upload, waiting for the previous frame's fence, recording, GPU execution and readback
-	const GpuDetector::DetectProfile& profile = m_GpuDetector->last_profile();
-	m_LastStageUs.emplace_back("vk-gpu:upload", profile.upload_ms * 1000.0);
-	m_LastStageUs.emplace_back("vk-gpu:submit+wait", profile.cpu_submit_wait_ms * 1000.0);
-	m_LastStageUs.emplace_back("vk-gpu:readback", profile.readback_ms * 1000.0);
+	// the library's own split of that call (GPU wall time, quad fit, refine + decode)
+	m_LastStageUs.emplace_back("vk-gpu", result.timing.gpu_ms * 1000.0);
+	m_LastStageUs.emplace_back("vk-quads", result.timing.quad_ms * 1000.0);
+	m_LastStageUs.emplace_back("vk-tags", result.timing.decode_ms * 1000.0);
 
-	std::vector<DetectedQuad> quads = m_QuadDecode->Decode(m_GpuDetector->last_line_fit_points);
-	lap("vk-quads");
-
-	zarray_t* detections = m_TagDecoder->Decode(quads, grayFrame.data,
-		static_cast<uint32_t>(grayFrame.cols), static_cast<uint32_t>(grayFrame.rows),
-		m_Family->reversed_border);
-	lap("vk-tags");
-	return detections;
+	ClearResult();
+	for (const Detection& found : result.detections) {
+		// the library corrects up to two wrong bits; a stricter limit drops the detections that needed more
+		if (found.hamming > m_MaxHamming) continue;
+		auto* detection = new apriltag_detection_t();
+		detection->family = m_Family;
+		detection->id = found.id;
+		detection->hamming = found.hamming;
+		detection->decision_margin = found.decision_margin;
+		detection->H = matd_create_data(3, 3, found.H);
+		detection->c[0] = found.c[0];
+		detection->c[1] = found.c[1];
+		for (int corner = 0; corner < 4; corner++) {
+			detection->p[corner][0] = found.p[corner][0];
+			detection->p[corner][1] = found.p[corner][1];
+		}
+		m_Result.push_back(detection);
+		zarray_add(m_ResultList, &detection);
+	}
+	return m_ResultList;
 }
 
 void VkApriltagBackend::ReleaseResult(zarray_t* /*detections*/)

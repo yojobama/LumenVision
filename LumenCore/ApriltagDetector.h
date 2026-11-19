@@ -112,12 +112,9 @@ private:
 		TagPoseData alternate;
 		bool hasAlternate = false;
 	};
-	// Solves a tag's pose from its (undistorted) corners: vkapriltag's allocation-free PoseEstimator when that is built in,
-	// libapriltag's estimate_tag_pose_orthogonal_iteration otherwise. Caller must hold m_CalibrationMutex and have calibration.
+	// Solves a tag's pose from its (undistorted) corners with libapriltag's estimate_tag_pose_orthogonal_iteration (vkapriltag 2.0 no longer
+	// exposes its pose estimator, and its detector's own pose has no undistorted-corner path). Caller must hold m_CalibrationMutex and have calibration.
 	bool SolveTagPose(const apriltag_detection_t& poseDetection, SolvedTagPose& out);
-	// apriltag_vulkan::PoseEstimator (type-erased to keep vkapriltag's headers out of this one), rebuilt when the intrinsics or tag size change
-	std::shared_ptr<void> m_PoseEstimator;
-	double m_PoseEstimatorKey[5] = {};
 	// the CameraCalibrationResult as constructed, kept verbatim (rms/imageWidth/imageHeight are lost in
 	// m_CameraMatrix/m_DistCoeffs) so GetCalibration() can return it unchanged
 	CameraCalibrationResult m_OriginalCalibration;

@@ -3,10 +3,7 @@
 
 #include "IApriltagBackend.h"
 #include "ApriltagFamily.h"
-#include <vkapriltag/TagDecoder.h>
-#include <vkapriltag/gpu/GpuDetector.h>
-#include <vkapriltag/gpu/QuadDecode.h>
-#include <vkapriltag/vk/Context.h>
+#include <vkapriltag/Detector.h>
 #include <atomic>
 #include <stdexcept>
 #include <memory>
@@ -15,14 +12,11 @@
 #include <unordered_set>
 #include <vector>
 
-// GPU (Vulkan compute) AprilTag detection via the vkapriltag submodule (third_party/vkapriltag).
+// GPU (Vulkan compute) AprilTag detection via the vkapriltag submodule (third_party/vkapriltag), through its public Detector (vkapriltag 2.0).
 //
-// Requires the patched apriltag build (v3.4.5 plus exported quad_decode_index/reconcile_detections/quad_sample_code/apriltag_min_hamming; see
-// third_party/vkapriltag/apriltags_vulkan/cmake/patches/apriltag-expose-decode-steps.patch and apriltag-expose-code-probe.patch) as the only
-// libapriltag.so.3 (same SONAME as vanilla); install-deps.sh build_apriltag() installs it.
-//
-// TagDecoder::Decode() returns the same zarray_t* of apriltag_detection_t* as apriltag_detector_detect(), stopping at
-// 2D detection (pose, JSON and annotation live in ApriltagDetector).
+// The library no longer uses libapriltag's types; Detect() converts each of its detections into an apriltag_detection_t (with a libapriltag family
+// and a 3x3 homography) owned by this backend, so pose estimation, JSON and annotation stay backend-independent (pose runs on libapriltag, which
+// the CPU backend needs anyway). The library stops at 2D detection here: its own pose output is not used (no undistorted-corner path).
 class VkApriltagBackend : public IApriltagBackend {
 public:
 	// Thrown when the GPU is fine but this frame size cannot be run on it (too small to hold a tag, past the pipeline's limits, ...): the detector
@@ -40,17 +34,18 @@ public:
 	~VkApriltagBackend() override;
 
 	zarray_t* Detect(const cv::Mat& grayFrame) override;
-	void ReleaseResult(zarray_t* detections) override; // no-op: TagDecoder owns its zarray_t
+	void ReleaseResult(zarray_t* detections) override; // no-op: the backend owns the list until the next Detect()
 	std::string Name() const override { return "Vulkan (vkapriltag)"; }
 
-	// QuadDecode's cpu_threads getter (the CPU-tail worker pool; the analogue of CpuApriltagBackend's nthreads)
-	int GetThreads() const override { return static_cast<int>(m_QuadDecode->threads()); }
+	// the CPU-tail thread count the detector was built with (the analogue of CpuApriltagBackend's nthreads)
+	int GetThreads() const override { return static_cast<int>(m_Threads); }
 	// the integer decimation actually baked into this GPU pipeline (may differ from the request)
 	float GetQuadDecimate() const override { return static_cast<float>(m_Decimation); }
 	bool GetQuadDecimateSupported() const override { return true; }
-	bool GetRefineEdges() const override { return m_Detector->refine_edges; }
-	RefineEdgesMode GetRefineMode() const override { return m_RefineMode; }
-	bool GetRefineModeSupported() const override { return true; }
+	bool GetRefineEdges() const override { return m_RefineEdges; }
+	// vkapriltag 2.0 has the one profile-fit refinement; the requested mode cannot change it
+	RefineEdgesMode GetRefineMode() const override { return REFINE_PROFILE; }
+	bool GetRefineModeSupported() const override { return false; }
 	ApriltagFamilyKind GetFamily() const override { return m_FamilyKind; }
 	// the GPU pipeline has no blur stage
 	float GetQuadSigma() const override { return 0.0f; }
@@ -58,7 +53,7 @@ public:
 	int GetMaxHamming() const override { return m_MaxHamming; }
 	std::string GetGpuDeviceName() const override { return m_GpuDeviceName; }
 	// the library's gate, so an APRILTAG_VK_PROBE_MARGIN override shows
-	float GetProbeMargin() const override { return m_TagDecoder->probe_margin(); }
+	float GetProbeMargin() const override { return m_ProbeMargin; }
 	void LastStageTimingsUs(std::vector<std::pair<std::string, double>>& out) const override { out = m_LastStageUs; }
 	std::string GetIngestMode() const override { return m_LastFrameImported.load() ? "host-import" : "copy"; }
 
@@ -66,10 +61,6 @@ public:
 	// empty when there is no usable Vulkan driver
 	static std::vector<std::string> ListDevices();
 
-	// vkapriltag's RefineEdgesMethod for a mode
-	static apriltag_vulkan::RefineEdgesMethod ToRefineMethod(RefineEdgesMode mode);
-	// the APRILTAG_VK_REFINE environment override ("" when unset); the library lets it win over the requested mode
-	static std::string RefineEnvOverride();
 
 	int GetFrameWidth() const { return m_FrameWidth; }
 	int GetFrameHeight() const { return m_FrameHeight; }
@@ -87,12 +78,12 @@ private:
 	// does not run for an object whose constructor threw, which left the detector and the family leaking when no Vulkan device was found).
 	void ReleaseResources();
 
-	// One Vulkan context per GPU is shared by every Vulkan AprilTag sink; each sink gets its own submission lane.
-	struct SharedContext {
-		std::shared_ptr<apriltag_vulkan::vk::Context> context;
-		uint32_t stream = 0; // this sink's index among the context's streams
+	// One Vulkan device per GPU is shared by every Vulkan AprilTag sink; each sink's detector gets its own submission lane (its stream).
+	struct SharedDevice {
+		std::shared_ptr<apriltag_vulkan::Device> device;
+		uint32_t stream = 0; // this sink's index among the device's streams
 	};
-	static SharedContext AcquireContext(int deviceIndex);
+	static SharedDevice AcquireDevice(int deviceIndex);
 public:
 	// how many Vulkan contexts are alive (one per distinct GPU in use); for tests
 	static size_t LiveContextCount();
@@ -103,8 +94,7 @@ private:
 	// the smallest decimated side the GPU pipeline is built for (a tag cannot be found in less)
 	static constexpr int kMinDecimatedSide = 8;
 
-	apriltag_detector_t* m_Detector;
-	apriltag_family_t* m_Family;
+	apriltag_family_t* m_Family; // libapriltag's table for the detections' `family` field (the GPU detector has its own)
 	ApriltagFamilyKind m_FamilyKind = APRILTAG_FAMILY_36H11;
 	int m_MaxHamming = 2;
 	std::string m_GpuDeviceName;
@@ -125,12 +115,18 @@ private:
 	std::vector<std::pair<std::string, double>> m_LastStageUs; // written by Detect(), read by the same thread right after
 	std::shared_ptr<void> m_PackedFrameOwner; // keeps the repacked copy of the last non-contiguous frame alive while the GPU reads it
 
-	// declaration order is destruction order in reverse: the detector, then the lane it submits through, then the shared context
-	std::shared_ptr<apriltag_vulkan::vk::Context> m_Context;
-	std::unique_ptr<apriltag_vulkan::vk::Lane> m_Lane;
-	std::unique_ptr<apriltag_vulkan::GpuDetector> m_GpuDetector;
-	std::unique_ptr<apriltag_vulkan::QuadDecode> m_QuadDecode;
-	std::unique_ptr<apriltag_vulkan::TagDecoder> m_TagDecoder;
+	bool m_RefineEdges = true;
+	uint32_t m_Threads = 4;
+	float m_ProbeMargin = 0.0f;
+
+	// the list Detect() returns: libapriltag-typed copies of the library's detections, replaced on the next call
+	void ClearResult();
+	std::vector<apriltag_detection_t*> m_Result;
+	zarray_t* m_ResultList = nullptr;
+
+	// declaration order is destruction order in reverse: the detector, then the device it runs on
+	std::shared_ptr<apriltag_vulkan::Device> m_Device;
+	std::unique_ptr<apriltag_vulkan::Detector> m_VkDetector;
 };
 
 #endif // LUMEN_WITH_VULKAN_APRILTAG
