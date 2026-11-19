@@ -683,8 +683,8 @@ fetch_onnxruntime() {
 
     local ort_arch
     case "$ARCH" in
-        x86_64) ort_arch="x64" ;;
-        aarch64) ort_arch="aarch64" ;;
+        x86_64) ort_arch="x64"; ORT_NUGET_RID="x64" ;;
+        aarch64) ort_arch="aarch64"; ORT_NUGET_RID="arm64" ;;
         *) fail "unsupported arch for onnxruntime: $ARCH"; return 1 ;;
     esac
 
@@ -692,10 +692,31 @@ fetch_onnxruntime() {
     local url="https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/${tarname}.tgz"
     local dest="$BUILD_ROOT/onnxruntime"
     mkdir -p "$dest"
-    curl -fsSL "$url" -o "$dest/$tarname.tgz"
-    tar -xzf "$dest/$tarname.tgz" -C "$dest"
-    sudo cp -r "$dest/$tarname/include/"* "$PREFIX/include/"
-    sudo cp -r "$dest/$tarname/lib/"* "$PREFIX/lib/"
+    if curl -fsSL "$url" -o "$dest/$tarname.tgz"; then
+        tar -xzf "$dest/$tarname.tgz" -C "$dest"
+        sudo cp -r "$dest/$tarname/include/"* "$PREFIX/include/"
+        sudo cp -r "$dest/$tarname/lib/"* "$PREFIX/lib/"
+    else
+        # The GitHub release download has been unavailable (404 from CI, 2026-11); the same official binaries ship in the
+        # Microsoft.ML.OnnxRuntime NuGet package (one zip with the headers and both Linux architectures), pinned by hash.
+        log "GitHub download failed; using the NuGet package Microsoft.ML.OnnxRuntime ${ORT_VERSION}"
+        local nupkg_sha256="36dbafacb1bc532e92d02371bd70582a61105872561fc9982314854d1c7ebf72" # for 1.20.0
+        if [[ "$ORT_VERSION" != "1.20.0" ]]; then
+            fail "the NuGet fallback is pinned to 1.20.0 only (ORT_VERSION=${ORT_VERSION})"
+            return 1
+        fi
+        local nupkg="$dest/ort.nupkg"
+        curl -fsSL "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ORT_VERSION}/microsoft.ml.onnxruntime.${ORT_VERSION}.nupkg" -o "$nupkg"
+        echo "${nupkg_sha256}  ${nupkg}" | sha256sum -c - || { fail "ONNX Runtime NuGet package hash mismatch"; return 1; }
+        rm -rf "$dest/nuget"
+        unzip -q -o "$nupkg" 'build/native/include/*' "runtimes/linux-${ORT_NUGET_RID}/native/*" -d "$dest/nuget"
+        sudo cp -r "$dest/nuget/build/native/include/"* "$PREFIX/include/"
+        # the package ships the library unversioned; its soname is libonnxruntime.so.1
+        sudo install -m 755 "$dest/nuget/runtimes/linux-${ORT_NUGET_RID}/native/libonnxruntime.so" "$PREFIX/lib/libonnxruntime.so.${ORT_VERSION}"
+        sudo install -m 755 "$dest/nuget/runtimes/linux-${ORT_NUGET_RID}/native/libonnxruntime_providers_shared.so" "$PREFIX/lib/libonnxruntime_providers_shared.so"
+        sudo ln -sf "libonnxruntime.so.${ORT_VERSION}" "$PREFIX/lib/libonnxruntime.so.1"
+        sudo ln -sf "libonnxruntime.so.${ORT_VERSION}" "$PREFIX/lib/libonnxruntime.so"
+    fi
     sudo ldconfig
 }
 

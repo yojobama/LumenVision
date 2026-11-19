@@ -18,6 +18,12 @@ jobs:
           submodules: recursive
 
       # the same dependency build and cache key as release.yml, so a warm cache is reused
+      # the cache restore (tar, as the runner user) fails on root-owned files when the runner image changes; make the cached prefixes writable first
+      - name: Make the cached prefixes writable
+        run: |
+          sudo mkdir -p /opt/lumenvision-ffmpeg
+          sudo chown -R "$(id -u):$(id -g)" /usr/local/include /usr/local/lib /usr/local/bin /opt/lumenvision-ffmpeg
+
       - name: Cache dependency build
         uses: actions/cache@v4
         with:
