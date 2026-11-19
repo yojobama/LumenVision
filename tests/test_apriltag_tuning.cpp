@@ -550,3 +550,51 @@ TEST_CASE("a Vulkan backend that cannot get its device throws and hands back the
 	for (int attempt = 0; attempt < 3; attempt++) REQUIRE_THROWS(VkApriltagBackend(640, 480, tuning));
 }
 #endif
+
+#ifdef LUMEN_WITH_VULKAN_APRILTAG
+// vkapriltag 2.0 solves the Vulkan backend's poses inside its detector (the detection's homography under a pinhole model); the CPU backend's come from
+// libapriltag with the corners undistorted. Without distortion the two must agree; with it, the library's pose is only as good as the pinhole model.
+TEST_CASE("the Vulkan backend's pose from vkapriltag's detector matches the CPU backend's", "[apriltag][pose][vulkan]") {
+	cv::Mat flat = RenderTag(APRILTAG_FAMILY_36H11, 3);
+	const std::vector<cv::Point2f> from = { { 0, 0 }, { (float)flat.cols, 0 }, { (float)flat.cols, (float)flat.rows }, { 0, (float)flat.rows } };
+	const std::vector<cv::Point2f> to = { { 150, 120 }, { 470, 90 }, { 450, 400 }, { 170, 360 } };
+	cv::Mat gray;
+	cv::warpPerspective(flat, gray, cv::getPerspectiveTransform(from, to), cv::Size(640, 480), cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(255));
+
+	const double tagSize = 0.1651, focal = 600.0;
+	auto poseOf = [&](ApriltagBackendKind kind, const std::vector<double>& distortion, bool& ran) {
+		CameraCalibrationResult calibration(focal, focal, 320.0, 240.0, 0.2, distortion, 640, 480);
+		auto logger = std::make_shared<Logger>("LumenCoreTests-apriltag-pose.log");
+		auto source = std::make_shared<StillFrameSource>(logger, "pose-source", gray);
+		ApriltagDetector detector(logger, "pose-detector", calibration, tagSize, kind);
+		REQUIRE(detector.BindSource(source));
+		source->Toggle(true);
+		static_cast<ISink&>(detector).Toggle(true);
+		std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+		source->Toggle(false);
+		static_cast<ISink&>(detector).Toggle(false);
+		ran = detector.GetBackendKind() == kind && detector.GetBackendName().find("starting") == std::string::npos;
+		nlohmann::json result = *detector.GetLatestResult().json;
+		REQUIRE(result["tags"].size() == 1);
+		return result["tags"][0];
+	};
+
+	for (const std::vector<double>& distortion : { std::vector<double>{}, std::vector<double>{ -0.18, 0.04, 0.0, 0.0, 0.0 } }) {
+		INFO("distortion coefficients: " << distortion.size());
+		bool cpuRan = false, vkRan = false;
+		const nlohmann::json cpu = poseOf(APRILTAG_BACKEND_CPU, distortion, cpuRan);
+		const nlohmann::json vk = poseOf(APRILTAG_BACKEND_VULKAN, distortion, vkRan);
+		if (!vkRan || vk["pose"].is_null()) SKIP("no usable Vulkan compute device");
+		REQUIRE(vk.contains("pose"));
+		REQUIRE(vk.contains("reprojErr"));
+		// the library gives one solution: no second pose, no ambiguity ratio
+		REQUIRE_FALSE(vk.contains("altPose"));
+		REQUIRE_FALSE(vk.contains("poseAmbiguity"));
+		// corners differ by a fraction of a pixel (about 0.5 mm here); distortion adds the pinhole model's error
+		const double tolerance = distortion.empty() ? 0.005 : 0.03;
+		for (const char* axis : { "x", "y", "z" }) {
+			REQUIRE(vk["pose"][axis].get<double>() == Catch::Approx(cpu["pose"][axis].get<double>()).margin(tolerance));
+		}
+	}
+}
+#endif

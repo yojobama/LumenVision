@@ -210,6 +210,9 @@ pinned to tag `v2.0.0-pre2`); Vulkan falls back to CPU when no usable device exi
 - **Refine edges** sharpens corner positions. vkapriltag 2.0 has one refinement, a profile fit, so the Vulkan backend ignores `refineMode`
   and reports `4` (profile fit) with `refineModeSupported` false; the CPU backend always runs upstream's (`0`). The values `1` to `3`
   (exact, fast, ultra-fast of vkapriltag 1.x) are still accepted and stored so saved graphs keep loading, but they change nothing.
+- **Pose on the Vulkan backend** comes from vkapriltag 2.0's detector (the detection's homography under a pinhole model): one solution per tag,
+  so no `altPose` or `poseAmbiguity`, no pose-iteration setting, and no undistorted-corner reseed (strong lens distortion costs accuracy). The CPU
+  backend still solves with libapriltag (both solutions, `poseIterations` up to 500, corners undistorted).
 - **Refine margin cutoff** (`probeMargin`, grey levels, Vulkan only, `0` = off) skips edge refinement for quads whose decision
   margin before refinement is below it, which saves CPU time on frames full of non-tag shapes. `APRILTAG_VK_PROBE_MARGIN`
   overrides it; `GET /api/apriltagSink/tuning` reports the value in effect.
