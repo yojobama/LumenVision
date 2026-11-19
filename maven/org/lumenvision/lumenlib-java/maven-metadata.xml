@@ -3,11 +3,11 @@
   <groupId>org.lumenvision</groupId>
   <artifactId>lumenlib-java</artifactId>
   <versioning>
-    <latest>0.0.0-imagetest46</latest>
-    <release>0.0.0-imagetest46</release>
+    <latest>0.0.0-imagetest47</latest>
+    <release>0.0.0-imagetest47</release>
     <versions>
-      <version>0.0.0-imagetest46</version>
+      <version>0.0.0-imagetest47</version>
     </versions>
-    <lastUpdated>20261119081629</lastUpdated>
+    <lastUpdated>20261119105954</lastUpdated>
   </versioning>
 </metadata>
